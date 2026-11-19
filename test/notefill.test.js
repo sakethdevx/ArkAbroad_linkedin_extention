@@ -98,6 +98,29 @@ module.exports = (test, load) => {
     assert.match(s.btn().textContent, /Click again to replace/);
   });
 
+  test('notefill: LinkedIn draws this pop-up inside a shadow root (#interop-outlet): the box is still found, filled, and watched for', async () => {
+    const dom = new JSDOM('<body><main><h1>Aryan</h1></main><div id="interop-outlet"></div></body>', { runScripts: 'outside-only' });
+    const w = dom.window, d = w.document, clicks = [];
+    const outlet = d.getElementById('interop-outlet'), root = outlet.attachShadow({ mode: 'open' });
+    const ctl = N.create(w); ctl.setDraft('Hi Aryan, quick hello.', 'note'); ctl.watch();
+    assert.strictEqual(root.querySelectorAll('[data-outreach-fill]').length, 0, 'no pop-up yet, no button');
+    root.innerHTML = INVITE();                                                   // the pop-up opens later, inside the shadow root
+    root.querySelectorAll('button').forEach(b => b.addEventListener('click', () => clicks.push(b.id)));
+    await new Promise(r => setTimeout(r, 400));
+    const host = root.querySelector('[data-outreach-fill]');
+    assert.ok(host, 'the button appears inside the shadow-root pop-up');
+    host.shadowRoot.getElementById('fill').click();
+    assert.strictEqual(root.getElementById('custom-message').value, 'Hi Aryan, quick hello.');
+    assert.deepStrictEqual(clicks, [], 'still no page button clicked');
+    root.getElementById('dlg').remove(); await new Promise(r => setTimeout(r, 400));
+    assert.strictEqual(root.querySelectorAll('[data-outreach-fill]').length, 0, 'the button leaves with the pop-up');
+    ctl.setEnabled(false); root.innerHTML = INVITE(); await new Promise(r => setTimeout(r, 400));
+    assert.strictEqual(root.querySelectorAll('[data-outreach-fill]').length, 0, 'switched off: nothing appears');
+    ctl.setEnabled(true); await new Promise(r => setTimeout(r, 50));
+    assert.strictEqual(root.querySelectorAll('[data-outreach-fill]').length, 1, 'switched back on: it works again without reloading');
+    ctl.destroy();
+  });
+
   test('notefill: the button lives in a shadow root and the draft is never written into the page until you press it', () => {
     const s = setup(INVITE());
     s.ctl.setDraft('SECRET-DRAFT-TEXT', 'note');

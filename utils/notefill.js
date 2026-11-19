@@ -19,13 +19,32 @@
   }
 })(typeof self !== 'undefined' ? self : this, function () {
 
-  const VERSION = 'notefill-1';
+  const VERSION = 'notefill-2';
   const NOTE_WORDS = /invitation|add a note|personal note|your note/i;
 
   const isShown = (el) => !!el && !el.hidden && el.getAttribute('aria-hidden') !== 'true' && !el.closest('[hidden], [aria-hidden="true"]');
 
   // ── Finding the box ──────────────────────────────────────────────────────────────────────────────────────────────
+  // LinkedIn draws many of its pop-ups (including this one) inside a shadow root (#interop-outlet), where a normal
+  // document.querySelector cannot see them. So we search the page AND every open shadow root in it.
+  function shadowRoots(doc) {
+    const out = [];
+    const walk = (root) => {
+      for (const el of root.querySelectorAll('*')) {
+        if (el.shadowRoot) { out.push(el.shadowRoot); walk(el.shadowRoot); }
+      }
+    };
+    walk(doc);
+    return out;
+  }
+
   function findNoteBox(doc) {
+    const roots = [doc, ...shadowRoots(doc)];
+    for (const r of roots) { const b = findIn(r); if (b) return b; }
+    return null;
+  }
+
+  function findIn(doc) {
     // 1. the invitation note: an editable textarea inside a dialog about an invitation / note
     for (const dlg of doc.querySelectorAll('[role="dialog"], .artdeco-modal')) {
       if (!isShown(dlg) || !NOTE_WORDS.test(dlg.textContent || '')) continue;
@@ -107,7 +126,7 @@
     const ctl = {
       setDraft(text, format) { draft = { text: String(text || '').trim(), format: format === 'message' ? 'message' : 'note' }; ctl.scan(); },
       getDraft: () => ({ ...draft }),
-      setEnabled(on) { enabled = !!on; if (!enabled) ctl.destroy(); else ctl.scan(); },
+      setEnabled(on) { enabled = !!on; if (!enabled) { uis.forEach(ui => ui.host.remove()); uis.clear(); } else ctl.scan(); },
 
       scan() {
         if (!enabled) return;
@@ -144,7 +163,20 @@
         say(ui, 'Filled. Read it, edit it if you like, then press Send yourself.', 'ok');
       },
 
-      destroy() { uis.forEach(ui => ui.host.remove()); uis.clear(); }
+      // watch the page, and every shadow root in it, for the box appearing
+      watch() {
+        const seen = new WeakSet(); let t = null;
+        const MO = win.MutationObserver;
+        const later = () => { clearTimeout(t); t = setTimeout(() => { attach(); ctl.scan(); }, 150); };
+        const observer = new MO(later);
+        const attach = () => {
+          [doc.body, ...shadowRoots(doc)].forEach(r => { if (r && !seen.has(r)) { seen.add(r); observer.observe(r, { childList: true, subtree: true }); } });
+        };
+        attach(); ctl.scan();
+        ctl.stop = () => { clearTimeout(t); observer.disconnect(); };
+      },
+
+      destroy() { enabled = false; if (ctl.stop) ctl.stop(); uis.forEach(ui => ui.host.remove()); uis.clear(); }
     };
     return ctl;
   }
@@ -161,9 +193,7 @@
       if (msg.action === 'noteFillPing') { sendResponse({ ok: true, version: VERSION }); return; }
       if (msg.action === 'noteFillDraft') { ctl.setEnabled(msg.enabled !== false); ctl.setDraft(msg.text, msg.format); sendResponse({ ok: true }); return; }
     });
-    let t = null;
-    new win.MutationObserver(() => { clearTimeout(t); t = setTimeout(() => ctl.scan(), 150); }).observe(win.document.body, { childList: true, subtree: true });
-    ctl.scan();
+    ctl.watch();
   }
 
   return { VERSION, create, start, findNoteBox, limitOf, fillBox };

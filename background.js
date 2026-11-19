@@ -75,7 +75,7 @@ async function ensureContentScript(tabId) {
 
 // "Fill with my draft": hands the current draft to a small helper in the LinkedIn tab (see utils/notefill.js).
 // The helper only types into a note box when YOU press its button; it never clicks anything. The text goes nowhere else.
-const NOTEFILL_VERSION = 'notefill-1';   // keep in sync with utils/notefill.js
+const NOTEFILL_VERSION = 'notefill-2';   // keep in sync with utils/notefill.js
 async function handleArmNoteFill({ tabId, text, format, enabled }, sendResponse) {
   try {
     const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId) : null;
