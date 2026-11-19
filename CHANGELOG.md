@@ -5,6 +5,10 @@ Base: tag `base-v3.1.0`. Each entry: **what / why / tradeoff / how to demo**. Th
 ## Unreleased
 _Slices land below as they ship._
 
+### Structure 1 — one list of draft rules (`utils/rules.js`)
+
+**What** The cloud prompt and the on-device prompt were two hand-written texts and had already drifted (the referral ask was in one, sign-off wording had to be fixed twice). Both are now built from one rule list: `Rules.systemPrompt('cloud' | 'ondevice')`, and `Rules.ask(purpose, goal)` gives the closing-question instruction. **Why** one place to change a rule; drift is caught by a test. **Tradeoff** the cloud prompt text is unchanged; the on-device prompt is the same short wording as before. **Demo** `node test/run.js`: the four `rules:` tests check sign-offs, the ask, and that protective rules (facts, voice, plain text, untrusted data) can never be cloud-only.
+
 ### Slice 1 — Trustworthy scraping (headline #3 foundation) · v3.2.0
 
 **What**

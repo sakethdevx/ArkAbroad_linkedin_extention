@@ -293,5 +293,5 @@
     ];
   }
 
-  return { LIMITS, compose, checklist, mentionsFor, wordClip, CLICHES };
+  return { LIMITS, SIGNOFF, compose, checklist, mentionsFor, wordClip, CLICHES };
 });
