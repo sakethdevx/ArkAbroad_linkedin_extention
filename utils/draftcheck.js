@@ -59,7 +59,7 @@
   // ── Groundedness: small models invent details. Every capitalised word (not at the start of a sentence) and every
   // number in a draft must already appear in the facts we gave the model, or the draft is rejected.
   const GREETING_OK = new Set(['hi', 'hello', 'hey', 'dear', 'thanks', 'thank', 'best', 'regards', 'cheers', 'sincerely', 'warmly', 'would', 'could', 'i', 'im', 'ive', 'id', 'linkedin']);
-  const norm = (s) => String(s || '').normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase();
+  const norm = (s) => String(s || '').normalize('NFKD').replace(/\p{M}+/gu, '').replace(/['’]/g, '').toLowerCase();
 
   function ungrounded(text, facts) {
     const hay = ' ' + norm(facts).replace(/[^\p{L}\p{N}]+/gu, ' ') + ' ';
@@ -89,7 +89,7 @@
 
   // opts: { format, maxChars, firstName, senderName, allowedText, facts, requireGrounded }
   function finishDrafts(rawList, opts = {}) {
-    const { format = 'note', maxChars = 200, firstName = '', senderName = '', allowedText = '', facts = '', requireGrounded = false } = opts;
+    const { format = 'note', maxChars = 200, firstName = '', senderName = '', allowedText = '', facts = '', requireGrounded = false, requireAsk = null } = opts;
     const nameWords = String(senderName || '').toLowerCase().split(/\s+/).filter(Boolean);
     const ctx = { format, nameWords, senderName, firstName, maxChars };
     const good = [], bad = [];
@@ -102,6 +102,7 @@
       const checked = Safety.validateOutput(t, { maxChars, allowedText });
       const problems = checked.problems.slice();
       if (requireGrounded && checked.ok) problems.push(...groundedness(checked.text, facts));
+      if (requireAsk && checked.ok && !requireAsk.re.test(checked.text)) problems.push(requireAsk.problem);
       if (!problems.length) good.push(checked.text); else bad.push({ draft: String(v).slice(0, 700), problems });
     }
     return { good, bad };
