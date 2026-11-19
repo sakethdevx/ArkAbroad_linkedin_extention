@@ -44,4 +44,12 @@ module.exports = (test) => {
     assert.strictEqual(doc.documentElement.lang, 'en');
     assert.ok(doc.querySelector('dialog#consent-dialog[aria-labelledby]'));
   });
+
+  test('layout: nothing may scroll the shell (no element.scrollIntoView; body pinned to the viewport)', () => {
+    const js = fs.readFileSync(path.join(__dirname, '../popup.js'), 'utf8').replace(/\/\/.*$/gm, '');
+    assert.ok(!/\.scrollIntoView\(/.test(js.replace(/scrollIntoViewSoft/g, '')), 'use scrollIntoViewSoft (scrolls .tab-content only)');
+    const css = fs.readFileSync(path.join(__dirname, '../popup.css'), 'utf8');
+    assert.match(css, /body\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*0/);
+    assert.match(css, /html\s*\{[^}]*overflow:\s*hidden/);
+  });
 };

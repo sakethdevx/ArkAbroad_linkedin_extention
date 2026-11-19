@@ -1038,3 +1038,14 @@ dialog#consent-dialog::backdrop { background: rgba(26, 23, 18, 0.45); }
 
 .btn-link.muted { color: var(--text-2); }
 #post-note { margin-bottom: 8px; }
+
+/* The shell never scrolls; only .tab-content does. `clip` (unlike `hidden`) cannot be scrolled programmatically,
+   so focus changes or scrollIntoView can't slide the header and tab bar out of view. */
+html, body, .app { overflow: clip; }
+.app-header, .privacy-strip, .tab-nav { flex-shrink: 0; }
+.tab-content { overscroll-behavior: contain; scroll-padding-top: 8px; }
+
+/* Fix the body to the viewport: the document is then never taller than the window, so the viewport itself has nothing to
+   scroll (overflow on <html> is propagated to the viewport and stays programmatically scrollable). Only .tab-content scrolls. */
+html { height: 100%; overflow: hidden; }
+body { position: fixed; inset: 0; width: 100%; height: 100%; margin: 0; }

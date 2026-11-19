@@ -132,3 +132,13 @@ _Slices land below as they ship._
 **Fix** Each post card is now read as *lines* (Chrome `innerText`, with a block-level fallback) and `extractPostText` drops the card chrome: author name, "• You", the author's headline (also when truncated), "4mo • Edited", reaction/impression counts, "View analytics", "…more", leading emoji. A headline-looking line ("A | B | C") is never used, and the composer refuses to quote one even if it arrives. Result for the screenshots: *"Selected for Amazon ML Summer School 2026!"* and *"Proud to have contributed behind the scenes as a Volunteer while learning and growing as a Participant at Microsoft"*.
 **Tests** The exact strings from the screenshots, a DOM fixture with an inline link, and negative cases (header only, counts only, pipe-headline).
 **Tradeoff** If a post card has only an image/document and no text, there is no quote and the draft falls back to the role/generic opener (better than quoting something wrong). Reposts are still ambiguous, hence the existing "check it's their own post" note.
+
+### Fix: header and tab bar disappearing after a draft is generated (side panel)
+**What happened** After a draft appeared, the title bar and CURRENT / RECENT / SETTINGS tabs slid off the top and couldn't be reached. I reproduced it in real Chrome: the **`<html>` element itself was scrolled (110 px)**, putting the header at y = −110 and the tab bar off-screen. Cause: after drawing a draft I called `element.scrollIntoView()` to bring it into view, which scrolls *every* ancestor that can scroll, including ones styled `overflow: hidden`. (Same class of problem: the "What's sent?" and résumé-tip links used scrolling/focus the same way.)
+
+**Fix (belt and braces)**
+- **No more `scrollIntoView`.** A helper scrolls only the panel's own content area (`.tab-content`).
+- **The shell can't scroll at all:** `html` is `overflow: hidden` and the body is pinned to the viewport (`position: fixed; inset: 0`), so there is nothing for the page to scroll. `overflow: clip` alone wasn't enough (on `<html>` it's treated as `hidden` and stays scrollable by script), which I found by testing.
+- A scroll listener resets the shell to 0 as a last safety net; header, privacy strip and tabs never shrink.
+
+**Verified in real Chrome** at 420 / 650 / 900 px panel heights: after a draft, header y = 0 and tab bar visible. I also forced the old `scrollIntoView` call as a stress test, and the header still doesn't move. Settings still scrolls to the bottom. A test now fails if `.scrollIntoView(` is reintroduced or the body is unpinned.

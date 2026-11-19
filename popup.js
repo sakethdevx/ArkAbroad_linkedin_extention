@@ -21,6 +21,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('resume-tip-go').addEventListener('click', () => { switchTab('settings'); document.getElementById('file-upload-area').focus(); });
   document.getElementById('resume-tip-dismiss').addEventListener('click', async () => { await storageSet({ resumeTipDismissed: true }); refreshResumeTip(); });
   wireConsentDialog();
+  [document.documentElement, document.body].forEach(el => el.addEventListener('scroll', pinShell, { passive: true }));
+  window.addEventListener('scroll', pinShell, { passive: true });
   await checkCurrentPage();
   await loadSettings();
   await loadPrefs();
@@ -570,9 +572,19 @@ function renderDrafts(resp) {
   if (wasHidden) scrollIntoViewSoft(document.getElementById('message-section'));   // the draft is the point: bring it into view
 }
 
+// Scroll ONLY the panel's content area. Never element.scrollIntoView(): it also scrolls ancestors (even overflow:hidden
+// ones, including <html>), which slid the header and tab bar off-screen with no way back.
 function scrollIntoViewSoft(el) {
+  const box = el && el.closest('.tab-content');
+  if (!box) return;
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  try { el.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' }); } catch (_) { /* older engines */ }
+  const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 8;
+  try { box.scrollTo({ top: Math.max(0, top), behavior: reduce ? 'auto' : 'smooth' }); } catch (_) { box.scrollTop = Math.max(0, top); }
+}
+
+// Safety net: if anything ever scrolls the shell, put it back so the header and tabs are always reachable.
+function pinShell() {
+  [document.documentElement, document.body, document.querySelector('.app')].forEach(el => { if (el && el.scrollTop) el.scrollTop = 0; });
 }
 
 function buildDraftTabs() {
@@ -883,8 +895,7 @@ async function showPrivacyDetails() {
     if ((userApiKey || '').trim()) { await showConsentDialog(await requestData(currentProfile), true); return; }
   }
   switchTab('settings');
-  document.querySelector('.settings-note').scrollIntoView({ block: 'center' });
-  document.querySelector('.settings-note').focus?.();
+  scrollIntoViewSoft(document.querySelector('.settings-note'));
 }
 
 async function activeTabId() {
