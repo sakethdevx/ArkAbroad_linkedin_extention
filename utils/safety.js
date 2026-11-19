@@ -77,22 +77,29 @@
     };
   }
 
+  // What the AI may learn about the sender: a short, flat summary. The full lists (every project, every role) stay on the
+  // device; the single most relevant item travels separately as the "spotlight".
   function sanitizeSenderForPrompt(s) {
     if (!s) return null;
     const arr = (a, n, m) => (Array.isArray(a) ? a : []).slice(0, n).map(x => sanitizeText(x, m)).filter(Boolean);
-    const rows = (a, n, fields) => (Array.isArray(a) ? a : []).slice(0, n).map(o => {
-      const out = {}; Object.keys(fields).forEach(k => { out[k] = sanitizeText(o && o[k], fields[k]); }); return out;
-    }).filter(o => Object.values(o).some(Boolean));
     const out = { intro: sanitizeText(s.intro, 120), schools: arr(s.schools, 2, 100), employers: arr(s.employers, 3, 80), skills: arr(s.skills, 8, 40), city: sanitizeText(s.city, 60) };
-    // richer fields exist only after an AI resume read; kept compact so the prompt stays small
-    const education = rows(s.education, 2, { school: 100, degree: 80, field: 80, years: 24 });
-    const experience = rows(s.experience, 3, { title: 80, company: 80, years: 24, detail: 160 });
-    const projects = rows(s.projects, 2, { name: 80, summary: 160 });
-    if (education.length) out.education = education;
-    if (experience.length) out.experience = experience;
-    if (projects.length) out.projects = projects;
-    if (s.summary) out.summary = sanitizeText(s.summary, 300);
+    if (s.summary) out.summary = sanitizeText(s.summary, 200);
+    const goal = sanitizeText(s.goal, 100);
+    if (goal) out.goal = goal;
     return out;
+  }
+
+  // The one item chosen by spotlight.js. It came from the user's own profile, but it is still capped and screened.
+  function sanitizeSpotlight(sp) {
+    if (!sp || typeof sp !== 'object') return null;
+    const text = sanitizeText(sp.text, 260);
+    if (!text || looksInjected(text)) return null;
+    return {
+      type: sp.type === 'experience' ? 'experience' : 'project',
+      title: sanitizeText(sp.title, 80),
+      text,
+      matches: (Array.isArray(sp.matches) ? sp.matches : []).slice(0, 4).map(m => sanitizeText(m, 40)).filter(m => m && !looksInjected(m))
+    };
   }
 
   // ── Case clean-up: resumes often shout (JANGALA SAKETH) ──────────────────────
@@ -202,5 +209,5 @@
     return { ok: problems.length === 0, text: t, problems };
   }
 
-  return { normalizeName, normalizeLabel, sanitizeText, sanitizeMultiline, sanitizeSenderProfile, groundedIn, sanitizeProfileForPrompt, sanitizeSenderForPrompt, detectInjection, validateOutput, hadInvisible, INVISIBLE };
+  return { sanitizeSpotlight, normalizeName, normalizeLabel, sanitizeText, sanitizeMultiline, sanitizeSenderProfile, groundedIn, sanitizeProfileForPrompt, sanitizeSenderForPrompt, detectInjection, validateOutput, hadInvisible, INVISIBLE };
 });

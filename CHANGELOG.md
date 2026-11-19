@@ -289,3 +289,9 @@ Idea taken from an LLM brainstorm, scoped to what fits this product: instead of 
 - Each draft carries `because`: the hook that opened it and the credential used (with the matched terms). The UI will use this for a one-line explanation.
 - **Career goal**: a typed goal ("AI/ML internships" or "I'm looking for AI/ML internships.") shapes Job asks ("I'm looking for AI/ML internships. Could I ask you two quick questions?"). A leading "looking for" is stripped so it is never doubled, and a paragraph-length goal is ignored.
 **Tests** Spotlight in note/message, `because`, and a fuzz over every purpose × tone × format × seed: budgets hold, no "currently/recent", no "connect" ask in messages.
+
+## Slice C: the AI gets less, and better-chosen, resume data (step 3 of 4)
+- Before, AI Mode received the sender's education, experience and projects lists. Now it receives a **short flat summary** (intro, one-line summary, city, schools, employers, skills, goal) plus **one `sender_spotlight`**: the single most relevant project/role, picked on your device from your own profile. Every other project and role stays on the device (tested with a "SecretProj" that must never appear in the request). This is smaller, more private (the brainstorm's "don't send the whole resume every visit"), and the model can no longer choose an unrelated project.
+- The prompt: use the spotlight (and only it) as the credential, keep its facts exactly; mention the goal in Job/Referral asks; for Collaboration, at most one clearly-hedged "I wonder if…" idea at the intersection of your skills and theirs.
+- `Safety.sanitizeSpotlight`: type whitelist, caps, and an instruction-injection screen. A spotlight with instruction-like text is dropped and the payload carries `null`.
+**Tests** Payload shape (no lists, no extra keys), injection drop, spotlight reaching the free composer; 118 without jsdom.

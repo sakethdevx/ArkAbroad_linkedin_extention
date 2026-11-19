@@ -173,13 +173,13 @@
     return out.sort((a, b) => b.strength - a.strength);
   }
 
-  // Compact, contact-free summary of the sender for prompts.
+  // Compact, contact-free summary of the sender for prompts (the long lists stay on the device).
   function senderSummary(sender) {
     if (!sender) return null;
     const pick = (a, n) => (Array.isArray(a) ? a.slice(0, n) : []);
     const out = { intro: sender.intro || '', schools: pick(sender.schools, 2), employers: pick(sender.employers, 3), skills: pick(sender.skills, 8), city: sender.city || '' };
-    ['education', 'experience', 'projects'].forEach(k => { if (Array.isArray(sender[k]) && sender[k].length) out[k] = sender[k].slice(0, k === 'experience' ? 3 : 2); });
     if (sender.summary) out.summary = sender.summary;
+    if (sender.goal) out.goal = sender.goal;
     return out;
   }
 

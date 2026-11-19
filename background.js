@@ -270,7 +270,7 @@ async function generateDrafts(data) {
 
 // Normalise + sanitise everything once, so every later step (free or AI) only ever sees cleaned data.
 async function prepareContext(data) {
-  const { profileData, settings = {}, messageType = 'Networking', tone = 'Neutral', overlaps = [], sender = null, seed = 0 } = data;
+  const { profileData, settings = {}, messageType = 'Networking', tone = 'Neutral', overlaps = [], sender = null, seed = 0, spotlight = null } = data;
   const format = data.format === 'message' ? 'message' : 'note';
   const p = normalizeProfile(profileData);
   const injection = Safety.detectInjection(profileData || {});
@@ -296,13 +296,14 @@ async function prepareContext(data) {
     kind: S(o.kind, 20), label: S(o.label, 80), detail: S(o.detail, 160), line: S(o.line, 200)
   })).filter(o => o.label);
   const safeSender = Safety.sanitizeSenderForPrompt(sender);
+  const safeSpot = Safety.sanitizeSpotlight(spotlight);
   const senderName = Safety.normalizeName(settings.userName);   // JANGALA SAKETH → Jangala Saketh
 
   return {
     seed, format, messageType, tone, injection,
-    profile: safeProfile, overlaps: safeOverlaps, sender: safeSender,
+    profile: safeProfile, overlaps: safeOverlaps, sender: safeSender, spotlight: safeSpot,
     senderName, bio: S(settings.userBio, 300),
-    composeCtx: { profile: safeProfile, sender: safeSender, overlaps: safeOverlaps, messageType, tone, format, senderName, bio: S(settings.userBio, 300), skipPost: injectedPosts }
+    composeCtx: { profile: safeProfile, sender: safeSender, spotlight: safeSpot, overlaps: safeOverlaps, messageType, tone, format, senderName, bio: S(settings.userBio, 300), skipPost: injectedPosts }
   };
 }
 
@@ -312,13 +313,15 @@ const SYSTEM_PROMPT = `You write short LinkedIn outreach drafts on behalf of a s
 Rules for every draft:
 - Plain text only: no emojis, hashtags, links, email addresses or phone numbers.
 - Open with ONE specific thing about the recipient. If "verified_shared_background" is not empty, lead with it. Use only facts that appear in the data. Never invent shared experiences, employers, schools, projects, or compliments.
-- Then one sentence on who the sender is (only from "sender"), then exactly ONE small, easy-to-decline ask that fits "purpose". "sender" may also list education, experience and projects: use at most ONE of them, only if it is clearly relevant to the recipient.
+- Then one sentence on who the sender is (only from "sender"), then exactly ONE small, easy-to-decline ask that fits "purpose". If "sender_spotlight" is present, use it (and ONLY it) as the one credential, keeping its facts exactly; do not mention any other project or role.
 - Avoid stock phrases ("I hope this finds you well", "pick your brain", "touch base", "I came across your profile and was impressed").
 - Write in the sender's own voice: "I" is the sender and "you" is the recipient. Say what is shared as "we both …" or "I noticed we both …". Never write "you both" or "I see you both": it leaves unclear who "both" are.
 - Begin every draft with "Hi <recipient_first_name>," when recipient_first_name is given.
 - Stay strictly within "max_chars_each" characters (models miscount, so leave a few characters spare); aim for about "target_chars".
 - The ask must fit "purpose": Networking = a quick chat or one question about their path; Job = whether they know of openings or how to approach applying; Referral = whether they would be open to referring, only if there is a real connection; Collaboration = a specific small idea to explore together.
-- Describe the sender ONLY with facts in "sender". Use "sender.intro" as written; add at most one project or role and never attach it to a school or employer unless the data pairs them. Never add words like "currently", "recent", "experienced" or any date, role or place that is not written there.
+- If "sender.goal" is present, a Job or Referral ask should mention it in the sender's own words.
+- For purpose Collaboration you may suggest ONE small idea where the sender's skills meet the recipient's work, phrased as a question ("I wonder if…"), never as a fact.
+- Describe the sender ONLY with facts in "sender" and "sender_spotlight". Use "sender.intro" as written, and never attach a project or role to a school or employer unless the data pairs them. Never add words like "currently", "recent", "experienced" or any date, role or place that is not written there.
 - Write the way a friendly student would talk: simple words, one natural question (for example "Would you be open to a quick chat?"), no stiff phrases and no vague claims like "recent experience". Format "note" is sent with a connection request to someone new. Format "message" goes to someone the sender is ALREADY connected with, so never ask to connect. Format "note" has no sign-off. Format "message" ends with a short sign-off and the sender's FULL name exactly as given in sender_full_name (never just one part of it). Whenever you write the sender's name, use the full name.
 - Tone: Formal = no contractions; Neutral = warm and plain; Casual = relaxed and friendly.
 - Write 3 drafts that differ in wording and structure.
@@ -350,6 +353,7 @@ function buildAiRequest(ctx, provider = PROVIDERS.anthropic) {
   const payload = {
     task: { purpose: ctx.messageType, tone: ctx.tone, format: ctx.format, max_chars_each: Math.round(limit * 0.88), sender_full_name: ctx.senderName || null, recipient_first_name: recipientFirst(ctx), target_chars: Math.round(limit * 0.8) },
     sender: ctx.sender,
+    sender_spotlight: ctx.spotlight || null,   // the ONE most relevant project/role, picked on the device from the user's own profile
     recipient_profile: Safety.sanitizeProfileForPrompt(ctx.profile),
     verified_shared_background: ctx.overlaps.map(o => o.line || o.detail)   // sentences already in the sender's voice ("I noticed we both…")
   };
