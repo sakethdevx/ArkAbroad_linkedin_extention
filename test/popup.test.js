@@ -11,7 +11,7 @@ module.exports = (test) => {
   const root = path.join(__dirname, '..');
   const PP = require(path.join(root, 'utils/profile_parse.js'));
   const tick = (n = 40) => new Promise(r => setTimeout(r, n));
-  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/approach.js', 'utils/compose.js', 'utils/followup.js', 'utils/resume.js', 'utils/person.js', 'utils/cache.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'panel/followup_ui.js', 'popup.js'];
+  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/approach.js', 'utils/compose.js', 'utils/followup.js', 'utils/resume.js', 'utils/person.js', 'utils/cache.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'panel/followup_ui.js', 'panel/notefill_ui.js', 'popup.js'];
 
   const PRIYA = () => PP.buildProfile({
     name: 'Priya Rao', headline: 'Data Scientist at Globex', location: 'Chennai, India',
@@ -24,7 +24,7 @@ module.exports = (test) => {
     const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8').replace(/<script[^>]*src[^>]*><\/script>/g, '');
     const w = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://x/popup.html' }).window;
     const errors = []; w.addEventListener('error', e => errors.push(e.message));
-    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; const resumeBuilds = []; let about = ''; const copied = []; const opened = []; const composers = []; let composerReply = { success: true, opened: 'message' }; const builds = [], finishes = []; let finishReply = null; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
+    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; const resumeBuilds = []; let about = ''; const copied = []; const opened = []; const composers = []; const armed = []; let composerReply = { success: true, opened: 'message' }; const builds = [], finishes = []; let finishReply = null; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
     let tabUrl = url;
     w.chrome = {
       tabs: { create: (o) => { opened.push(o.url); return Promise.resolve({}); }, query: async () => [{ id: 42, url: tabUrl, active: true }], onActivated: { addListener: f => listeners.push(f) }, onUpdated: { addListener: f => listeners.push(f) } },
@@ -45,6 +45,7 @@ module.exports = (test) => {
           experience: [{ title: 'Software Intern', company: 'Globex', years: '2024', detail: 'Built a forecasting API' }],
           projects: [{ name: 'CampusMap', summary: 'route planner' }], skills: ['Python', 'SQL'], certifications: ['AWS CP'], languages: [],
           schools: ['IIT Madras'], employers: ['Globex'] } }); }
+        if (m.action === 'armNoteFill') { armed.push({ text: m.text, format: m.format, enabled: m.enabled, tabId: m.tabId }); return cb({ success: true }); }
         if (m.action === 'openComposer') { composers.push({ tabId: m.tabId, want: m.want }); return cb(composerReply); }
         if (m.action === 'detectConnection') { detects.push(m.tabId); return cb({ success: true, lines: signals.lines, labels: signals.labels }); }
         if (m.type === 'BUILD_PROMPT') { builds.push(m.payload); return cb({ success: true, system: 'SYS', user: 'USER', schema: { type: 'object' }, limit: 200 }); }
@@ -73,7 +74,7 @@ module.exports = (test) => {
     else w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
     await tick();
     const $ = id => w.document.getElementById(id);
-    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, resumeBuilds, setAbout: a => { about = a; }, copied, opened, composers, setComposer: r => { composerReply = r; }, builds, finishes, setFinish: f => { finishReply = f; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
+    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, resumeBuilds, setAbout: a => { about = a; }, copied, opened, composers, armed, setComposer: r => { composerReply = r; }, builds, finishes, setFinish: f => { finishReply = f; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
   }
 
   const SENDER = { schools: ['IIT Madras'], skills: ['Python'], intro: 'CS student' };
@@ -221,6 +222,29 @@ module.exports = (test) => {
     await t.click('copy-open-btn', 120);
     assert.match(t.$('status-message').textContent, /Add a note/);
     assert.deepStrictEqual(t.copied.length, 4);
+  });
+
+  test('popup: the LinkedIn page helper is handed the CURRENT draft (edits included), cleared for a new person, and switched off by the setting', async () => {
+    const t = await boot({ senderProfile: SENDER });
+    await t.click('scrape-btn', 700);
+    const last = () => t.armed.at(-1);
+    assert.ok(last() && last().text.length > 20 && last().format === 'note' && last().enabled === true && last().tabId === 42, JSON.stringify(last()));
+    t.$('generated-message').value = 'My edited draft'; t.$('generated-message').dispatchEvent(new t.w.Event('input')); await tick(600);
+    assert.strictEqual(last().text, 'My edited draft');
+    const n = t.armed.length;
+    t.$('generated-message').dispatchEvent(new t.w.Event('input')); t.$('generated-message').dispatchEvent(new t.w.Event('input')); await tick(600);
+    assert.strictEqual(t.armed.length, n + 1, 'rapid edits are sent once, not per keystroke');
+    t.setUrl('https://www.linkedin.com/in/someone-else/'); t.listeners.forEach(f => f()); await tick(700);
+    assert.strictEqual(last().text, '', 'a new person: the page forgets the old draft');
+    // setting off: nothing is handed over, and the open page is told to switch the helper off
+    const off = await boot({ senderProfile: SENDER, noteFill: false });
+    await off.click('scrape-btn', 700);
+    assert.ok(off.armed.length === 0 || off.armed.every(a => a.enabled === false && a.text === ''), JSON.stringify(off.armed));
+    assert.strictEqual(off.$('notefill-on').checked, false);
+    assert.strictEqual(off.$('page-chip').textContent, 'Off');
+    off.$('notefill-on').checked = true; off.$('notefill-on').dispatchEvent(new off.w.Event('change')); await tick(700);
+    assert.strictEqual(off.store.noteFill, true);
+    assert.ok(off.armed.at(-1).enabled === true && off.armed.at(-1).text.length > 20);
   });
 
   test('popup: switching Free ⇄ AI: AI asks once (names provider, host, model), the choice is remembered, and nothing asks per draft', async () => {

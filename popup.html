@@ -356,6 +356,14 @@
           </div>
         </details>
 
+        <details class="set-card" id="page-card">
+          <summary><span class="set-title">On the LinkedIn page</span><span class="set-chip" id="page-chip">On</span></summary>
+          <div class="set-body">
+            <div class="switch-row"><input type="checkbox" id="notefill-on" checked /> <label for="notefill-on">Show “Fill with my draft” in LinkedIn’s note box</label></div>
+            <p class="field-hint">When LinkedIn asks “Add a note to your invitation”, a small button appears beside the box. Pressing it types your draft there. Outreach AI never presses Send, and never clicks anything on LinkedIn. Your draft stays on this computer.</p>
+          </div>
+        </details>
+
         <details class="set-card settings-note" id="privacy-note">
           <summary><span class="set-title">What leaves your device</span></summary>
           <div class="set-body">
@@ -363,7 +371,7 @@
               <li><b>Free Mode</b>: nothing. Profiles are read, matched and drafted on this device.</li>
               <li><b>AI Mode</b> (your own key): a short, cleaned-up summary of the profile and your details, and your resume text when you upload one, go to the provider you chose (<b>api.anthropic.com</b> or <b>api.groq.com</b>). You say yes once when you turn AI on, and “What’s sent?” always shows the exact data. Your key goes only to that provider.</li>
               <li><b>Never sent</b>: your resume PDF, emails, phone numbers, or anything else on the page.</li>
-              <li><b>Never automatic</b>: nothing is clicked, typed or sent on LinkedIn for you.</li>
+              <li><b>Never automatic</b>: nothing is ever sent or clicked on LinkedIn for you. The only thing typed for you is your draft, into LinkedIn’s note box, and only when you press “Fill with my draft”. You press Send.</li>
             </ul>
           </div>
         </details>
@@ -414,6 +422,7 @@
   <script src="panel/consent.js"></script>
   <script src="panel/drafts.js"></script>
   <script src="panel/followup_ui.js"></script>
+  <script src="panel/notefill_ui.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

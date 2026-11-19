@@ -38,3 +38,5 @@ Show (on a computer that qualifies): Settings → On-device AI → Turn on (one-
 2. **Best next move.** One line above the drafts, rule-based (connected → just message; recent post → warm up first).
 3. **Follow-up Coach.** Mark a message Sent; at day 4 it shows "Follow-up 1 of 2 is due", with an editable draft. Never more than two; "They replied" stops it.
 4. **Copy & open.** Copies the draft and opens LinkedIn's message or note box. You press Send. It refuses to click anything else.
+
+5. **On the page itself.** Connect → Add a note → LinkedIn's own box now has a **Fill with my draft** button (from the extension). It types the draft; it never presses Send. Show the Settings switch and the "What leaves your device" line.

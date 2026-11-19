@@ -46,6 +46,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return;   // only our own extension pages
 
   if (message.action === 'detectConnection') { handleDetectConnection(message.tabId, sendResponse); return true; }
+  if (message.action === 'armNoteFill') { handleArmNoteFill(message, sendResponse); return true; }
   if (message.action === 'openComposer') { handleOpenComposer(message.tabId, message.want, sendResponse); return true; }
   if (message.action === 'scrapeProfile')  { handleScrapeProfile(message.tabId, sendResponse); return true; }
   if (message.action === 'generateMessage') { handleQuickGenerate(message.data, sendResponse); return true; }
@@ -70,6 +71,24 @@ async function ensureContentScript(tabId) {
     if (pong?.ok && pong.version === CONTENT_VERSION) return;   // stale script from before an update → inject the new one
   } catch (_) { /* no receiver yet → inject below */ }
   await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_FILES });
+}
+
+// "Fill with my draft": hands the current draft to a small helper in the LinkedIn tab (see utils/notefill.js).
+// The helper only types into a note box when YOU press its button; it never clicks anything. The text goes nowhere else.
+const NOTEFILL_VERSION = 'notefill-1';   // keep in sync with utils/notefill.js
+async function handleArmNoteFill({ tabId, text, format, enabled }, sendResponse) {
+  try {
+    const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId) : null;
+    if (!tab || !/^https:\/\/www\.linkedin\.com\/(in|messaging)\//.test(tab.url || '')) { sendResponse({ success: false, reason: 'not-linkedin' }); return; }
+    let ready = false;
+    try { const pong = await chrome.tabs.sendMessage(tabId, { action: 'noteFillPing' }); ready = !!(pong && pong.ok && pong.version === NOTEFILL_VERSION); } catch (_) { /* not injected yet */ }
+    if (!ready) {
+      if (enabled === false || !String(text || '').trim()) { sendResponse({ success: true, idle: true }); return; }   // nothing to hand over: do not inject for nothing
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['utils/notefill.js'] });
+    }
+    await chrome.tabs.sendMessage(tabId, { action: 'noteFillDraft', text: String(text || '').slice(0, 2000), format: format === 'message' ? 'message' : 'note', enabled: enabled !== false });
+    sendResponse({ success: true });
+  } catch (_) { sendResponse({ success: false, reason: 'failed' }); }
 }
 
 // Reads ONLY the top card's connection signals (the 1st/2nd/3rd badge and button labels) so the panel can pick

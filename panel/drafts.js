@@ -174,6 +174,7 @@ function onDraftInput() {
 }
 
 function updateDraftMeta() {
+  pushDraftToPage();   // keep the LinkedIn page's "Fill with my draft" button in step with what you see
   const text  = currentDraftText();
   const limit = Compose.LIMITS[currentFormat];
   const over  = text.length > limit;
@@ -264,6 +265,7 @@ function renderDraftNotes(resp) {
 function hideMessage() {
   document.getElementById('message-section').classList.add('hidden');
   drafts = [];
+  pushDraftToPage();   // no draft any more: tell the page
 }
 
 async function saveToHistory() {
@@ -352,9 +354,9 @@ async function handleCopyAndOpen() {
   });
   const box = want === 'message' ? 'message box' : 'note box';
   if (res && res.success && res.opened === 'connect') {
-    showCurrentStatus('Copied. LinkedIn’s connect box is open: click “Add a note”, paste, and press Send yourself.', 'success');
+    showCurrentStatus('Copied. LinkedIn’s connect box is open: click “Add a note”, then “Fill with my draft” (or paste), and press Send yourself.', 'success');
   } else if (res && res.success) {
-    showCurrentStatus(`Copied. LinkedIn’s ${box} is open: paste (Ctrl/Cmd+V) and press Send yourself.`, 'success');
+    showCurrentStatus(`Copied. LinkedIn’s ${box} is open: press “Fill with my draft” (or paste with Ctrl/Cmd+V), then press Send yourself.`, 'success');
   } else if (res && res.reason === 'not-profile') {
     showCurrentStatus(`Copied. Open the person’s LinkedIn profile, click ${want === 'message' ? '“Message”' : '“Connect” → “Add a note”'} and paste.`);
   } else {

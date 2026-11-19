@@ -101,13 +101,16 @@
   function create(win) {
     const doc = win.document;
     let draft = { text: '', format: 'note' };
+    let enabled = true;
     const uis = new Map();   // box element → ui
 
     const ctl = {
       setDraft(text, format) { draft = { text: String(text || '').trim(), format: format === 'message' ? 'message' : 'note' }; ctl.scan(); },
       getDraft: () => ({ ...draft }),
+      setEnabled(on) { enabled = !!on; if (!enabled) ctl.destroy(); else ctl.scan(); },
 
       scan() {
+        if (!enabled) return;
         for (const [el, ui] of uis) if (!el.isConnected) { ui.host.remove(); uis.delete(el); }   // the box went away
         const box = findNoteBox(doc);
         if (!box) return;
@@ -156,7 +159,7 @@
     win.chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!msg) return;
       if (msg.action === 'noteFillPing') { sendResponse({ ok: true, version: VERSION }); return; }
-      if (msg.action === 'noteFillDraft') { ctl.setDraft(msg.text, msg.format); sendResponse({ ok: true }); return; }
+      if (msg.action === 'noteFillDraft') { ctl.setEnabled(msg.enabled !== false); ctl.setDraft(msg.text, msg.format); sendResponse({ ok: true }); return; }
     });
     let t = null;
     new win.MutationObserver(() => { clearTimeout(t); t = setTimeout(() => ctl.scan(), 150); }).observe(win.document.body, { childList: true, subtree: true });
