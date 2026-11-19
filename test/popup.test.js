@@ -11,7 +11,7 @@ module.exports = (test) => {
   const root = path.join(__dirname, '..');
   const PP = require(path.join(root, 'utils/profile_parse.js'));
   const tick = (n = 40) => new Promise(r => setTimeout(r, n));
-  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/compose.js', 'utils/resume.js', 'utils/cache.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'popup.js'];
+  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/compose.js', 'utils/resume.js', 'utils/person.js', 'utils/cache.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'popup.js'];
 
   const PRIYA = () => PP.buildProfile({
     name: 'Priya Rao', headline: 'Data Scientist at Globex', location: 'Chennai, India',
@@ -24,10 +24,10 @@ module.exports = (test) => {
     const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8').replace(/<script[^>]*src[^>]*><\/script>/g, '');
     const w = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://x/popup.html' }).window;
     const errors = []; w.addEventListener('error', e => errors.push(e.message));
-    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; const resumeBuilds = []; let about = ''; const copied = []; const builds = [], finishes = []; let finishReply = null; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
+    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; const resumeBuilds = []; let about = ''; const copied = []; const opened = []; const builds = [], finishes = []; let finishReply = null; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
     let tabUrl = url;
     w.chrome = {
-      tabs: { query: async () => [{ id: 42, url: tabUrl, active: true }], onActivated: { addListener: f => listeners.push(f) }, onUpdated: { addListener: f => listeners.push(f) } },
+      tabs: { create: (o) => { opened.push(o.url); return Promise.resolve({}); }, query: async () => [{ id: 42, url: tabUrl, active: true }], onActivated: { addListener: f => listeners.push(f) }, onUpdated: { addListener: f => listeners.push(f) } },
       storage: { local: {
         get: (k, cb) => cb({ ...store }),
         set: (o, cb) => { Object.assign(store, o); cb && cb(); },
@@ -72,7 +72,7 @@ module.exports = (test) => {
     else w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
     await tick();
     const $ = id => w.document.getElementById(id);
-    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, resumeBuilds, setAbout: a => { about = a; }, copied, builds, finishes, setFinish: f => { finishReply = f; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
+    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, resumeBuilds, setAbout: a => { about = a; }, copied, opened, builds, finishes, setFinish: f => { finishReply = f; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
   }
 
   const SENDER = { schools: ['IIT Madras'], skills: ['Python'], intro: 'CS student' };
@@ -128,6 +128,27 @@ module.exports = (test) => {
     t.w.document.querySelector('.tab-btn[data-tab="current"]').click();
     await t.click('copy-btn', 60);                                   // re-copy must not un-send
     assert.strictEqual(t.store.recentContacts[0].sent, true);
+  });
+
+  test('popup: Recent remembers the person by their LinkedIn handle and a click opens their profile; pasted entries have no link', async () => {
+    const t = await boot({ senderProfile: SENDER, recentContacts: [
+      { profileUrl: 'https://www.linkedin.com/in/Old-Entry/?utm=x', name: 'Old Entry', message: 'hi', timestamp: 1 },   // saved before handles existed
+      { profileUrl: '', name: 'Pasted Person', message: 'hello', timestamp: 2 },
+      { profileUrl: 'https://evil.example/in/x', handle: '../x', name: 'Bad', message: 'x', timestamp: 3 }] }, { url: 'https://www.linkedin.com/feed/' });
+    t.w.document.querySelector('.tab-btn[data-tab="recent"]').click(); await tick(60);
+    const cards = [...t.w.document.querySelectorAll('.contact-card')];
+    assert.strictEqual(cards.length, 3);
+    cards[0].querySelector('.contact-link').click();
+    assert.deepStrictEqual(t.opened, ['https://www.linkedin.com/in/old-entry/']);
+    assert.ok(!cards[1].querySelector('.contact-link') && /pasted text/.test(cards[1].textContent));
+    assert.ok(!cards[2].querySelector('.contact-link'), 'a stored value that is not a clean handle never becomes a link');
+    // saving the same person again (different address form) updates ONE entry and stores the handle
+    const t2 = await boot({ senderProfile: SENDER });
+    await t2.click('scrape-btn'); await t2.click('copy-btn', 60);
+    assert.strictEqual(t2.store.recentContacts[0].handle, 'priya');
+    t2.store.recentContacts[0].profileUrl = 'https://www.linkedin.com/in/priya/?trk=a';
+    await t2.click('copy-btn', 60);
+    assert.strictEqual(t2.store.recentContacts.length, 1);
   });
 
   test('popup: switching Free ⇄ AI: AI asks once (names provider, host, model), the choice is remembered, and nothing asks per draft', async () => {

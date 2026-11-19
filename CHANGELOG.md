@@ -5,6 +5,10 @@ Base: tag `base-v3.1.0`. Each entry: **what / why / tradeoff / how to demo**. Th
 ## Unreleased
 _Slices land below as they ship._
 
+### Feature 1 — Recent remembers the person and opens their profile
+
+**What** Each Recent entry now stores the person's LinkedIn **handle** (the `/in/<handle>` part of the address, new `utils/person.js`), not just a name. Clicking the name opens their profile in a new tab (`chrome.tabs.create`, no new permission). The same person saved twice (different query string, trailing slash, language prefix or country subdomain) is one entry. Entries saved earlier are upgraded when read. Entries made from pasted text have no profile, so they say so instead of showing a dead link. **Safety** a link is built only from a handle that passes a strict check, always on `www.linkedin.com/in/`; a stored value that is not a clean handle never becomes a link. **Demo** Recent tab, click a name. Tests: `person:` (3) and `popup: Recent remembers the person…`.
+
 ### Structure 4 — storage and error hygiene
 
 **What** The panel reached `chrome.storage.local` from five places in four files; it now goes through `storageGet / storageSet / storageRemove` in `popup.js`, and the start-up key list is one constant (`STORED_KEYS`). Three silent `catch (_)` blocks that could hide real problems (connection auto-detect, reading the saved resume file, the host-permission check) now call `debug()`, which logs only when `DEBUG = true` at the top of `popup.js`. **Why** a mistyped key or a swallowed error cost real time earlier in this project. **Demo** new test `structure: panel code reaches chrome.storage only through the helpers`.

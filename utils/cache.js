@@ -6,13 +6,16 @@ const Cache = (() => {
   const KEY = 'recentContacts';
   const MAX = 30;
 
-  // Profiles without a URL (pasted text) must not collapse into one entry.
-  const keyOf = (c) => (c.profileUrl || `${c.name || ''}|${c.headline || ''}`).toLowerCase();
+  // The person's LinkedIn handle identifies them (the same person is one entry whatever the address looks like).
+  // Profiles without one (pasted text) fall back to name + headline so they do not collapse into one entry.
+  const handleFor = (c) => c.handle || (typeof Person !== 'undefined' ? Person.handleOf(c.profileUrl) : null) || null;
+  const keyOf = (c) => { const h = handleFor(c); return h ? 'in:' + h : `${c.name || ''}|${c.headline || ''}`.toLowerCase(); };
+  const upgrade = (c) => { const h = handleFor(c); return h && !c.handle ? { ...c, handle: h } : c; };   // entries saved before handles existed
 
   async function getContacts() {
     return new Promise((resolve) => {
       chrome.storage.local.get([KEY], (result) => {
-        resolve(result[KEY] || []);
+        resolve((result[KEY] || []).map(upgrade));
       });
     });
   }
@@ -20,7 +23,7 @@ const Cache = (() => {
   async function addContact(contact) {
     const contacts = await getContacts();
     const prev = contacts.find(c => keyOf(c) === keyOf(contact));
-    const merged = { ...contact, ...(prev && prev.sent ? { sent: true } : {}) };   // re-saving an edit must not un-send it
+    const merged = { ...upgrade(contact), ...(prev && prev.sent ? { sent: true } : {}) };   // re-saving an edit must not un-send it
     const updated = [merged, ...contacts.filter(c => keyOf(c) !== keyOf(contact))].slice(0, MAX);
     return new Promise((resolve) => {
       chrome.storage.local.set({ [KEY]: updated }, resolve);

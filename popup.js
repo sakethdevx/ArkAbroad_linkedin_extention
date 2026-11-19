@@ -354,13 +354,16 @@ async function renderRecentContacts() {
 function buildContactCard(contact, idx) {
   const card = document.createElement('div');
   card.className = 'contact-card';
+  const link = Person.profileLink(contact.handle || contact.profileUrl);   // null unless it is a real LinkedIn profile handle
   const date    = new Date(contact.timestamp).toLocaleDateString('en-US', { month:'short', day:'numeric' });
   const preview = (contact.message || '').substring(0, 110) + ((contact.message || '').length > 110 ? '…' : '');
   card.innerHTML = `
     <div class="contact-header">
       <div class="contact-info">
-        <div class="contact-name">${esc(contact.name||'Unknown')}</div>
+        ${link ? `<button class="contact-name contact-link" id="open-${idx}" title="Open ${esc(contact.name || 'their')} profile on LinkedIn">${esc(contact.name||'Unknown')} <span aria-hidden="true">↗</span></button>`
+               : `<div class="contact-name">${esc(contact.name||'Unknown')}</div>`}
         <div class="contact-meta">${esc(contact.headline||contact.company||'')}</div>
+        ${link ? '' : '<div class="contact-meta contact-nolink">From pasted text, so there is no profile to open.</div>'}
       </div>
       <div class="contact-date">${esc(date)}</div>
     </div>
@@ -378,6 +381,9 @@ function buildContactCard(contact, idx) {
     card.querySelector(`#full-${idx}`).classList.toggle('hidden', !isHidden);
     card.querySelector(`#expand-${idx}`).textContent = isHidden ? 'Show less' : 'Show full message';
   });
+
+  const openBtn = card.querySelector(`#open-${idx}`);
+  if (openBtn) openBtn.addEventListener('click', () => { chrome.tabs.create({ url: link }); });
 
   const sentBtn = card.querySelector(`#sent-${idx}`);
   sentBtn.addEventListener('click', async () => {
