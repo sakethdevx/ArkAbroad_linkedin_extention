@@ -42,7 +42,7 @@ async function ensureProviderAccess(p) {
   try {
     if (await chrome.permissions.contains({ origins: [p.origin] })) return true;
     return await chrome.permissions.request({ origins: [p.origin] });
-  } catch (_) { return false; }
+  } catch (err) { debug('host permission check', err); return false; }
 }
 
 function wireProviderUi() {

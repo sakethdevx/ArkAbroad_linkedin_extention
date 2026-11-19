@@ -4,6 +4,16 @@
 let currentProfile     = null;
 let isGenerating       = false;
 
+// Storage in one place (the panel's only access to chrome.storage.local), and a quiet debug switch:
+// set DEBUG = true to see errors that are deliberately handled (they never reach the user).
+const DEBUG = false;
+const debug = (where, err) => { if (DEBUG) console.warn('[outreach]', where, err); };
+const storageGet = (keys) => new Promise(r => chrome.storage.local.get(keys, r));
+const storageSet = (o) => new Promise(r => chrome.storage.local.set(o, r));
+const storageRemove = (keys) => new Promise(r => chrome.storage.local.remove(keys, r));
+// every key the panel reads at start-up, named once
+const STORED_KEYS = ['userApiKey', 'userName', 'userBio', 'resumeText', 'resumeFileName', 'resumeBase64', 'senderProfile', 'prefs', 'aiConsent', 'resumeTipDismissed', 'aiProvider', 'mode', 'onDevice'];
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   initTabs();
@@ -90,7 +100,7 @@ async function autoDetectConnection(tab) {
         return;
       }
     }
-  } catch (_) { /* detection is a convenience; the format buttons always work */ }
+  } catch (err) { debug('auto-detect connection', err); /* a convenience; the format buttons always work */ }
   finally { connDetectBusy = false; }
 }
 

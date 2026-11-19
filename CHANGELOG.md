@@ -5,6 +5,10 @@ Base: tag `base-v3.1.0`. Each entry: **what / why / tradeoff / how to demo**. Th
 ## Unreleased
 _Slices land below as they ship._
 
+### Structure 4 — storage and error hygiene
+
+**What** The panel reached `chrome.storage.local` from five places in four files; it now goes through `storageGet / storageSet / storageRemove` in `popup.js`, and the start-up key list is one constant (`STORED_KEYS`). Three silent `catch (_)` blocks that could hide real problems (connection auto-detect, reading the saved resume file, the host-permission check) now call `debug()`, which logs only when `DEBUG = true` at the top of `popup.js`. **Why** a mistyped key or a swallowed error cost real time earlier in this project. **Demo** new test `structure: panel code reaches chrome.storage only through the helpers`.
+
 ### Structure 3 — one draft pipeline for cloud, on-device and free drafts
 
 **What** `background.js` had the same steps written three times (compose free drafts, build the check options, build the "couldn't be used" warning, fill gaps with free drafts). They are now `composeFree`, `checkOptions`, `dropWarning`, `fillWithFree`, used by `aiDrafts`, `generateDrafts` and `FINISH_DRAFTS`. **Behaviour change (intended)** the "a Referral must ask for a referral" check now applies to cloud drafts too (a draft that does not gets the normal single repair pass), not only on-device ones. **Why** one place for the checks; the two paths cannot disagree. **Demo** new test `bg: a Referral request must actually ask for a referral…`.

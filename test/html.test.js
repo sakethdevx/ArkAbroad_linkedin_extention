@@ -52,4 +52,11 @@ module.exports = (test) => {
     assert.match(css, /body\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*0/);
     assert.match(css, /html\s*\{[^}]*overflow:\s*hidden/);
   });
+
+  test('structure: panel code reaches chrome.storage only through the helpers in popup.js', () => {
+    const root = path.join(__dirname, '..');
+    for (const f of fs.readdirSync(path.join(root, 'panel'))) {
+      assert.ok(!/chrome\.storage\.local/.test(fs.readFileSync(path.join(root, 'panel', f), 'utf8')), 'panel/' + f + ' should use storageGet / storageSet / storageRemove');
+    }
+  });
 };

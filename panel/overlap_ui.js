@@ -100,9 +100,7 @@ function onSpotlightToggle() {
 }
 
 function loadStoredSettings() {
-  return new Promise(resolve => {
-    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile','prefs','aiConsent','resumeTipDismissed','aiProvider','mode','onDevice'], resolve);
-  });
+  return storageGet(STORED_KEYS);
 }
 
 function esc(str) {

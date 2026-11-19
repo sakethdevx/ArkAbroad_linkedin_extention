@@ -5,8 +5,6 @@
 
 // ─── Resume: PDF → text → editable profile (all on-device) ─────────────────────
 const toList = (v) => String(v || '').split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
-const storageSet = (o) => new Promise(r => chrome.storage.local.set(o, r));
-const storageGet = (keys) => new Promise(r => chrome.storage.local.get(keys, r));
 
 function setResumeStatus(msg, kind) {
   const el = document.getElementById('resume-status');
@@ -107,7 +105,7 @@ async function ingestResumeText(text, fileName, opts = {}) {
   const prev = (await loadStoredSettings()).senderProfile || {};
   senderProfile = { intro: prev.intro || '', schools: parsed.schools.map(Safety.normalizeLabel), employers: parsed.employers.map(Safety.normalizeLabel), skills: parsed.skills, city: parsed.city || prev.city || '', source: 'device', updatedAt: Date.now() };
   await storageSet({ resumeText: parsed.redactedText, resumeFileName: fileName, senderProfile });
-  await new Promise(r => chrome.storage.local.remove('resumeBase64', r));
+  await storageRemove('resumeBase64');
 
   fillMeCard(senderProfile);
   setResumeFileUi(fileName);
@@ -218,7 +216,7 @@ async function processResumeFile(file) {
 }
 
 async function removeResume() {
-  await new Promise(r => chrome.storage.local.remove(['resumeText', 'resumeFileName', 'senderProfile', 'resumeBase64'], r));
+  await storageRemove(['resumeText', 'resumeFileName', 'senderProfile', 'resumeBase64']);
   senderProfile = null;
   document.getElementById('me-card').classList.add('hidden');
   document.getElementById('resume-paste').value = '';

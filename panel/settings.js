@@ -21,8 +21,8 @@ async function loadSettings() {
         const { text } = await Resume.extractPdfText(bytes);
         if (text.trim().length >= 40) await ingestResumeText(text, s.resumeFileName || 'Resume', { quiet: true });
       }
-    } catch (_) { /* fall through: the user can re-upload */ }
-    await new Promise(r => chrome.storage.local.remove('resumeBase64', r));
+    } catch (err) { debug('read saved resume file', err); /* the user can re-upload */ }
+    await storageRemove('resumeBase64');
     s = await loadStoredSettings();
   }
 
@@ -56,7 +56,7 @@ async function handleSaveSettings() {
     keyDenied = true;                                        // never keep a key we can't use
   }
 
-  await new Promise(resolve => chrome.storage.local.set(toSave, resolve));
+  await storageSet(toSave);
   await saveSenderFromCard({ quiet: true });
 
   // A key you just saved means you want AI: ask the one-time yes, then switch on. No key → Free.
