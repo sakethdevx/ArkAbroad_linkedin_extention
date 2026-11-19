@@ -191,3 +191,6 @@ _Slices land below as they ship._
 - Background honours the switch: in Free the key is never used and no request is made.
 **Also** Fixed the test harness firing the page's init twice (it hid double-binding).
 **Tests** Switch flow, remembered choice, no per-draft dialog, key-less AI tap, résumé auto-read, Free never sends, legacy consent; 125 total.
+
+### Fix: the "Turn on AI" dialog opened in the top-left corner
+**Cause** The stylesheet's global `* { margin: 0 }` reset removed the `margin: auto` that centres a modal `<dialog>`. **Fix** The dialog sets `margin: auto; inset: 0` itself (checked in real Chrome), and a test guards it. Also tidied the enable dialog: no empty "Instructions" section, no duplicated "Not sent" line, and the sentence now reads "Sent to … when you use AI:".

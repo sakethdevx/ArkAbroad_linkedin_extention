@@ -999,6 +999,8 @@ body {
 
 /* consent dialog */
 dialog#consent-dialog {
+  margin: auto;   /* the global reset zeroes margins, which pinned the modal to the top-left */
+  inset: 0;
   width: min(92vw, 440px);
   max-height: 88vh;
   overflow: auto;

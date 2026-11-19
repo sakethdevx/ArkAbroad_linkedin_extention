@@ -381,10 +381,10 @@
     <form method="dialog" class="consent-form" id="consent-form">
       <h2 id="consent-title">Send this to your AI provider?</h2>
       <p id="consent-desc" class="consent-desc"></p>
-      <p class="consent-sub">Sent to <b id="consent-host">api.anthropic.com</b> (model <span id="consent-model"></span>) <span id="consent-what">for this draft:</span></p>
+      <p class="consent-sub" id="consent-sentto">Sent to <b id="consent-host">api.anthropic.com</b> (model <span id="consent-model"></span>) <span id="consent-what">for this draft:</span></p>
       <pre class="consent-payload" id="consent-payload" tabindex="0" aria-label="Exact data that will be sent"></pre>
-      <details class="consent-instr"><summary>Instructions sent with it</summary><pre id="consent-system" tabindex="0"></pre></details>
-      <p class="consent-sub">Not sent: your résumé PDF, emails, phone numbers, or your API key (it only goes in the request header).</p>
+      <details class="consent-instr" id="consent-instr"><summary>Instructions sent with it</summary><pre id="consent-system" tabindex="0"></pre></details>
+      <p class="consent-sub" id="consent-notsent">Not sent: your résumé PDF, emails, phone numbers, or your API key (it only goes in the request header).</p>
       <div class="consent-actions">
         <button type="button" class="btn btn-secondary" id="consent-free">Use a free draft</button>
         <button type="button" class="btn btn-primary" id="consent-send">Send</button>

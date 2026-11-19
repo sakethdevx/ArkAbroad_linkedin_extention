@@ -43,4 +43,10 @@ module.exports = (test) => {
       assert.deepStrictEqual(hits, [], `${f} contains a key-like string`);
     }
   });
+
+  test('css: the consent dialog centres itself (the global margin reset must not pin it top-left)', () => {
+    const css = fs.readFileSync(path.join(root, 'popup.css'), 'utf8');
+    const rule = css.match(/dialog#consent-dialog\s*\{[^}]*\}/)[0];
+    assert.ok(/margin:\s*auto/.test(rule) && /inset:\s*0/.test(rule));
+  });
 };

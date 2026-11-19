@@ -1034,7 +1034,9 @@ async function showConsentDialog(data, viewOnly, opts = {}) {
     : 'This is what AI Mode sends for the current profile. In Free Mode nothing is sent.';
   document.getElementById('consent-host').textContent = (prev && prev.host) || '';
   document.getElementById('consent-model').textContent = (prev && prev.model) || '';
-  document.getElementById('consent-what').textContent = isEnable ? 'This is what is sent:' : 'for this draft:';
+  document.getElementById('consent-what').textContent = isEnable ? 'when you use AI:' : 'for this draft:';
+  document.getElementById('consent-instr').classList.toggle('hidden', isEnable);
+  document.getElementById('consent-notsent').classList.toggle('hidden', isEnable);
   document.getElementById('consent-payload').textContent = (prev && prev.success) ? prev.user : (prev && prev.error) || 'Could not build a preview.';
   document.getElementById('consent-system').textContent = (prev && prev.system) || '';
   document.getElementById('consent-send').classList.toggle('hidden', !isEnable);
