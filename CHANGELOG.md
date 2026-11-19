@@ -221,3 +221,8 @@ The first working Groq draft was 198/200 characters, skipped the recipient's nam
 
 ### Quality: stop Llama hitting 200/200 and inventing "currently interning"
 A real Groq draft was exactly 200/200 and claimed the sender was "currently interning there" (not in the data); two of three drafts were still too long. Models cannot count characters, so the model is now told a limit with a safety margin (176 for a note, 440 for a message) while our check still enforces the true limit (a draft between the two is accepted). The prompt also forbids adding "currently", "recent", "experienced" or any date, role or place that is not written in the sender data.
+
+### Quality: stray "JANGALA" sign-off, wrong ask for the purpose, project glued to a school (real Groq draft)
+- A connection note must have no sign-off, but Llama appended the surname in capitals. A trailing line that is only the sender's name (or "Thanks, <name>") is now removed from notes; messages keep their sign-off.
+- With purpose "Job Opportunity" the ask was a generic chat. The prompt now spells out the right ask for each purpose (Networking, Job, Referral, Collaboration).
+- "built an AI report-generation PWA *there*" tied a project to a school. The prompt now says to use the intro as written, add at most one project or role, and never pair it with a school or employer unless the data does.

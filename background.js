@@ -291,7 +291,8 @@ Rules for every draft:
 - Avoid stock phrases ("I hope this finds you well", "pick your brain", "touch base", "I came across your profile and was impressed").
 - Begin every draft with "Hi <recipient_first_name>," when recipient_first_name is given.
 - Stay strictly within "max_chars_each" characters (models miscount, so leave a few characters spare); aim for about "target_chars".
-- Describe the sender ONLY with facts in "sender". Never add words like "currently", "recent", "experienced" or any date, role or place that is not written there.
+- The ask must fit "purpose": Networking = a quick chat or one question about their path; Job = whether they know of openings or how to approach applying; Referral = whether they would be open to referring, only if there is a real connection; Collaboration = a specific small idea to explore together.
+- Describe the sender ONLY with facts in "sender". Use "sender.intro" as written; add at most one project or role and never attach it to a school or employer unless the data pairs them. Never add words like "currently", "recent", "experienced" or any date, role or place that is not written there.
 - Write the way a friendly student would talk: simple words, one natural question (for example "Would you be open to a quick chat?"), no stiff phrases and no vague claims like "recent experience". Format "note" has no sign-off. Format "message" ends with a short sign-off and the sender's first name if one is given.
 - Tone: Formal = no contractions; Neutral = warm and plain; Casual = relaxed and friendly.
 - Write 3 drafts that differ in wording and structure.
@@ -358,7 +359,17 @@ async function aiDrafts(provider, apiKey, ctx) {
   // models sometimes skip the greeting; add it when it fits, so every draft reads as written for them
   const first = recipientFirst(ctx);
   const greet = (t) => (first && !new RegExp('\\b' + first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(t) && (`Hi ${first},\n` + t).length <= maxChars) ? `Hi ${first},\n${t}` : t;
-  raw = raw.map(greet);
+  // a connection note has no sign-off: drop a trailing line that is only the sender's name (models love adding one)
+  const nameWords = String(ctx.senderName || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const stripSignoff = (t) => {
+    if (ctx.format !== 'note' || !nameWords.length) return t;
+    const lines = t.replace(/\s+$/, '').split('\n');
+    if (lines.length < 2) return t;
+    const last = lines[lines.length - 1].toLowerCase().replace(/[^\p{L}\s'-]/gu, ' ').split(/\s+/).filter(Boolean);
+    const filler = ['thanks', 'thank', 'you', 'best', 'regards', 'cheers', 'sincerely', 'warmly'];
+    return last.length && last.length <= 4 && last.every(w => nameWords.includes(w) || filler.includes(w)) ? lines.slice(0, -1).join('\n').trim() : t;
+  };
+  raw = raw.map(stripSignoff).map(greet);
 
   let { good, bad } = evaluate(raw);
   let recovered = 0;

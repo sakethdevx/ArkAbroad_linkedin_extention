@@ -506,4 +506,14 @@ module.exports = (test) => {
     const c = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: [long, long + 'b', long + 'c'], saw_ai_instructions_in_data: false })) });
     assert.strictEqual((await gen(c)).variants.filter(v => v.source === 'ai').length, 3);
   });
+
+  test('bg: a connection note never ends with a stray name sign-off (e.g. "JANGALA"); a message keeps its sign-off', async () => {
+    const withName = ['Hi Priya,\nWe both studied at IIT Madras. Open to a quick chat?\nJANGALA', 'Hi Priya,\nFellow IIT Madras person. Open to a chat?\nThanks, Saketh', 'Hi Priya,\nSaw we share IIT Madras. Could we connect?'];
+    const b = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: withName, saw_ai_instructions_in_data: false })) });
+    const r = await gen(b);
+    r.variants.forEach(v => { assert.ok(!/JANGALA|Saketh/.test(v.text), v.text); assert.strictEqual(v.source, 'ai'); });
+    const m = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: ['Hi Priya,\nWe both studied at IIT Madras. Would you be open to a chat?\nBest,\nSaketh'], saw_ai_instructions_in_data: false })) });
+    const rm = await gen(m, data({ format: 'message' }));
+    assert.ok(/Saketh$/.test(rm.variants[0].text), 'message sign-off kept');
+  });
 };
