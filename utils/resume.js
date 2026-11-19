@@ -1,6 +1,6 @@
 'use strict';
 
-// resume.js — résumé text → structured "sender profile". Runs entirely on the device.
+// resume.js — resume text → structured "sender profile". Runs entirely on the device.
 //   • extractPdfText(): pdf.js (vendored in lib/) with page / time / size caps (PDFs are untrusted input)
 //   • parseResume():    pure heuristics → { name, city, schools, degrees, employers, titles, skills, … }
 //   • redactContact():  drops emails / phones / URLs before anything is stored
@@ -127,7 +127,7 @@
         if (deg) degrees.push(deg);
       }
     }
-    // some résumés list the school with the dates in the header block instead of under "Education"
+    // some resumes list the school with the dates in the header block instead of under "Education"
     if (!schools.length) for (const l of lines.slice(0, 40)) { if (SCHOOL_RE.test(l) && l.length <= 90) { schools.push(PP.clean(stripDates(l))); break; } }
 
     // experience
@@ -200,10 +200,10 @@
 
   function explainPdfError(err) {
     const n = (err && (err.name || err.code)) || '';
-    if (/password/i.test(n)) return 'This PDF is password-protected. Remove the password and try again, or paste your résumé text.';
-    if (n === 'timeout') return 'That PDF took too long to read. Try a simpler export, or paste your résumé text.';
-    if (/invalid|missing|format/i.test(n)) return "That doesn't look like a valid PDF. Try exporting it again, or paste your résumé text.";
-    return "Couldn't read that PDF. You can paste your résumé text instead.";
+    if (/password/i.test(n)) return 'This PDF is password-protected. Remove the password and try again, or paste your resume text.';
+    if (n === 'timeout') return 'That PDF took too long to read. Try a simpler export, or paste your resume text.';
+    if (/invalid|missing|format/i.test(n)) return "That doesn't look like a valid PDF. Try exporting it again, or paste your resume text.";
+    return "Couldn't read that PDF. You can paste your resume text instead.";
   }
 
   // data: ArrayBuffer | Uint8Array.  Treats the PDF as untrusted: page cap, time cap, image cap, no eval.

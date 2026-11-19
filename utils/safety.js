@@ -1,6 +1,6 @@
 'use strict';
 
-// safety.js — treat profile text, pasted text and résumé text as UNTRUSTED input.
+// safety.js — treat profile text, pasted text and resume text as UNTRUSTED input.
 //   sanitizeText / sanitizeProfileForPrompt : strip invisible + control characters, cap lengths, whitelist fields
 //   detectInjection                          : flag text that tries to instruct an AI (we tell the user; we never obey it)
 //   validateOutput                           : check a model's draft before the user ever sees it
@@ -84,7 +84,7 @@
       const out = {}; Object.keys(fields).forEach(k => { out[k] = sanitizeText(o && o[k], fields[k]); }); return out;
     }).filter(o => Object.values(o).some(Boolean));
     const out = { intro: sanitizeText(s.intro, 120), schools: arr(s.schools, 2, 100), employers: arr(s.employers, 3, 80), skills: arr(s.skills, 8, 40), city: sanitizeText(s.city, 60) };
-    // richer fields exist only after an AI résumé read; kept compact so the prompt stays small
+    // richer fields exist only after an AI resume read; kept compact so the prompt stays small
     const education = rows(s.education, 2, { school: 100, degree: 80, field: 80, years: 24 });
     const experience = rows(s.experience, 3, { title: 80, company: 80, years: 24, detail: 160 });
     const projects = rows(s.projects, 2, { name: 80, summary: 160 });
@@ -95,8 +95,8 @@
     return out;
   }
 
-  // ── Résumé → structured sender profile (model output is untrusted too) ───────
-  // Keeps line breaks (a résumé is line-structured) but strips invisible characters and caps total size.
+  // ── Resume → structured sender profile (model output is untrusted too) ───────
+  // Keeps line breaks (a resume is line-structured) but strips invisible characters and caps total size.
   function sanitizeMultiline(s, max = 12000) {
     const t = String(s == null ? '' : s).replace(INVISIBLE, '').replace(/\r/g, '').split('\n')
       .map(l => l.replace(/[ \t]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -106,7 +106,7 @@
   const looksInjected = (s) => INJECTION.some(r => r.test(String(s || '')));
   const alnum = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
-  // True when an item the model returned really appears in the résumé (guards against invented schools/employers/skills).
+  // True when an item the model returned really appears in the resume (guards against invented schools/employers/skills).
   function groundedIn(item, text) {
     const hay = ' ' + alnum(text) + ' ';
     const needle = alnum(item);
@@ -116,7 +116,7 @@
     return words.length > 0 && words.every(w => hay.includes(' ' + w));
   }
 
-  // raw = whatever JSON the model returned; sourceText = the résumé text it was given. Returns a whitelisted, capped,
+  // raw = whatever JSON the model returned; sourceText = the resume text it was given. Returns a whitelisted, capped,
   // grounded profile in the same shape the Settings card edits. Instruction-like or contact-like strings are dropped.
   function sanitizeSenderProfile(raw, sourceText) {
     const r = raw && typeof raw === 'object' ? raw : {};

@@ -194,7 +194,7 @@ module.exports = (test) => {
     assert.ok(t.$('paste-card'), 'paste fallback still available off-LinkedIn');
   });
 
-  test('popup: résumé paste → editable card, contact info dropped, then remove wipes it; legacy PDF blob is deleted', async () => {
+  test('popup: resume paste → editable card, contact info dropped, then remove wipes it; legacy PDF blob is deleted', async () => {
     const t = await boot({});
     t.$('resume-paste').value = fs.readFileSync(path.join(__dirname, 'fixtures/resume_sample.txt'), 'utf8');
     await t.click('resume-paste-btn');
@@ -213,7 +213,7 @@ module.exports = (test) => {
     assert.deepStrictEqual(legacy.errors, []);
   });
 
-  test('popup: first-run résumé tip shows once, dismisses for good, and hides after a résumé is added', async () => {
+  test('popup: first-run resume tip shows once, dismisses for good, and hides after a resume is added', async () => {
     let t = await boot({});
     assert.ok(!t.$('resume-tip').classList.contains('hidden'));
     await t.click('resume-tip-dismiss', 60);
@@ -365,7 +365,7 @@ module.exports = (test) => {
   const V2 = { version: 2, ackAt: 1, provider: 'anthropic' };
   const RESUME_TXT = () => fs.readFileSync(path.join(__dirname, 'fixtures/resume_sample.txt'), 'utf8');
 
-  test('popup: AI Mode résumé upload reads it automatically (no dialog), fills every field and stores the full profile', async () => {
+  test('popup: AI Mode resume upload reads it automatically (no dialog), fills every field and stores the full profile', async () => {
     const t = await boot({ userApiKey: 'sk-ant-abc', mode: 'ai', aiConsent: V2 });
     t.$('resume-paste').value = RESUME_TXT();
     await t.click('resume-paste-btn', 200);
@@ -381,7 +381,7 @@ module.exports = (test) => {
     assert.strictEqual(sp.source, 'ai');
     assert.strictEqual(sp.experience[0].company, 'Globex');
     assert.strictEqual(t.store.userName, 'Asha Menon');
-    assert.match(t.$('resume-status').textContent, /Anthropic read your résumé/);
+    assert.match(t.$('resume-status').textContent, /Anthropic read your resume/);
     t.$('me-skills').value = 'Python'; t.$('me-skills').dispatchEvent(new t.w.Event('change')); await tick(40);
     const sp2 = JSON.parse(JSON.stringify(t.store.senderProfile));
     assert.strictEqual(sp2.projects[0].name, 'CampusMap', 'a small edit keeps the rest of the profile');
@@ -391,7 +391,7 @@ module.exports = (test) => {
     assert.deepStrictEqual(t.errors, []);
   });
 
-  test('popup: turning AI on later reads an already-uploaded résumé by itself', async () => {
+  test('popup: turning AI on later reads an already-uploaded resume by itself', async () => {
     const t = await boot({ userApiKey: 'sk-ant-abc', resumeText: RESUME_TXT(), resumeFileName: 'r.pdf', senderProfile: SENDER });
     assert.strictEqual(t.resumeCalls.length, 0);
     await t.click('mode-ai', 150); await t.click('consent-send', 300);
@@ -399,7 +399,7 @@ module.exports = (test) => {
     assert.strictEqual(JSON.parse(JSON.stringify(t.store.senderProfile)).source, 'ai');
   });
 
-  test('popup: AI résumé read — an AI failure falls back with a clear message; a typed name is never overwritten; Free Mode switch stops it', async () => {
+  test('popup: AI resume read — an AI failure falls back with a clear message; a typed name is never overwritten; Free Mode switch stops it', async () => {
     const t = await boot({ userApiKey: 'sk-ant-abc', mode: 'ai', aiConsent: V2, userName: 'Typed Name' });
     t.setResumeReply({ ok: false, userMessage: 'Anthropic rejected the API key.' });
     t.$('resume-paste').value = RESUME_TXT();
@@ -414,11 +414,11 @@ module.exports = (test) => {
     const before = t.resumeCalls.length;
     t.$('resume-paste').value = RESUME_TXT() + ' ';
     await t.click('resume-paste-btn', 200);
-    assert.strictEqual(t.resumeCalls.length, before, 'Free Mode never sends the résumé');
+    assert.strictEqual(t.resumeCalls.length, before, 'Free Mode never sends the resume');
     assert.ok(t.$('resume-ai-btn').classList.contains('hidden'));
   });
 
-  test('popup: Free Mode résumé upload never opens the AI dialog or sends anything', async () => {
+  test('popup: Free Mode resume upload never opens the AI dialog or sends anything', async () => {
     const t = await boot({});
     t.$('resume-paste').value = fs.readFileSync(path.join(__dirname, 'fixtures/resume_sample.txt'), 'utf8');
     await t.click('resume-paste-btn', 150);

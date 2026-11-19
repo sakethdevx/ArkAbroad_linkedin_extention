@@ -28,38 +28,38 @@ _Slices land below as they ship._
 
 **Verify** `node test/run.js` (16 tests; 19 with jsdom, see `test/dom.test.js`). Manual: load unpacked, open `/in/…` profile, click *Scrape & Generate*; check the manifest shows no `tabs` permission.
 
-### Slice 2 — Résumé-powered "what you two have in common" (headline #1)
+### Slice 2 — Resume-powered "what you two have in common" (headline #1)
 
 **What**
-- **The résumé finally does something.** Upload a PDF in Settings → it is read **on the device** (Mozilla pdf.js, Apache-2.0, vendored in `lib/`, no network) → I pull out schools, employers, skills and city and show them in an editable **"What I found about you"** card. The edited card is the source of truth, not the parser's guess.
+- **The resume finally does something.** Upload a PDF in Settings → it is read **on the device** (Mozilla pdf.js, Apache-2.0, vendored in `lib/`, no network) → I pull out schools, employers, skills and city and show them in an editable **"What I found about you"** card. The edited card is the source of truth, not the parser's guess.
 - **Overlap engine** (`utils/overlap.js`): compares your background with the profile you're viewing and returns ranked, toggleable chips: shared **current employer** > **school** > past employer > **skills** > **city**. Alias-aware (*IIT Madras* = *Indian Institute of Technology, Madras*; *JS* = *JavaScript*; *Société Générale* = *Societe Generale*) and deliberately conservative: *University of Madras* ≠ *IIT Madras*, *National University of Singapore* ≠ *Singapore Management University*, a shared country is not a shared city.
 - **Draft leads with the shared ground**; tapping a chip off removes it (free drafts update instantly; in AI mode you press Regenerate so a toggle doesn't silently spend an API call).
 - **Privacy**: the PDF is never stored (v3.1 saved a 4 MB base64 blob it never used → migrated once, then deleted); emails, phone numbers and URLs are stripped from the extracted text; only a compact summary (schools/employers/skills/city/intro) ever goes into an AI prompt, and only if you've added your own key.
-- **PDFs are untrusted input**: 5-page cap, 20 s timeout, image-size cap, no `eval`, password-protected / corrupt / scanned PDFs give a friendly message and open a **paste-your-résumé-text** fallback.
+- **PDFs are untrusted input**: 5-page cap, 20 s timeout, image-size cap, no `eval`, password-protected / corrupt / scanned PDFs give a friendly message and open a **paste-your-resume-text** fallback.
 - **Deep Mode → Review Mode** with honest steps (*Read the profile → Find common ground → Write the draft*). The fake "OpenAI — Web Enrichment" layer and 300 ms artificial delay are gone.
-- Résumé info saves as soon as it's read (the old "click Save to confirm" meant tab-switchers saw no résumé).
+- Resume info saves as soon as it's read (the old "click Save to confirm" meant tab-switchers saw no resume).
 
-**Why** A specific, checkable connection ("we both studied at …") is what separates a reply from an ignore, and it's exactly the thing a student has and a template doesn't. It also makes the previously dead résumé upload worth doing.
+**Why** A specific, checkable connection ("we both studied at …") is what separates a reply from an ignore, and it's exactly the thing a student has and a template doesn't. It also makes the previously dead resume upload worth doing.
 
 **Tradeoffs / honesty**
-- Résumé layouts vary wildly; the heuristics are good on common single-column résumés and approximate on creative ones. That's why the result is editable and why a paste path exists.
+- Resume layouts vary wildly; the heuristics are good on common single-column resumes and approximate on creative ones. That's why the result is editable and why a paste path exists.
 - Skills are matched by exact/alias equality (plus a text scan of the headline/About for ≥3-letter skills): fewer matches, fewer wrong ones.
-- pdf.js adds ~1.8 MB to the package (parser + worker) but it's never loaded unless you upload a résumé.
+- pdf.js adds ~1.8 MB to the package (parser + worker) but it's never loaded unless you upload a resume.
 
-**Demo** Settings → upload résumé → show the card it built (and that nothing was uploaded) → open a profile → chips light up ("School · IIT Madras", "Skills · Python and SQL") → untick one → draft changes. Then: a scanned PDF → friendly fallback.
+**Demo** Settings → upload resume → show the card it built (and that nothing was uploaded) → open a profile → chips light up ("School · IIT Madras", "Skills · Python and SQL") → untick one → draft changes. Then: a scanned PDF → friendly fallback.
 
-**Verify** `node test/run.js` (35 tests incl. a real PDF through the vendored pdf.js). Manual: load unpacked → Settings → upload a text-based PDF résumé → confirm the card, then a profile page → chips.
+**Verify** `node test/run.js` (35 tests incl. a real PDF through the vendored pdf.js). Manual: load unpacked → Settings → upload a text-based PDF resume → confirm the card, then a profile page → chips.
 
 ### Slice 3 — Free Mode that doesn't read like a template, and fits LinkedIn (headline #2)
 
 **What**
-- **A composer instead of one fixed template** (`utils/compose.js`). Each draft is built from slots: greeting → **hook** (best shared background → their post → their role) → **one line on who you are** (your résumé intro) → **one ask** → **easy out** → sign-off. It produces **3 distinct drafts** (A/B/C); "New drafts" really gives new ones (the base version's *Regenerate* returned identical text in Free Mode).
+- **A composer instead of one fixed template** (`utils/compose.js`). Each draft is built from slots: greeting → **hook** (best shared background → their post → their role) → **one line on who you are** (your resume intro) → **one ask** → **easy out** → sign-off. It produces **3 distinct drafts** (A/B/C); "New drafts" really gives new ones (the base version's *Regenerate* returned identical text in Free Mode).
 - **Format switch: Connection note (200) vs Message (~500)**, with a live counter that turns red over the limit. Notes are fitted by dropping the least valuable slot first (easy-out → 2nd shared point → who-I-am → short-form hook/ask); the 200-char limit is enforced by a fuzz test over 1,100+ combinations of type × tone × format × awkward inputs (long company names, long titles, long intros).
 - **"Reply-ready" checklist**, live on whatever you type: *specific to them · one clear ask · fits the limit · no stock phrases · uses their name*. It teaches *why* a message works and re-checks your edits.
 - **Writing choices backed by the research brief**: short, specific hook, a single small ask, no "I hope this finds you well". A cold 200-char note asks for advice, not a referral. Formal tone expands contractions; it never claims things the sender may not be able to stand behind ("I've been following…" was cut during review).
 - **Warm-first tip** when they have recent posts (labelled directional, from a single vendor dataset).
 - **Remembers** your format / tone / type. Free drafts update instantly when you toggle a chip, format or tone; in AI mode it asks you to press the button so a toggle never silently spends a request.
-- **Claude path (only if you add your own key)**, hardened: system prompt states the profile/résumé content is **untrusted data**; strings are JSON-encoded; only whitelisted, clipped fields are sent; invisible/control/Unicode-tag characters are stripped; fields that look like instructions to an AI (*"ignore previous instructions…"*) are **flagged to you and dropped entirely**; the model has no tools; output is **validated** (length, no links/emails/phones, no leaked instructions or keys) and falls back to a free draft if it fails. Structured JSON output (3 drafts). Friendly errors for bad key / rate limit / overloaded / offline / refusal, and the user always still gets a free draft.
+- **Claude path (only if you add your own key)**, hardened: system prompt states the profile/resume content is **untrusted data**; strings are JSON-encoded; only whitelisted, clipped fields are sent; invisible/control/Unicode-tag characters are stripped; fields that look like instructions to an AI (*"ignore previous instructions…"*) are **flagged to you and dropped entirely**; the model has no tools; output is **validated** (length, no links/emails/phones, no leaked instructions or keys) and falls back to a free draft if it fails. Structured JSON output (3 drafts). Friendly errors for bad key / rate limit / overloaded / offline / refusal, and the user always still gets a free draft.
 - Fixes along the way: the 600-character prompt limit (LinkedIn's note limit is 200), `Test` no longer saves silently, all `innerHTML` for scraped text replaced by `textContent`.
 
 **Why** 90% of this audience never adds an API key, so the free path has to be genuinely good, and a 200-character note with one specific hook and one small ask is what gets replies. The checklist makes the "why" visible.
@@ -98,9 +98,9 @@ _Slices land below as they ship._
 
 ### Self-review pass (two reviews, then fixes)
 
-**As a skeptical hiring manager:** is there taste, judgment, a finished scope? → Four coherent headlines on top of one audit; deliberate cuts with reasons (insert-into-LinkedIn, Gemini Nano, company-news "enrichment"); claims backed by tests (79) and by checking the numbers (e.g. I measured the contrast ratios and found one pair at 4.22:1 and a changelog figure that was off → fixed both). Things I'd flag myself: live-LinkedIn DOM and the live Claude call weren't testable in my environment (see `LOOM_OUTLINE.md` checklist); pdf.js adds ~1.8 MB (loaded only when a résumé is uploaded).
+**As a skeptical hiring manager:** is there taste, judgment, a finished scope? → Four coherent headlines on top of one audit; deliberate cuts with reasons (insert-into-LinkedIn, Gemini Nano, company-news "enrichment"); claims backed by tests (79) and by checking the numbers (e.g. I measured the contrast ratios and found one pair at 4.22:1 and a changelog figure that was off → fixed both). Things I'd flag myself: live-LinkedIn DOM and the live Claude call weren't testable in my environment (see `LOOM_OUTLINE.md` checklist); pdf.js adds ~1.8 MB (loaded only when a resume is uploaded).
 
-**As a first-time student with no API key:** is it clear within a minute? → Found and fixed: the draft was below the fold (now scrolls into view); the résumé was never suggested on first run (one-time tip, dismissible); no nudge to write a one-line intro (draft note); "Not now" was styled like a destructive action; **"Scrape & Generate" is developer jargon → "Read profile & write draft"**; textarea too tall for a 200-char note.
+**As a first-time student with no API key:** is it clear within a minute? → Found and fixed: the draft was below the fold (now scrolls into view); the resume was never suggested on first run (one-time tip, dismissible); no nudge to write a one-line intro (draft note); "Not now" was styled like a destructive action; **"Scrape & Generate" is developer jargon → "Read profile & write draft"**; textarea too tall for a 200-char note.
 
 **Real defects the review surfaced:** scraping targeted `currentWindow` rather than the panel's tab (wrong with several windows) → the panel now passes its tab id; opening LinkedIn's *Contact info* overlay changed the URL and would have wiped the draft → page identity is now the profile slug; quoting a post from *Activity* can attribute a repost to the wrong person → explicit "check it's theirs" notice; `…”.` punctuation pile-up in quoted hooks; contrast on warning text.
 
@@ -112,7 +112,7 @@ _Slices land below as they ship._
 - **Profile builder:** the chosen current title/company and past companies are validated the same way; entries with neither are skipped.
 - **Composer:** even if bad text reaches it, a paragraph is never spliced into "Your work as …"; it falls back to the generic opener.
 
-**Tradeoff** In that case the draft is now generic ("I came across your profile…") rather than wrong. With a résumé overlap, a recent post, or a clean role it's still specific. A headline-based opener is the obvious next improvement.
+**Tradeoff** In that case the draft is now generic ("I came across your profile…") rather than wrong. With a resume overlap, a recent post, or a clean role it's still specific. A headline-based opener is the obvious next improvement.
 
 **Tests** Regression tests reproduce the exact text, plus abbreviation false-positives (my first version wrongly rejected "Dr. Smith Dental Clinic"; the new test caught it).
 
@@ -134,7 +134,7 @@ _Slices land below as they ship._
 **Tradeoff** If a post card has only an image/document and no text, there is no quote and the draft falls back to the role/generic opener (better than quoting something wrong). Reposts are still ambiguous, hence the existing "check it's their own post" note.
 
 ### Fix: header and tab bar disappearing after a draft is generated (side panel)
-**What happened** After a draft appeared, the title bar and CURRENT / RECENT / SETTINGS tabs slid off the top and couldn't be reached. I reproduced it in real Chrome: the **`<html>` element itself was scrolled (110 px)**, putting the header at y = −110 and the tab bar off-screen. Cause: after drawing a draft I called `element.scrollIntoView()` to bring it into view, which scrolls *every* ancestor that can scroll, including ones styled `overflow: hidden`. (Same class of problem: the "What's sent?" and résumé-tip links used scrolling/focus the same way.)
+**What happened** After a draft appeared, the title bar and CURRENT / RECENT / SETTINGS tabs slid off the top and couldn't be reached. I reproduced it in real Chrome: the **`<html>` element itself was scrolled (110 px)**, putting the header at y = −110 and the tab bar off-screen. Cause: after drawing a draft I called `element.scrollIntoView()` to bring it into view, which scrolls *every* ancestor that can scroll, including ones styled `overflow: hidden`. (Same class of problem: the "What's sent?" and resume-tip links used scrolling/focus the same way.)
 
 **Fix (belt and braces)**
 - **No more `scrollIntoView`.** A helper scrolls only the panel's own content area (`.tab-content`).
@@ -173,28 +173,31 @@ _Slices land below as they ship._
 **Tests** Budget/effort for reasoning models, the length-retry, empty-reply fall-through and the final message (113 total).
 **Still unverified live** I can't call Groq from here; the behaviour is modelled on how reasoning models are documented to work.
 
-### Feature: AI Mode reads your résumé and fills your whole profile
+### Feature: AI Mode reads your resume and fills your whole profile
 **Why** In AI Mode the student still had to type schools, employers and skills by hand, and the heuristic reader misses things (projects, roles, one-line intro).
-**What** After a résumé upload (or paste), if a key is saved, the extension shows the exact text it would send, and once you approve, the chosen provider returns a structured profile: name, one-line intro, summary, city, education, experience (title, company, years, highlight), projects, skills, certifications, languages. It fills the Settings card, your name and bio (only if empty, or if I had auto-filled the name), and is stored in `chrome.storage.local` as `senderProfile` (`source: 'ai'`). The drafting prompt now carries a compact version (education, experience, projects, summary), and the system prompt tells the model to use at most one of them, only if relevant. "Re-read my résumé with AI" re-runs it any time.
-**Safety** Résumé text is data, in the same untrusted-content framing; the model's answer is whitelisted, length-capped, checked for instruction-like text and emails, and every school, employer, skill, project and certification must actually appear in the résumé text (invented ones are dropped). Approval is asked on every upload and never remembered. Free Mode never opens the dialog or sends anything. If the AI fails, the on-device result stays and the message says so. Editing one field no longer drops the rest of the profile.
+**What** After a resume upload (or paste), if a key is saved, the extension shows the exact text it would send, and once you approve, the chosen provider returns a structured profile: name, one-line intro, summary, city, education, experience (title, company, years, highlight), projects, skills, certifications, languages. It fills the Settings card, your name and bio (only if empty, or if I had auto-filled the name), and is stored in `chrome.storage.local` as `senderProfile` (`source: 'ai'`). The drafting prompt now carries a compact version (education, experience, projects, summary), and the system prompt tells the model to use at most one of them, only if relevant. "Re-read my resume with AI" re-runs it any time.
+**Safety** Resume text is data, in the same untrusted-content framing; the model's answer is whitelisted, length-capped, checked for instruction-like text and emails, and every school, employer, skill, project and certification must actually appear in the resume text (invented ones are dropped). Approval is asked on every upload and never remembered. Free Mode never opens the dialog or sends anything. If the AI fails, the on-device result stays and the message says so. Editing one field no longer drops the rest of the profile.
 **Tests** Anthropic and Groq routes, grounding and injection drops, preview sends nothing, error/junk fallbacks, popup flow (consent first, fills every field, name not overwritten, decline path, Free Mode); 122 total.
 **Unverified live** I can't call either provider from here; the schema and prompts follow their documented JSON modes.
 
 ### UX: one Free ⇄ AI switch, one yes, no more repeated questions
-**Problem** Whether you were in AI mode depended on a hidden fact (is a key saved?). The only way back to Free was deleting the key, a dialog interrupted every draft, and every résumé upload asked again. Confusing and stressful for a non-technical student.
+**Problem** Whether you were in AI mode depended on a hidden fact (is a key saved?). The only way back to Free was deleting the key, a dialog interrupted every draft, and every resume upload asked again. Confusing and stressful for a non-technical student.
 **Change**
 - A **Free | AI** switch in the header, always visible, remembered (`mode` in `chrome.storage.local`). The key stays saved when you switch to Free, so flipping back is one tap.
-- **One consent**, shown the first time you turn AI on for a provider (v2): it lists what is sent for drafts and for résumé uploads. After that nothing asks again: no per-draft dialog, no per-résumé dialog. "What's sent?" still shows the exact live data any time.
+- **One consent**, shown the first time you turn AI on for a provider (v2): it lists what is sent for drafts and for resume uploads. After that nothing asks again: no per-draft dialog, no per-resume dialog. "What's sent?" still shows the exact live data any time.
 - Saving a key in Settings turns AI on (after that one yes). Tapping AI with no key takes you to the key field. "Not now" leaves everything as it was.
-- Turning AI on with a résumé already uploaded reads it with AI automatically; uploading in AI Mode does the same.
+- Turning AI on with a resume already uploaded reads it with AI automatically; uploading in AI Mode does the same.
 - Existing users: a key with a prior consent for the same provider stays in AI mode; a key without consent (or a different provider) starts in Free and shows "AI is ready. Tap AI to use it."
 - Background honours the switch: in Free the key is never used and no request is made.
 **Also** Fixed the test harness firing the page's init twice (it hid double-binding).
-**Tests** Switch flow, remembered choice, no per-draft dialog, key-less AI tap, résumé auto-read, Free never sends, legacy consent; 125 total.
+**Tests** Switch flow, remembered choice, no per-draft dialog, key-less AI tap, resume auto-read, Free never sends, legacy consent; 125 total.
 
 ### Fix: the "Turn on AI" dialog opened in the top-left corner
 **Cause** The stylesheet's global `* { margin: 0 }` reset removed the `margin: auto` that centres a modal `<dialog>`. **Fix** The dialog sets `margin: auto; inset: 0` itself (checked in real Chrome), and a test guards it. Also tidied the enable dialog: no empty "Instructions" section, no duplicated "Not sent" line, and the sentence now reads "Sent to … when you use AI:".
 
 ### UX: "Test" became "Connect": test, save and turn on AI in one step
 **Problem** After pasting a key and pressing Test, the page said the key worked, but AI was not actually on: the student still had to scroll down, press Save, and then meet a dialog. It looked finished and wasn't.
-**Change** The button is now **Connect**. A working key is saved on the spot and the one-time "Turn on AI?" dialog opens right away; saying yes turns AI on and shows "✓ Connected. AI is on (Groq)." (and reads an already-uploaded résumé). "Not now" keeps the key and says how to turn AI on later. A bad key or a denied host permission saves nothing. Save Settings still works for the other fields.
+**Change** The button is now **Connect**. A working key is saved on the spot and the one-time "Turn on AI?" dialog opens right away; saying yes turns AI on and shows "✓ Connected. AI is on (Groq)." (and reads an already-uploaded resume). "Not now" keeps the key and says how to turn AI on later. A bad key or a denied host permission saves nothing. Save Settings still works for the other fields.
+
+### Copy: "résumé" is now "resume" everywhere users read it
+UI text, prompts, README, changelog and tests. The one exception is a heading detector in `utils/resume.js` that still recognises a résumé headed "Résumé", since real documents use the accent.

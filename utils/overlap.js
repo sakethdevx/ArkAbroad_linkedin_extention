@@ -2,7 +2,7 @@
 
 // overlap.js — "what do you two have in common?"  Pure functions, no DOM, no network.
 // findOverlaps(sender, recipient) → ranked evidence the user can toggle and the drafter can use.
-//   sender    = { schools[], employers[], skills[], city }            (from the user's edited résumé profile)
+//   sender    = { schools[], employers[], skills[], city }            (from the user's edited resume profile)
 //   recipient = normalised scraped profile (educationEntries, currentCompany, pastCompanies, skills, headline…)
 // Matching is conservative on purpose: a wrong "you both studied at…" is worse than none.
 

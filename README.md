@@ -13,7 +13,7 @@ Needs Chrome 116 or newer (side panel).
 
 ## What it does
 - **Reads the profile you're on** (only when you click), shows you *what it read* and lets you fix it. If the page can't be read, paste the profile text instead.
-- **Uses your résumé** (optional PDF, read on your device) to find what you two have in common: shared school, employer, skills, city. In AI Mode the AI also fills in your whole profile (education, experience, projects, skills) from it, so you don't type anything.
+- **Uses your resume** (optional PDF, read on your device) to find what you two have in common: shared school, employer, skills, city. In AI Mode the AI also fills in your whole profile (education, experience, projects, skills) from it, so you don't type anything.
 - **Writes 3 drafts** that open with that shared ground, say who you are in one line and make one small ask. Pick **Connection note** (≤ 200 characters, LinkedIn's limit) or **Message**.
 - **Checks the draft** as you edit: specific? one ask? fits? no stock phrases?
 
@@ -22,11 +22,11 @@ Needs Chrome 116 or newer (side panel).
 |---|---|---|
 | **Free** (no key) | Nothing | n/a |
 | **AI** (your own key, switch on) | A short, cleaned-up summary of the profile + your profile details. You say yes **once** when you turn AI on, and "What's sent?" always shows the exact data | only the provider you chose: `api.anthropic.com` **or** `api.groq.com` |
-| **AI**, résumé upload | The résumé **text** (emails/phones already removed) so the AI can fill in your profile | the same provider |
-| Always | Never: your résumé PDF, emails, phone numbers, your key (header only), or anything else on the page | n/a |
+| **AI**, resume upload | The resume **text** (emails/phones already removed) so the AI can fill in your profile | the same provider |
+| Always | Never: your resume PDF, emails, phone numbers, your key (header only), or anything else on the page | n/a |
 
-- Stored locally (`chrome.storage.local`): your key (if you add one), name/bio, résumé **text** (contact details removed; the PDF is not kept), your edited "about you" info, recent drafts.
-- Profile, pasted and résumé text are treated as **untrusted input**: invisible characters are stripped, fields are length-capped and whitelisted, text that tries to instruct an AI is flagged and dropped, and model output is checked before you see it.
+- Stored locally (`chrome.storage.local`): your key (if you add one), name/bio, resume **text** (contact details removed; the PDF is not kept), your edited "about you" info, recent drafts.
+- Profile, pasted and resume text are treated as **untrusted input**: invisible characters are stripped, fields are length-capped and whitelisted, text that tries to instruct an AI is flagged and dropped, and model output is checked before you see it.
 - Permissions: `storage`, `scripting`, `sidePanel`; hosts `linkedin.com` and `api.anthropic.com`. `api.groq.com` is an **optional** permission that Chrome asks for only if you choose Groq. The page script is injected only when you click; nothing runs on LinkedIn otherwise.
 
 ## About LinkedIn's rules
@@ -50,5 +50,5 @@ CHANGELOG.md   what changed and why (base: tag base-v3.1.0)
 
 ## Known limits
 - LinkedIn changes its markup often. The reader is tested on fixtures, not every live layout, hence the "What I read" check and the paste fallback.
-- Résumé parsing is heuristic; the extracted info is editable and that edited copy is what's used.
-- Scanned (image-only) PDFs have no text; paste the résumé text instead.
+- Resume parsing is heuristic; the extracted info is editable and that edited copy is what's used.
+- Scanned (image-only) PDFs have no text; paste the resume text instead.

@@ -39,9 +39,9 @@
     <section class="tab-content active" id="tab-current" role="tabpanel" aria-labelledby="tabbtn-current">
 
       <div class="resume-tip hidden" id="resume-tip">
-        <p>Add your résumé so drafts can mention what you have in common with them. It stays on your device.</p>
+        <p>Add your resume so drafts can mention what you have in common with them. It stays on your device.</p>
         <div class="resume-tip-actions">
-          <button type="button" class="btn-link" id="resume-tip-go">Add résumé</button>
+          <button type="button" class="btn-link" id="resume-tip-go">Add resume</button>
           <button type="button" class="btn-link muted" id="resume-tip-dismiss">Not now</button>
         </div>
       </div>
@@ -159,7 +159,7 @@
             <div class="layer-badge l2">2</div>
             <div class="layer-info">
               <div class="layer-title">Find common ground</div>
-              <div class="layer-desc">Compares the profile with your résumé</div>
+              <div class="layer-desc">Compares the profile with your resume</div>
             </div>
             <div class="layer-status-wrap">
               <div class="status-dot" id="l2-dot"></div>
@@ -288,8 +288,8 @@
         </div>
 
         <div class="field-group full">
-          <label class="field-label" for="resume-upload">Your résumé (PDF)</label>
-          <div class="file-upload-area" id="file-upload-area" role="button" tabindex="0" aria-label="Upload your résumé PDF">
+          <label class="field-label" for="resume-upload">Your resume (PDF)</label>
+          <div class="file-upload-area" id="file-upload-area" role="button" tabindex="0" aria-label="Upload your resume PDF">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M14 2v6h6M12 18v-6M9 15l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span id="file-label">Click to upload or drag PDF here</span>
             <input id="resume-upload" type="file" accept=".pdf,application/pdf" class="file-input" />
@@ -300,9 +300,9 @@
           <details class="paste-card" id="resume-paste-card">
             <summary>No text found, or prefer to paste?</summary>
             <div class="paste-body">
-              <label class="field-label" for="resume-paste">Résumé text</label>
-              <textarea id="resume-paste" class="field-textarea" rows="4" spellcheck="false" placeholder="Paste the text of your résumé here"></textarea>
-              <button id="resume-paste-btn" class="btn btn-secondary btn-full" type="button">Read pasted résumé</button>
+              <label class="field-label" for="resume-paste">Resume text</label>
+              <textarea id="resume-paste" class="field-textarea" rows="4" spellcheck="false" placeholder="Paste the text of your resume here"></textarea>
+              <button id="resume-paste-btn" class="btn btn-secondary btn-full" type="button">Read pasted resume</button>
             </div>
           </details>
         </div>
@@ -331,7 +331,7 @@
           </div>
           <p class="field-hint" id="me-list-hint">Separate items with commas. These are compared with each profile to find what you have in common.</p>
           <details class="paste-card" id="me-more" open>
-            <summary>More detail from your résumé</summary>
+            <summary>More detail from your resume</summary>
             <div class="paste-body">
               <div class="field-group full">
                 <label class="field-label" for="me-education">Education <span class="me-sub">School | Degree | Field | Years</span></label>
@@ -355,8 +355,8 @@
               </div>
             </div>
           </details>
-          <button id="resume-ai-btn" class="btn btn-secondary btn-full hidden" type="button">Re-read my résumé with AI</button>
-          <button id="resume-remove-btn" class="btn-ghost" type="button">Remove résumé &amp; this info</button>
+          <button id="resume-ai-btn" class="btn btn-secondary btn-full hidden" type="button">Re-read my resume with AI</button>
+          <button id="resume-remove-btn" class="btn-ghost" type="button">Remove resume &amp; this info</button>
         </fieldset>
 
         <button id="save-settings-btn" class="btn btn-primary btn-full">Save Settings</button>
@@ -366,8 +366,8 @@
           <strong>What leaves your device</strong>
           <ul>
             <li><b>Free Mode</b> (no key): nothing. Profiles are read, matched and drafted on this device.</li>
-            <li><b>AI Mode</b> (your own key): a short, cleaned-up summary of the profile and your résumé info goes to the provider you chose, <b>api.anthropic.com</b> (Claude) or <b>api.groq.com</b> (Llama), to write the draft. You see exactly what first. When you upload a résumé in AI Mode, its text (contact details removed) goes to the same provider to fill in your profile. You say yes once when you turn AI on. Your key is sent only to that provider.</li>
-            <li><b>Never sent</b>: your résumé PDF, emails and phone numbers, or anything else on the page.</li>
+            <li><b>AI Mode</b> (your own key): a short, cleaned-up summary of the profile and your resume info goes to the provider you chose, <b>api.anthropic.com</b> (Claude) or <b>api.groq.com</b> (Llama), to write the draft. You see exactly what first. When you upload a resume in AI Mode, its text (contact details removed) goes to the same provider to fill in your profile. You say yes once when you turn AI on. Your key is sent only to that provider.</li>
+            <li><b>Never sent</b>: your resume PDF, emails and phone numbers, or anything else on the page.</li>
             <li><b>Never automatic</b>: this tool doesn’t click, type or send on LinkedIn. You read and send every message yourself.</li>
           </ul>
         </div>
@@ -384,7 +384,7 @@
       <p class="consent-sub" id="consent-sentto">Sent to <b id="consent-host">api.anthropic.com</b> (model <span id="consent-model"></span>) <span id="consent-what">for this draft:</span></p>
       <pre class="consent-payload" id="consent-payload" tabindex="0" aria-label="Exact data that will be sent"></pre>
       <details class="consent-instr" id="consent-instr"><summary>Instructions sent with it</summary><pre id="consent-system" tabindex="0"></pre></details>
-      <p class="consent-sub" id="consent-notsent">Not sent: your résumé PDF, emails, phone numbers, or your API key (it only goes in the request header).</p>
+      <p class="consent-sub" id="consent-notsent">Not sent: your resume PDF, emails, phone numbers, or your API key (it only goes in the request header).</p>
       <div class="consent-actions">
         <button type="button" class="btn btn-secondary" id="consent-free">Use a free draft</button>
         <button type="button" class="btn btn-primary" id="consent-send">Send</button>

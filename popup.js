@@ -114,7 +114,7 @@ async function setAiMode(mode) {
   await refreshModeBadge();
 }
 
-// The one-time "yes, use my key" step. Covers drafts AND résumé reading, so nothing asks again afterwards.
+// The one-time "yes, use my key" step. Covers drafts AND resume reading, so nothing asks again afterwards.
 async function ensureAiEnabled() {
   const m = await getModeState();
   if (!m.hasKey) return false;
@@ -224,7 +224,7 @@ function wireSettingsEvents() {
     if (e.key === 'Enter') handleValidateKey();
   });
 
-  // Résumé upload (keyboard + mouse + drag/drop)
+  // Resume upload (keyboard + mouse + drag/drop)
   const dropArea = document.getElementById('file-upload-area');
   const picker   = document.getElementById('resume-upload');
   dropArea.addEventListener('click', (e) => { if (e.target !== picker) picker.click(); });
@@ -244,13 +244,13 @@ function wireSettingsEvents() {
   });
   document.getElementById('resume-paste-btn').addEventListener('click', () => {
     const text = document.getElementById('resume-paste').value;
-    if (text.trim().length < 40) { setResumeStatus('Paste a bit more of your résumé text first.', 'error'); return; }
-    ingestResumeText(text, 'Pasted résumé');
+    if (text.trim().length < 40) { setResumeStatus('Paste a bit more of your resume text first.', 'error'); return; }
+    ingestResumeText(text, 'Pasted resume');
   });
   document.getElementById('resume-remove-btn').addEventListener('click', removeResume);
   document.getElementById('resume-ai-btn').addEventListener('click', async () => {
     const { resumeText } = await storageGet(['resumeText']);
-    if (!resumeText) { setResumeStatus('Upload or paste your résumé first.', 'error'); return; }
+    if (!resumeText) { setResumeStatus('Upload or paste your resume first.', 'error'); return; }
     await tryAiResume(resumeText);
   });
   ['me-intro', 'me-schools', 'me-employers', 'me-skills', 'me-city', 'me-education', 'me-experience', 'me-projects', 'me-certs', 'me-languages'].forEach(id =>
@@ -389,7 +389,7 @@ async function requestData(profile) {
   const stored = await loadStoredSettings();
   return {
     profileData: profile,
-    settings: { userName: stored.userName || '', userBio: stored.userBio || '' },   // not the key, not the résumé text
+    settings: { userName: stored.userName || '', userBio: stored.userBio || '' },   // not the key, not the resume text
     messageType: document.getElementById('message-type').value,
     tone: document.getElementById('tone').value,
     format: currentFormat,
@@ -548,7 +548,7 @@ async function loadSettings() {
         const bin = atob(s.resumeBase64);
         const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
         const { text } = await Resume.extractPdfText(bytes);
-        if (text.trim().length >= 40) await ingestResumeText(text, s.resumeFileName || 'Résumé', { quiet: true });
+        if (text.trim().length >= 40) await ingestResumeText(text, s.resumeFileName || 'Resume', { quiet: true });
       }
     } catch (_) { /* fall through: the user can re-upload */ }
     await new Promise(r => chrome.storage.local.remove('resumeBase64', r));
@@ -559,7 +559,7 @@ async function loadSettings() {
   if (senderProfile || s.resumeFileName) {
     fillMeCard(senderProfile || {});
     setResumeFileUi(s.resumeFileName);
-    setResumeStatus(`${s.resumeFileName || 'Résumé'} read on this device ✓`, 'success');
+    setResumeStatus(`${s.resumeFileName || 'Resume'} read on this device ✓`, 'success');
   }
 }
 
@@ -600,7 +600,7 @@ async function handleSaveSettings() {
   if (turnedOn) await autoReadResumeWithAi();
 }
 
-// After AI is switched on, an already-uploaded résumé gets the same full read, so the student never has to ask.
+// After AI is switched on, an already-uploaded resume gets the same full read, so the student never has to ask.
 async function autoReadResumeWithAi() {
   const { resumeText } = await storageGet(['resumeText']);
   if (resumeText && (!senderProfile || senderProfile.source !== 'ai')) await tryAiResume(resumeText);
@@ -806,7 +806,7 @@ function updateDraftMeta() {
   });
 }
 
-// First-run nudge: the résumé is what makes drafts specific, but it's optional, so ask once and let it go.
+// First-run nudge: the resume is what makes drafts specific, but it's optional, so ask once and let it go.
 async function refreshResumeTip() {
   const { resumeTipDismissed } = await storageGet(['resumeTipDismissed']);
   document.getElementById('resume-tip').classList.toggle('hidden', !!resumeTipDismissed || hasResumeInfo(senderProfile));
@@ -980,7 +980,7 @@ function buildContactCard(contact, idx) {
 }
 
 // ─── Consent: show exactly what AI Mode sends ─────────────────────────────────
-const CONSENT_VERSION = 2;   // 2 = one consent for drafts and résumé reading
+const CONSENT_VERSION = 2;   // 2 = one consent for drafts and resume reading
 let consentResolve = null;
 let consentKind = 'view';
 
@@ -1017,8 +1017,8 @@ const ENABLE_SUMMARY = [
   '  • a short, cleaned-up summary of the LinkedIn profile you are viewing (name, headline, role, about, a few posts, skills, education)',
   '  • what you two have in common, your name and bio, and your profile details',
   '',
-  'When you upload a résumé:',
-  '  • the résumé text, with emails and phone numbers already removed',
+  'When you upload a resume:',
+  '  • the resume text, with emails and phone numbers already removed',
   '',
   'Never sent: the PDF itself, emails, phone numbers, anything else on the page.',
   'Your key goes only in the request header, to this provider.'
@@ -1034,7 +1034,7 @@ async function showConsentDialog(data, viewOnly, opts = {}) {
   const pname = (prev && prev.providerName) || 'your AI provider';
   document.getElementById('consent-title').textContent = isEnable ? `Turn on AI with ${pname}?` : `What AI Mode sends to ${pname}`;
   document.getElementById('consent-desc').textContent = isEnable
-    ? `${pname} will write your drafts and read your résumé using your own key. You say yes once; after that nothing asks again. Switch back to Free any time from the top bar.`
+    ? `${pname} will write your drafts and read your resume using your own key. You say yes once; after that nothing asks again. Switch back to Free any time from the top bar.`
     : 'This is what AI Mode sends for the current profile. In Free Mode nothing is sent.';
   document.getElementById('consent-host').textContent = (prev && prev.host) || '';
   document.getElementById('consent-model').textContent = (prev && prev.model) || '';
@@ -1119,7 +1119,7 @@ function sendToBackground(msg) {
   });
 }
 
-// ─── Résumé: PDF → text → editable profile (all on-device) ─────────────────────
+// ─── Resume: PDF → text → editable profile (all on-device) ─────────────────────
 const toList = (v) => String(v || '').split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
 const storageSet = (o) => new Promise(r => chrome.storage.local.set(o, r));
 const storageGet = (keys) => new Promise(r => chrome.storage.local.get(keys, r));
@@ -1209,27 +1209,27 @@ async function ingestResumeText(text, fileName, opts = {}) {
       senderProfile.skills.length    && `${senderProfile.skills.length} skills`
     ].filter(Boolean);
     if (found.length) setResumeStatus(`Read on this device ✓ Found ${found.join(', ')}. Check them below.`, 'success');
-    else setResumeStatus("I read your résumé but couldn't pick out schools, employers or skills. Add them below and I'll use those.", 'pending');
+    else setResumeStatus("I read your resume but couldn't pick out schools, employers or skills. Add them below and I'll use those.", 'pending');
   }
   renderOverlaps(true);
   refreshResumeTip();
   if (!opts.quiet) await tryAiResume(parsed.redactedText, { afterDevice: true });
 }
 
-// AI Mode: let the provider the user chose read the résumé and fill in the whole profile.
+// AI Mode: let the provider the user chose read the resume and fill in the whole profile.
 // Runs by itself in AI Mode (you said yes when you turned AI on). Any failure leaves the on-device result in place.
 async function tryAiResume(text, opts = {}) {
   const m = await getModeState();
-  if (!m.ai) return false;                                  // Free Mode: the résumé never leaves this device
+  if (!m.ai) return false;                                  // Free Mode: the resume never leaves this device
   if (!(await ensureAiEnabled())) {                         // one-time yes (older installs said yes only to drafts)
     if (opts.afterDevice) setResumeStatus('Read on this device ✓ Check what I found below.', 'success');
     return false;
   }
   const prev = { providerName: m.provider.name };
-  setResumeStatus(`Reading your résumé with ${prev.providerName}…`, 'pending');
+  setResumeStatus(`Reading your resume with ${prev.providerName}…`, 'pending');
   const res = await new Promise(r => chrome.runtime.sendMessage({ type: 'PARSE_RESUME', payload: { text } }, r));
   if (!res || !res.ok) {
-    setResumeStatus(`${(res && res.userMessage) || 'AI could not read the résumé.'} Using what was read on this device.`, 'error');
+    setResumeStatus(`${(res && res.userMessage) || 'AI could not read the resume.'} Using what was read on this device.`, 'error');
     return false;
   }
   const ai = res.profile;
@@ -1250,7 +1250,7 @@ async function tryAiResume(text, opts = {}) {
     ai.projects.length   && `${ai.projects.length} project${ai.projects.length > 1 ? 's' : ''}`,
     ai.skills.length     && `${ai.skills.length} skills`
   ].filter(Boolean);
-  setResumeStatus(`${prev.providerName} read your résumé ✓ Filled in ${bits.join(', ') || 'your profile'}. Check it below.${res.sawInjection ? ' Note: the résumé contained text aimed at an AI; it was ignored.' : ''}`, 'success');
+  setResumeStatus(`${prev.providerName} read your resume ✓ Filled in ${bits.join(', ') || 'your profile'}. Check it below.${res.sawInjection ? ' Note: the resume contained text aimed at an AI; it was ignored.' : ''}`, 'success');
   renderOverlaps(true);
   refreshResumeTip();
   return true;
@@ -1261,11 +1261,11 @@ async function processResumeFile(file) {
   if (!isPdf)                  { setResumeStatus('Please upload a PDF file.', 'error'); return; }
   if (file.size > 4 * 1024 * 1024) { setResumeStatus('File too large. The limit is 4 MB.', 'error'); return; }
 
-  setResumeStatus('Reading your résumé on this device…', 'pending');
+  setResumeStatus('Reading your resume on this device…', 'pending');
   try {
     const { text, pages, truncated } = await Resume.extractPdfText(await file.arrayBuffer());
     if (text.trim().length < 40) {
-      setResumeStatus('No text found. This looks like a scanned PDF. Paste your résumé text below instead.', 'error');
+      setResumeStatus('No text found. This looks like a scanned PDF. Paste your resume text below instead.', 'error');
       document.getElementById('resume-paste-card').open = true;
       return;
     }
@@ -1283,7 +1283,7 @@ async function removeResume() {
   document.getElementById('me-card').classList.add('hidden');
   document.getElementById('resume-paste').value = '';
   setResumeFileUi('');
-  setResumeStatus('Résumé and extracted info removed from this device.', 'success');
+  setResumeStatus('Resume and extracted info removed from this device.', 'success');
   renderOverlaps(true);
   refreshResumeTip();
 }
@@ -1316,7 +1316,7 @@ function renderOverlaps(keepSelection = false) {
 
   if (!hasResumeInfo(senderProfile)) {
     overlapAll = [];
-    empty.textContent = 'Add your résumé in Settings and I’ll find shared schools, employers and skills.';
+    empty.textContent = 'Add your resume in Settings and I’ll find shared schools, employers and skills.';
     empty.classList.remove('hidden');
     return;
   }
