@@ -70,6 +70,15 @@
         </div>
       </details>
 
+      <section class="overlap-panel hidden" id="overlap-panel" aria-labelledby="overlap-title">
+        <div class="overlap-head">
+          <h2 class="overlap-title" id="overlap-title">What you two have in common</h2>
+          <span class="overlap-hint" id="overlap-hint"></span>
+        </div>
+        <div class="overlap-chips" id="overlap-chips" role="group" aria-label="Shared background to mention"></div>
+        <p class="overlap-empty hidden" id="overlap-empty"></p>
+      </section>
+
       <div class="controls-row">
         <div class="field-group">
           <label class="field-label" for="message-type">Message Type</label>
@@ -96,7 +105,7 @@
 
       <div class="mode-toggle">
         <button class="mode-btn active" id="mode-simple">⚡ Quick Mode</button>
-        <button class="mode-btn" id="mode-deep">🔍 Deep Mode (3-Layer AI)</button>
+        <button class="mode-btn" id="mode-deep">🔍 Review Mode</button>
       </div>
 
       <!-- Simple Mode -->
@@ -110,12 +119,12 @@
       <!-- Deep Mode -->
       <div id="deep-mode-ui" class="hidden">
         <div class="pipeline-panel">
-          <div class="pipeline-header">3-Layer AI Pipeline</div>
+          <div class="pipeline-header">Review before you write</div>
           <div class="layer-row">
-            <div class="layer-badge l1">L1</div>
+            <div class="layer-badge l1">1</div>
             <div class="layer-info">
-              <div class="layer-title">OpenAI — Profile Parser</div>
-              <div class="layer-desc">Structures raw LinkedIn DOM into JSON</div>
+              <div class="layer-title">Read the profile</div>
+              <div class="layer-desc">Turns the page into fields you can check</div>
             </div>
             <div class="layer-status-wrap">
               <div class="status-dot" id="l1-dot"></div>
@@ -123,10 +132,10 @@
             </div>
           </div>
           <div class="layer-row">
-            <div class="layer-badge l2">L2</div>
+            <div class="layer-badge l2">2</div>
             <div class="layer-info">
-              <div class="layer-title">OpenAI — Web Enrichment</div>
-              <div class="layer-desc">Searches company news &amp; public work</div>
+              <div class="layer-title">Find common ground</div>
+              <div class="layer-desc">Compares the profile with your résumé</div>
             </div>
             <div class="layer-status-wrap">
               <div class="status-dot" id="l2-dot"></div>
@@ -134,10 +143,10 @@
             </div>
           </div>
           <div class="layer-row">
-            <div class="layer-badge l3">L3</div>
+            <div class="layer-badge l3">3</div>
             <div class="layer-info">
-              <div class="layer-title">Message Writer</div>
-              <div class="layer-desc">Synthesizes everything into personalized message</div>
+              <div class="layer-title">Write the draft</div>
+              <div class="layer-desc">Uses the hooks and shared background you keep</div>
             </div>
             <div class="layer-status-wrap">
               <div class="status-dot" id="l3-dot"></div>
@@ -147,16 +156,16 @@
         </div>
 
         <div class="hooks-panel hidden" id="hooks-panel">
-          <div class="hooks-label">⚡ Top hooks found</div>
+          <div class="hooks-label">⚡ Hooks found</div>
           <div id="hooks-list"></div>
         </div>
 
         <button id="enrich-btn" class="btn btn-primary btn-full">
-          <span id="enrich-label">Scrape + Enrich (L1 + L2)</span>
+          <span id="enrich-label">Read &amp; Find Common Ground</span>
           <span id="enrich-spinner" class="spinner hidden"></span>
         </button>
         <button id="deep-generate-btn" class="btn btn-secondary btn-full" disabled>
-          <span id="deep-gen-label">Generate Message (L3)</span>
+          <span id="deep-gen-label">Write Draft</span>
           <span id="deep-gen-spinner" class="spinner hidden"></span>
         </button>
       </div>
@@ -238,14 +247,50 @@
         </div>
 
         <div class="field-group full">
-          <label class="field-label">Your Resume (PDF)</label>
-          <div class="file-upload-area" id="file-upload-area">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M14 2v6h6M12 18v-6M9 15l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <label class="field-label" for="resume-upload">Your résumé (PDF)</label>
+          <div class="file-upload-area" id="file-upload-area" role="button" tabindex="0" aria-label="Upload your résumé PDF">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M14 2v6h6M12 18v-6M9 15l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span id="file-label">Click to upload or drag PDF here</span>
-            <input id="resume-upload" type="file" accept=".pdf" class="file-input" />
+            <input id="resume-upload" type="file" accept=".pdf,application/pdf" class="file-input" />
           </div>
-          <div class="resume-status hidden" id="resume-status"></div>
+          <p class="field-hint">Read on this device only. The PDF itself is never saved or sent; emails and phone numbers are dropped from the text.</p>
+          <div class="resume-status hidden" id="resume-status" role="status" aria-live="polite"></div>
+
+          <details class="paste-card" id="resume-paste-card">
+            <summary>No text found, or prefer to paste?</summary>
+            <div class="paste-body">
+              <label class="field-label" for="resume-paste">Résumé text</label>
+              <textarea id="resume-paste" class="field-textarea" rows="4" spellcheck="false" placeholder="Paste the text of your résumé here"></textarea>
+              <button id="resume-paste-btn" class="btn btn-secondary btn-full" type="button">Read pasted résumé</button>
+            </div>
+          </details>
         </div>
+
+        <fieldset class="me-card hidden" id="me-card">
+          <legend>What I found about you <span class="me-sub">edit anything that’s off</span></legend>
+          <div class="field-group full">
+            <label class="field-label" for="me-intro">One-line intro</label>
+            <input id="me-intro" type="text" class="field-input" maxlength="120" autocomplete="off" placeholder="e.g. final-year CS student at IIT Madras" />
+          </div>
+          <div class="field-group full">
+            <label class="field-label" for="me-schools">Schools</label>
+            <input id="me-schools" type="text" class="field-input" autocomplete="off" aria-describedby="me-list-hint" />
+          </div>
+          <div class="field-group full">
+            <label class="field-label" for="me-employers">Employers</label>
+            <input id="me-employers" type="text" class="field-input" autocomplete="off" aria-describedby="me-list-hint" />
+          </div>
+          <div class="field-group full">
+            <label class="field-label" for="me-skills">Skills</label>
+            <input id="me-skills" type="text" class="field-input" autocomplete="off" aria-describedby="me-list-hint" />
+          </div>
+          <div class="field-group full">
+            <label class="field-label" for="me-city">City</label>
+            <input id="me-city" type="text" class="field-input" autocomplete="off" placeholder="e.g. Chennai, India" />
+          </div>
+          <p class="field-hint" id="me-list-hint">Separate items with commas. These are compared with each profile to find what you have in common.</p>
+          <button id="resume-remove-btn" class="btn-ghost" type="button">Remove résumé &amp; this info</button>
+        </fieldset>
 
         <button id="save-settings-btn" class="btn btn-primary btn-full">Save Settings</button>
         <div class="status-bar hidden" id="settings-status"></div>
@@ -260,6 +305,8 @@
   </div>
 
   <script src="utils/profile_parse.js"></script>
+  <script src="utils/overlap.js"></script>
+  <script src="utils/resume.js"></script>
   <script src="utils/cache.js"></script>
   <script src="popup.js"></script>
 </body>

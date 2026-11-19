@@ -82,14 +82,14 @@ async function handleTestKey({ apiKey }, sendResponse) {
 // ─── Quick Mode generate ──────────────────────────────────────────────────────
 async function handleQuickGenerate(data, sendResponse) {
   try {
-    const { profileData, settings, messageType, tone } = data;
+    const { profileData, settings, messageType, tone, overlaps = [], sender = null } = data;
     const p     = normalizeProfile(profileData);
-    const hooks = buildHooks(p);
+    const hooks = buildHooks(p, overlaps);
     const apiKey = await getApiKey();
 
     const message = apiKey
-      ? await aiMessage(apiKey, p, hooks, messageType, tone, settings)
-      : localMessage(p, hooks, messageType, tone, settings);
+      ? await aiMessage(apiKey, p, hooks, messageType, tone, settings, overlaps, sender)
+      : localMessage(p, hooks, messageType, tone, settings, overlaps, sender);
 
     sendResponse({ success: true, generatedMessage: message });
   } catch (err) {
@@ -101,8 +101,7 @@ async function handleQuickGenerate(data, sendResponse) {
 async function handleEnrich({ rawProfileData }, sendResponse) {
   try {
     const profileJSON    = normalizeProfile(rawProfileData);
-    const enrichmentJSON = { topHooks: buildHooks(profileJSON), companyNews: [] };
-    await delay(300);
+    const enrichmentJSON = { topHooks: buildHooks(profileJSON) };
     sendResponse({ status: 'enrich_complete', profileJSON, enrichmentJSON });
   } catch (err) {
     sendResponse({ status: 'error', error: err.message });
@@ -110,15 +109,15 @@ async function handleEnrich({ rawProfileData }, sendResponse) {
 }
 
 // ─── Deep Mode generate (L3) ──────────────────────────────────────────────────
-async function handleDeepGenerate({ profileJSON, enrichmentJSON, messageType, tone }, sendResponse) {
+async function handleDeepGenerate({ profileJSON, enrichmentJSON, messageType, tone, overlaps = [], sender = null }, sendResponse) {
   try {
     const settings = await new Promise(resolve => chrome.storage.local.get(['userName', 'userBio'], resolve));
-    const hooks    = enrichmentJSON?.topHooks || [];
+    const hooks    = buildHooks(profileJSON, overlaps);
     const apiKey   = await getApiKey();
 
     const message = apiKey
-      ? await aiMessage(apiKey, profileJSON, hooks, messageType, tone, settings)
-      : localMessage(profileJSON, hooks, messageType, tone, settings);
+      ? await aiMessage(apiKey, profileJSON, hooks, messageType, tone, settings, overlaps, sender)
+      : localMessage(profileJSON, hooks, messageType, tone, settings, overlaps, sender);
 
     sendResponse({ status: 'generate_complete', generatedMessage: message });
   } catch (err) {
@@ -146,8 +145,9 @@ function normalizeProfile(raw = {}) {
   };
 }
 
-function buildHooks(p) {
+function buildHooks(p, overlaps = []) {
   const hooks = [];
+  overlaps.slice(0, 2).forEach(o => hooks.push(`Shared: ${o.detail}`));
   if (p.recentPosts.length) hooks.push(`Recent post: "${truncate(p.recentPosts[0], 90)}"`);
   if (p.currentTitle && p.currentCompany) hooks.push(`Works as ${p.currentTitle} at ${p.currentCompany}`);
   else if (p.currentCompany) hooks.push(`Currently at ${p.currentCompany}`);
@@ -155,11 +155,11 @@ function buildHooks(p) {
   if (p.pastCompanies.length) hooks.push(`Previously at ${p.pastCompanies.slice(0, 2).join(' and ')}`);
   if (p.educationEntries.length) hooks.push(`Studied at ${stringify(p.educationEntries[0])}`);
   if (!hooks.length && p.headline) hooks.push(`Headline: ${p.headline}`);
-  return hooks.slice(0, 3);
+  return hooks.slice(0, 4);
 }
 
 // ─── Local (free) message writer ──────────────────────────────────────────────
-function localMessage(p, hooks, messageType, tone, settings = {}) {
+function localMessage(p, hooks, messageType, tone, settings = {}, overlaps = [], sender = null) {
   const me   = (settings.userName || '').trim();
   const bio  = (settings.userBio || '').trim();
   const role = p.currentTitle || p.headline || 'your work';
@@ -175,7 +175,10 @@ function localMessage(p, hooks, messageType, tone, settings = {}) {
   if (p.recentPosts.length) hookLine = `I enjoyed your recent post about "${truncate(p.recentPosts[0], 60)}".`;
   else if (p.skills.length) hookLine = `Your experience in ${p.skills.slice(0, 2).join(' and ')}${co} caught my attention.`;
 
-  const intro = bio ? ` A bit about me: ${truncate(bio, 120)}` : '';
+  // A real, checkable connection (from the résumé) beats a compliment. Slice 3 replaces this with the composer.
+  if (overlaps.length) hookLine = overlaps.slice(0, 2).map(o => o.line).join(' ');
+  const about = (sender && sender.intro) || bio;
+  const intro = about ? ` A bit about me: ${truncate(about, 120)}` : '';
 
   const ask = {
     Networking:    `I'd love to connect and exchange ideas.`,
@@ -188,7 +191,7 @@ function localMessage(p, hooks, messageType, tone, settings = {}) {
 }
 
 // ─── AI message writer (uses the user's OWN key) ──────────────────────────────
-async function aiMessage(apiKey, p, hooks, messageType, tone, settings = {}) {
+async function aiMessage(apiKey, p, hooks, messageType, tone, settings = {}, overlaps = [], sender = null) {
   const prompt =
 `Write a short LinkedIn outreach message (under 600 characters).
 Purpose: ${messageType}. Tone: ${tone}.
@@ -197,6 +200,8 @@ Recipient profile: ${JSON.stringify({
     about: truncate(p.about, 400), recentPosts: p.recentPosts, skills: p.skills
   })}
 Personalisation hooks: ${hooks.join(' | ')}
+Shared background (verified, prefer leading with this): ${overlaps.map(o => o.detail).join('; ') || '(none)'}
+Sender résumé summary: ${JSON.stringify(sender || {})}
 Sender name: ${settings.userName || '(not given)'}. Sender bio: ${settings.userBio || '(not given)'}.
 Return only the message text, nothing else.`;
   return (await callClaude(apiKey, prompt, 400)).trim();

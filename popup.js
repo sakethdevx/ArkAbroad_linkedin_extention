@@ -95,9 +95,11 @@ function wireSettingsEvents() {
     if (e.key === 'Enter') handleValidateKey();
   });
 
-  // Resume upload
+  // Résumé upload (keyboard + mouse + drag/drop)
   const dropArea = document.getElementById('file-upload-area');
-  dropArea.addEventListener('click', () => document.getElementById('resume-upload').click());
+  const picker   = document.getElementById('resume-upload');
+  dropArea.addEventListener('click', (e) => { if (e.target !== picker) picker.click(); });
+  dropArea.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); picker.click(); } });
   dropArea.addEventListener('dragover', (e) => { e.preventDefault(); dropArea.classList.add('drag-over'); });
   dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-over'));
   dropArea.addEventListener('drop', (e) => {
@@ -106,10 +108,19 @@ function wireSettingsEvents() {
     const file = e.dataTransfer.files[0];
     if (file) processResumeFile(file);
   });
-  document.getElementById('resume-upload').addEventListener('change', (e) => {
+  picker.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) processResumeFile(file);
+    picker.value = '';
   });
+  document.getElementById('resume-paste-btn').addEventListener('click', () => {
+    const text = document.getElementById('resume-paste').value;
+    if (text.trim().length < 40) { setResumeStatus('Paste a bit more of your résumé text first.', 'error'); return; }
+    ingestResumeText(text, 'Pasted résumé');
+  });
+  document.getElementById('resume-remove-btn').addEventListener('click', removeResume);
+  ['me-intro', 'me-schools', 'me-employers', 'me-skills', 'me-city'].forEach(id =>
+    document.getElementById(id).addEventListener('change', () => saveSenderFromCard()));
 }
 
 function wireRecentEvents() {
@@ -145,6 +156,7 @@ async function generateFromProfile(profile, setBusy = (t) => setButtonLoading('s
   currentProfile = profile;
   renderProfileCard(profile);
   renderReadCard(profile);
+  renderOverlaps(false);
   const confidence = profile.quality ? profile.quality.confidence : 'high';
 
   if (confidence === 'none') {
@@ -212,6 +224,7 @@ function wireReadCard() {
       deepProfileJSON.currentCompany = currentProfile.currentCompany;
     }
     renderProfileCard(currentProfile);
+    renderOverlaps(true);
     document.getElementById('read-edit-hint').classList.remove('hidden');
   };
   ['read-name', 'read-role', 'read-company'].forEach(id => document.getElementById(id).addEventListener('input', apply));
@@ -244,7 +257,7 @@ async function callQuickGenerate(profile) {
   const settings    = await loadStoredSettings();
   const messageType = document.getElementById('message-type').value;
   const tone        = document.getElementById('tone').value;
-  return sendToBackground({ action: 'generateMessage', data: { profileData: profile, settings, messageType, tone } });
+  return sendToBackground({ action: 'generateMessage', data: { profileData: profile, settings, messageType, tone, ...sharedContext() } });
 }
 
 async function handleRegenerate() {
@@ -295,7 +308,7 @@ async function handleEnrich() {
     openPasteCard();
   } finally {
     isEnriching = false;
-    setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', false, 'Scrape + Enrich (L1 + L2)');
+    setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', false, 'Read &amp; Find Common Ground');
   }
 }
 
@@ -305,6 +318,7 @@ async function runEnrich(rawProfileData) {
   currentProfile = rawProfileData;
   renderProfileCard(rawProfileData);
   renderReadCard(rawProfileData);
+  renderOverlaps(false);
 
   if (rawProfileData.quality && rawProfileData.quality.confidence === 'none') {
     setLayerStatus(1, 'error', 'Nothing read');
@@ -348,10 +362,10 @@ async function handleDeepGenerate() {
   const tone        = document.getElementById('tone').value;
 
   chrome.runtime.sendMessage(
-    { type: 'RUN_GENERATE', payload: { profileJSON: deepProfileJSON, enrichmentJSON: deepEnrichmentJSON, messageType, tone } },
+    { type: 'RUN_GENERATE', payload: { profileJSON: deepProfileJSON, enrichmentJSON: deepEnrichmentJSON, messageType, tone, ...sharedContext() } },
     async (response) => {
       isGenerating = false;
-      setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', false, 'Generate Message (L3)');
+      setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', false, 'Write Draft');
 
       if (chrome.runtime.lastError || !response) {
         setLayerStatus(3, 'error', 'Error');
@@ -383,17 +397,30 @@ async function handleDeepGenerate() {
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 async function loadSettings() {
-  const s = await loadStoredSettings();
+  let s = await loadStoredSettings();
   if (s.userApiKey) document.getElementById('api-key').value = s.userApiKey;
   if (s.userName)   document.getElementById('user-name').value   = s.userName;
   if (s.userBio)    document.getElementById('user-bio').value    = s.userBio;
-  if (s.resumeFileName) {
-    document.getElementById('file-label').textContent = s.resumeFileName;
-    document.getElementById('file-upload-area').classList.add('has-file');
-    const statusEl = document.getElementById('resume-status');
-    statusEl.textContent = `${s.resumeFileName} saved ✓`;
-    statusEl.className   = 'resume-status success';
-    statusEl.classList.remove('hidden');
+
+  // v3.1 stored the whole PDF as base64 and never used it. Convert once to text, then delete the blob.
+  if (s.resumeBase64) {
+    try {
+      if (!s.resumeText) {
+        const bin = atob(s.resumeBase64);
+        const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+        const { text } = await Resume.extractPdfText(bytes);
+        if (text.trim().length >= 40) await ingestResumeText(text, s.resumeFileName || 'Résumé', { quiet: true });
+      }
+    } catch (_) { /* fall through: the user can re-upload */ }
+    await new Promise(r => chrome.storage.local.remove('resumeBase64', r));
+    s = await loadStoredSettings();
+  }
+
+  senderProfile = s.senderProfile || null;
+  if (senderProfile || s.resumeFileName) {
+    fillMeCard(senderProfile || {});
+    setResumeFileUi(s.resumeFileName);
+    setResumeStatus(`${s.resumeFileName || 'Résumé'} read on this device ✓`, 'success');
   }
 }
 
@@ -402,16 +429,8 @@ async function handleSaveSettings() {
   const userName   = document.getElementById('user-name').value.trim();
   const userBio    = document.getElementById('user-bio').value.trim();
 
-  const savePayload = { userApiKey, userName, userBio };
-  if (pendingResume) {
-    savePayload.resumeBase64   = pendingResume.base64;
-    savePayload.resumeFileName = pendingResume.fileName;
-    pendingResume = null;
-    const statusEl = document.getElementById('resume-status');
-    statusEl.textContent = 'Resume saved ✓';
-    statusEl.className   = 'resume-status success';
-  }
-  await new Promise(resolve => chrome.storage.local.set(savePayload, resolve));
+  await new Promise(resolve => chrome.storage.local.set({ userApiKey, userName, userBio }, resolve));
+  await saveSenderFromCard({ quiet: true });
   showSettingsStatus('Settings saved!', 'success');
   await refreshModeBadge();
 }
@@ -602,49 +621,169 @@ function sendToBackground(msg) {
   });
 }
 
-// ─── Resume upload ────────────────────────────────────────────────────────────
-let pendingResume = null;
+// ─── Résumé: PDF → text → editable profile (all on-device) ─────────────────────
+const toList = (v) => String(v || '').split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
+const storageSet = (o) => new Promise(r => chrome.storage.local.set(o, r));
 
-function processResumeFile(file) {
-  const statusEl  = document.getElementById('resume-status');
-  const dropArea  = document.getElementById('file-upload-area');
-  const fileLabel = document.getElementById('file-label');
+function setResumeStatus(msg, kind) {
+  const el = document.getElementById('resume-status');
+  el.textContent = msg;
+  el.className = `resume-status ${kind || ''}`;
+}
 
-  if (file.type !== 'application/pdf') {
-    statusEl.textContent = 'Please upload a PDF file.';
-    statusEl.className   = 'resume-status error';
-    statusEl.classList.remove('hidden');
+function setResumeFileUi(fileName) {
+  document.getElementById('file-label').textContent = fileName || 'Click to upload or drag PDF here';
+  document.getElementById('file-upload-area').classList.toggle('has-file', !!fileName);
+}
+
+function fillMeCard(sp) {
+  document.getElementById('me-card').classList.remove('hidden');
+  document.getElementById('me-intro').value     = sp.intro || '';
+  document.getElementById('me-schools').value   = (sp.schools || []).join(', ');
+  document.getElementById('me-employers').value = (sp.employers || []).join(', ');
+  document.getElementById('me-skills').value    = (sp.skills || []).join(', ');
+  document.getElementById('me-city').value      = sp.city || '';
+}
+
+function readMeCard() {
+  return {
+    intro:     document.getElementById('me-intro').value.trim(),
+    schools:   toList(document.getElementById('me-schools').value),
+    employers: toList(document.getElementById('me-employers').value),
+    skills:    toList(document.getElementById('me-skills').value),
+    city:      document.getElementById('me-city').value.trim()
+  };
+}
+
+async function saveSenderFromCard() {
+  senderProfile = readMeCard();
+  await storageSet({ senderProfile });
+  renderOverlaps(true);
+}
+
+async function ingestResumeText(text, fileName, opts = {}) {
+  const parsed = Resume.parseResume(text);
+  const prev = (await loadStoredSettings()).senderProfile || {};
+  senderProfile = { intro: prev.intro || '', schools: parsed.schools, employers: parsed.employers, skills: parsed.skills, city: parsed.city || prev.city || '' };
+  await storageSet({ resumeText: parsed.redactedText, resumeFileName: fileName, senderProfile });
+  await new Promise(r => chrome.storage.local.remove('resumeBase64', r));
+
+  fillMeCard(senderProfile);
+  setResumeFileUi(fileName);
+  const nameEl = document.getElementById('user-name');
+  if (parsed.name && !nameEl.value.trim()) nameEl.value = parsed.name;
+
+  if (!opts.quiet) {
+    const found = [
+      senderProfile.schools.length   && `${senderProfile.schools.length} school${senderProfile.schools.length > 1 ? 's' : ''}`,
+      senderProfile.employers.length && `${senderProfile.employers.length} employer${senderProfile.employers.length > 1 ? 's' : ''}`,
+      senderProfile.skills.length    && `${senderProfile.skills.length} skills`
+    ].filter(Boolean);
+    if (found.length) setResumeStatus(`Read on this device ✓ Found ${found.join(', ')}. Check them below.`, 'success');
+    else setResumeStatus("I read your résumé but couldn't pick out schools, employers or skills. Add them below and I'll use those.", 'pending');
+  }
+  renderOverlaps(true);
+}
+
+async function processResumeFile(file) {
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  if (!isPdf)                  { setResumeStatus('Please upload a PDF file.', 'error'); return; }
+  if (file.size > 4 * 1024 * 1024) { setResumeStatus('File too large. The limit is 4 MB.', 'error'); return; }
+
+  setResumeStatus('Reading your résumé on this device…', 'pending');
+  try {
+    const { text, pages, truncated } = await Resume.extractPdfText(await file.arrayBuffer());
+    if (text.trim().length < 40) {
+      setResumeStatus('No text found. This looks like a scanned PDF. Paste your résumé text below instead.', 'error');
+      document.getElementById('resume-paste-card').open = true;
+      return;
+    }
+    await ingestResumeText(text, file.name);
+    if (truncated) setResumeStatus(`Read the first 5 of ${pages} pages ✓ Check what I found below.`, 'success');
+  } catch (err) {
+    setResumeStatus(Resume.explainPdfError(err), 'error');
+    document.getElementById('resume-paste-card').open = true;
+  }
+}
+
+async function removeResume() {
+  await new Promise(r => chrome.storage.local.remove(['resumeText', 'resumeFileName', 'senderProfile', 'resumeBase64'], r));
+  senderProfile = null;
+  document.getElementById('me-card').classList.add('hidden');
+  document.getElementById('resume-paste').value = '';
+  setResumeFileUi('');
+  setResumeStatus('Résumé and extracted info removed from this device.', 'success');
+  renderOverlaps(true);
+}
+
+// ─── Shared background: what you two have in common ───────────────────────────
+let senderProfile = null;
+let overlapAll    = [];
+const overlapOff  = new Set();
+const KIND_LABEL  = { school: 'School', employer: 'Employer', skills: 'Skills', city: 'City' };
+
+const hasResumeInfo = (sp) => !!sp && ((sp.schools || []).length || (sp.employers || []).length || (sp.skills || []).length || sp.city);
+const selectedOverlaps = () => overlapAll.filter(o => !overlapOff.has(o.id));
+// What we hand to the drafter: the kept overlaps and a compact, contact-free summary of the sender.
+const sharedContext = () => ({
+  overlaps: selectedOverlaps().map(({ kind, label, detail, line }) => ({ kind, label, detail, line })),
+  sender:   hasResumeInfo(senderProfile) ? Overlap.senderSummary(senderProfile) : null
+});
+
+function renderOverlaps(keepSelection = false) {
+  const panel = document.getElementById('overlap-panel');
+  const chips = document.getElementById('overlap-chips');
+  const empty = document.getElementById('overlap-empty');
+  const hint  = document.getElementById('overlap-hint');
+  if (!keepSelection) overlapOff.clear();
+  chips.innerHTML = '';
+  hint.textContent = '';
+  empty.classList.add('hidden');
+  if (!currentProfile) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+
+  if (!hasResumeInfo(senderProfile)) {
+    overlapAll = [];
+    empty.textContent = 'Add your résumé in Settings and I’ll find shared schools, employers and skills.';
+    empty.classList.remove('hidden');
     return;
   }
 
-  if (file.size > 4 * 1024 * 1024) {
-    statusEl.textContent = 'File too large — max 4MB.';
-    statusEl.className   = 'resume-status error';
-    statusEl.classList.remove('hidden');
+  overlapAll = Overlap.findOverlaps(senderProfile, currentProfile);
+  if (!overlapAll.length) {
+    empty.textContent = 'No shared school, employer or skills found. That’s fine: the draft will lead with something from their profile.';
+    empty.classList.remove('hidden');
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const base64 = e.target.result.split(',')[1];
-    pendingResume = { base64, fileName: file.name };
-    fileLabel.textContent = file.name;
-    dropArea.classList.add('has-file');
-    statusEl.textContent  = `${file.name} ready — click Save Settings to confirm.`;
-    statusEl.className    = 'resume-status pending';
-    statusEl.classList.remove('hidden');
-  };
-  reader.onerror = () => {
-    statusEl.textContent = 'Error reading file.';
-    statusEl.className   = 'resume-status error';
-    statusEl.classList.remove('hidden');
-  };
-  reader.readAsDataURL(file);
+  hint.textContent = 'Tap to leave one out';
+  overlapAll.forEach(o => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `chip chip-${o.kind}`;
+    b.setAttribute('aria-pressed', String(!overlapOff.has(o.id)));
+    b.title = o.detail;
+    const k = document.createElement('span'); k.className = 'chip-kind'; k.textContent = KIND_LABEL[o.kind] || '';
+    const l = document.createElement('span'); l.className = 'chip-label'; l.textContent = o.label;
+    b.append(k, l);
+    b.addEventListener('click', () => onChipToggle(o.id, b));
+    chips.appendChild(b);
+  });
+}
+
+async function onChipToggle(id, btn) {
+  if (overlapOff.has(id)) overlapOff.delete(id); else overlapOff.add(id);
+  btn.setAttribute('aria-pressed', String(!overlapOff.has(id)));
+  const hasDraft = !document.getElementById('message-section').classList.contains('hidden');
+  if (!hasDraft) return;
+  const { userApiKey } = await loadStoredSettings();
+  if (!(userApiKey || '').trim()) handleRegenerate();   // free drafts update instantly
+  else document.getElementById('overlap-hint').textContent = 'Press Regenerate to apply (AI mode uses a request)';
 }
 
 function loadStoredSettings() {
   return new Promise(resolve => {
-    chrome.storage.local.get(['userApiKey','userName','userBio','resumeBase64','resumeFileName'], resolve);
+    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile'], resolve);
   });
 }
 
