@@ -7,7 +7,7 @@
 //    are sent (see PREVIEW_PAYLOAD).
 //  • Profile, pasted and resume text are untrusted input; see utils/safety.js and SYSTEM_PROMPT below.
 
-importScripts('utils/compose.js', 'utils/safety.js');
+importScripts('utils/compose.js', 'utils/safety.js', 'utils/draftcheck.js');
 
 const ANTHROPIC_URL   = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_MODEL = 'claude-haiku-5-5';
@@ -372,54 +372,13 @@ async function aiDrafts(provider, apiKey, ctx) {
   if (!res.ok) return res;
 
   const parsed = parseJsonLoose(res.text);
-  let raw = parsed && Array.isArray(parsed.variants) ? parsed.variants.filter(v => typeof v === 'string') : [];
+  const raw = parsed && Array.isArray(parsed.variants) ? parsed.variants.filter(v => typeof v === 'string') : [];
   if (!raw.length) return { ok: false, userMessage: `${provider.writer === 'Claude' ? "Claude's" : provider.name + "'s"} reply wasn't usable.` };
 
   const allowedText = [ctx.bio, ctx.sender && ctx.sender.intro].filter(Boolean).join(' ');
   const maxChars = req.limit;
-  const evaluate = (list) => {
-    const good = [], bad = [];
-    for (const v of list.slice(0, 3)) {
-      const checked = Safety.validateOutput(v, { maxChars, allowedText });
-      if (checked.ok) good.push(checked.text); else bad.push({ draft: String(v).slice(0, 700), problems: checked.problems });
-    }
-    return { good, bad };
-  };
-
-  // models sometimes skip the greeting; add it when it fits, so every draft reads as written for them
-  const first = recipientFirst(ctx);
-  const greet = (t) => (first && !new RegExp('\\b' + first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(t) && (`Hi ${first},\n` + t).length <= maxChars) ? `Hi ${first},\n${t}` : t;
-  // a connection note has no sign-off: drop a trailing line that is only the sender's name (models love adding one)
-  const nameWords = String(ctx.senderName || '').toLowerCase().split(/\s+/).filter(Boolean);
-  const stripSignoff = (t) => {
-    if (ctx.format !== 'note' || !nameWords.length) return t;
-    const lines = t.replace(/\s+$/, '').split('\n');
-    if (lines.length < 2) return t;
-    const last = lines[lines.length - 1].toLowerCase().replace(/[^\p{L}\s'-]/gu, ' ').split(/\s+/).filter(Boolean);
-    const filler = ['thanks', 'thank', 'you', 'best', 'regards', 'cheers', 'sincerely', 'warmly'];
-    return last.length && last.length <= 4 && last.every(w => nameWords.includes(w) || filler.includes(w)) ? lines.slice(0, -1).join('\n').trim() : t;
-  };
-  // Models cannot count. A draft only slightly over the limit is shortened by dropping whole sentences from the middle
-  // (the hook and the ask stay); nothing is reworded or added, so no new claims can slip in.
-  const trimToFit = (t) => {
-    t = t.trim();
-    if (t.length <= maxChars) return t;
-    const parts = t.split(/(?<=[.!?])\s+/);
-    while (parts.length > 2 && parts.join(' ').length > maxChars) parts.splice(parts.length - 2, 1);
-    return parts.length >= 2 && parts.join(' ').length <= maxChars ? parts.join(' ') : t;
-  };
-  // "you both" is ambiguous in a message written by the sender (who is "both"?). Say "we both".
-  const fixVoice = (t) => t.replace(/\bI (?:see|notice|noticed) (?:that )?you both\b/gi, 'I noticed we both').replace(/\byou both\b/gi, 'we both');
-  // a message signs off with the FULL name; if the model used only one part of it (e.g. just the surname), complete it
-  const fixSignoff = (t) => {
-    if (ctx.format !== 'message' || !nameWords.length) return t;
-    const lines = t.split('\n');
-    const last = lines[lines.length - 1].trim();
-    const words = last.toLowerCase().replace(/[^\p{L}\s'-]/gu, ' ').split(/\s+/).filter(Boolean);
-    if (lines.length > 1 && words.length && words.length <= 3 && words.every(w => nameWords.includes(w)) && last !== ctx.senderName) lines[lines.length - 1] = ctx.senderName;
-    return lines.join('\n');
-  };
-  raw = raw.map(stripSignoff).map(fixSignoff).map(fixVoice).map(greet).map(trimToFit);
+  // every cleanup + validation step lives in utils/draftcheck.js, shared with the on-device path
+  const evaluate = (list) => DraftCheck.finishDrafts(list, { format: ctx.format, maxChars, firstName: recipientFirst(ctx), senderName: ctx.senderName, allowedText });
 
   let { good, bad } = evaluate(raw);
   let recovered = 0;

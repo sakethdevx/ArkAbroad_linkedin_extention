@@ -309,3 +309,9 @@ Reply intelligence, relationship memory, follow-up reminders, opportunity radar:
 
 ### Fix: the new features were invisible when they had nothing to show (user screenshots)
 On a profile with no shared ground and no relevant project, "Why you two" said only "No shared school…", the "Built on" line was empty for AI drafts, and nothing said the spotlight had been considered. Now: the card says "Your work: none of your projects or roles clearly matches their field, so the draft won't name one"; AI drafts always state what they were given ("Given to the AI: their role and headline · your intro").
+
+## Slice E1: one finishing layer for every model's draft (on-device AI, step 1 of 6)
+Researched next steps with the user (reply-rate studies, Chrome's built-in AI docs); they chose **on-device AI for people with no key + writing in the recipient's language**. First step is plumbing, with no behaviour change.
+- New `utils/draftcheck.js` (pure): the steps that used to be closures inside `aiDrafts` (strip a stray name sign-off on notes, complete a partial sign-off on messages, "you both" → "we both", add the greeting, trim a slightly-long draft by dropping middle sentences, validate) are now `finishDrafts()`, shared by the cloud path and the coming on-device path. All 118 existing tests pass unchanged.
+- New **groundedness check**: every capitalised word (mid-sentence) and every number in a draft must already appear in the facts the model was given, otherwise the draft is rejected ("mentions "Google", which is not in your data"). Small on-device models invent more than big cloud ones, so it is opt-in (`requireGrounded`) and will be on for on-device drafts only.
+**Tests** Greeting/voice/sign-off/trim, rejection reasons, groundedness (hallucinated employer/number/event rejected, accented names and ordinary sentence-opening words allowed), null safety; 124 without jsdom.
