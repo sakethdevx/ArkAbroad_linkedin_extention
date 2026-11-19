@@ -24,7 +24,7 @@ module.exports = (test) => {
     const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8').replace(/<script[^>]*src[^>]*><\/script>/g, '');
     const w = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://x/popup.html' }).window;
     const errors = []; w.addEventListener('error', e => errors.push(e.message));
-    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
+    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; const builds = [], finishes = []; let finishReply = null; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
     let tabUrl = url;
     w.chrome = {
       tabs: { query: async () => [{ id: 42, url: tabUrl, active: true }], onActivated: { addListener: f => listeners.push(f) }, onUpdated: { addListener: f => listeners.push(f) } },
@@ -46,6 +46,8 @@ module.exports = (test) => {
           projects: [{ name: 'CampusMap', summary: 'route planner' }], skills: ['Python', 'SQL'], certifications: ['AWS CP'], languages: [],
           schools: ['IIT Madras'], employers: ['Globex'] } }); }
         if (m.action === 'detectConnection') { detects.push(m.tabId); return cb({ success: true, lines: signals.lines, labels: signals.labels }); }
+        if (m.type === 'BUILD_PROMPT') { builds.push(m.payload); return cb({ success: true, system: 'SYS', user: 'USER', schema: { type: 'object' }, limit: 200 }); }
+        if (m.type === 'FINISH_DRAFTS') { finishes.push(m.payload); return cb(finishReply || { success: true, polished: 3, warnings: [], source: 'ondevice', injection: [], variants: [{ text: 'Polished A', source: 'ondevice' }, { text: 'Polished B', source: 'ondevice' }, { text: 'Polished C', source: 'ondevice' }], generatedMessage: 'Polished A' }); }
         if (m.type === 'RUN_ENRICH') return cb({ status: 'enrich_complete', profileJSON: PRIYA(), enrichmentJSON: { topHooks: ['Shared: You both studied at IIT Madras'] } });
         if (m.type === 'RUN_GENERATE') return cb({ status: 'generate_complete', success: true, warnings: [], injection: [], variants: [{ text: 'Hi Priya, review-mode draft', source: 'template' }], generatedMessage: 'x' });
         if (m.type === 'PREVIEW_PAYLOAD') {
@@ -54,7 +56,7 @@ module.exports = (test) => {
         }
         if (m.action === 'generateMessage') {
           calls.push(m.data); const n = calls.length;
-          return cb({ success: true, generatedMessage: 'x', warnings: [], injection: [], variants: [
+          return cb({ success: true, generatedMessage: 'x', source: (store.userApiKey && !m.data.forceFree && store.mode !== 'free') ? 'ai' : 'template', warnings: [], injection: [], variants: [
             { text: `Hi Priya, we both went to IIT Madras (${m.data.format} #${n}). Open to a chat?`, source: m.data.forceFree ? 'template' : (store.userApiKey ? 'ai' : 'template'), provider: store.userApiKey ? ((store.aiProvider === 'groq' || /^gsk_/.test(store.userApiKey)) ? 'groq' : 'anthropic') : undefined,
               because: { hook: { kind: (m.data.overlaps[0] || {}).kind || 'role', label: (m.data.overlaps[0] || {}).label || '' }, credential: m.data.spotlight ? { kind: 'spotlight', label: m.data.spotlight.title, matches: m.data.spotlight.matches } : { kind: 'intro', label: 'x', matches: [] } } },
             { text: `Draft B #${n}`, source: 'template' }, { text: `Draft C #${n}`, source: 'template' }] });
@@ -69,7 +71,7 @@ module.exports = (test) => {
     else w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
     await tick();
     const $ = id => w.document.getElementById(id);
-    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
+    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, builds, finishes, setFinish: f => { finishReply = f; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
   }
 
   const SENDER = { schools: ['IIT Madras'], skills: ['Python'], intro: 'CS student' };
@@ -655,5 +657,76 @@ module.exports = (test) => {
     assert.notStrictEqual(t.store.onDevice, true);
     assert.match(t.$('od-hint').textContent, /Press Turn on again/);
     assert.strictEqual(t.$('od-enable').disabled, false);
+  });
+
+  const readyLM = (reply, log = {}) => ({ availability: async () => 'available', create: async () => ({ prompt: async (u, o) => { log.prompts = (log.prompts || 0) + 1; log.last = { u, o }; return typeof reply === 'function' ? reply() : reply; }, destroy: () => { log.destroyed = (log.destroyed || 0) + 1; } }) });
+  const MODEL_JSON = JSON.stringify({ variants: ['raw 1', 'raw 2', 'raw 3'] });
+
+  test('popup: Free+ shows the template drafts instantly, then on-device AI replaces them in place (source badge, "Polished on your device from")', async () => {
+    const log = {};
+    let release; const gate = new Promise(r => { release = r; });
+    const t = await boot({ senderProfile: SENDER, onDevice: true }, { languageModel: readyLM(async () => { await gate; return MODEL_JSON; }, log) });
+    await tick(80);
+    await t.click('scrape-btn', 60);
+    assert.match(t.$('generated-message').value, /^Hi Priya, we both went to IIT Madras/, 'template draft is on screen first');
+    assert.match(t.$('source-badge').textContent, /polishing on your device/);
+    release(); await tick(250);
+    assert.strictEqual(t.$('generated-message').value, 'Polished A');
+    assert.match(t.$('source-badge').textContent, /Written on your device/);
+    assert.match(t.$('draft-because').textContent, /^Polished on your device from: shared school IIT Madras/);
+    assert.strictEqual(t.w.document.querySelectorAll('.draft-tab').length, 3);
+    assert.strictEqual(t.builds.length, 1);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(t.finishes[0].raw)), ['raw 1', 'raw 2', 'raw 3']);
+    assert.strictEqual(log.last.u, 'USER');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(log.last.o.responseConstraint)), { type: 'object' });
+    assert.strictEqual(log.destroyed, 1);
+    assert.deepStrictEqual(t.errors, []);
+  });
+
+  test('popup: Free+ never runs when it should not: toggle off, AI mode, or model not ready', async () => {
+    for (const [store, lm, label] of [[{ senderProfile: SENDER, onDevice: false }, readyLM(MODEL_JSON), 'switched off'],
+      [{ senderProfile: SENDER, onDevice: true, userApiKey: 'sk-ant-x', mode: 'ai', aiConsent: { version: 2, ackAt: 1, provider: 'anthropic' } }, readyLM(MODEL_JSON), 'AI mode'],
+      [{ senderProfile: SENDER, onDevice: true }, { availability: async () => 'downloadable', create: async () => { throw new Error('no'); } }, 'not downloaded']]) {
+      const t = await boot(store, { languageModel: lm });
+      await tick(80); await t.click('scrape-btn', 200);
+      assert.strictEqual(t.builds.length, 0, label);
+      assert.doesNotMatch(t.$('source-badge').textContent, /polishing|Written on your device/, label);
+    }
+  });
+
+  test('popup: Free+ failures leave the template drafts alone and say so calmly (bad JSON, nothing usable, thrown error)', async () => {
+    const cases = [['not json at all', null], [MODEL_JSON, { success: true, polished: 0, warnings: ['x'], variants: [], source: 'template' }], [() => { throw new Error('quota'); }, null]];
+    for (const [reply, finish] of cases) {
+      const t = await boot({ senderProfile: SENDER, onDevice: true }, { languageModel: readyLM(reply) });
+      await tick(80);
+      if (finish) t.setFinish(finish);
+      await t.click('scrape-btn', 300);
+      assert.match(t.$('generated-message').value, /^Hi Priya, we both went to IIT Madras/);
+      assert.match(t.$('source-badge').textContent, /^Free draft · made on your device$/);
+      assert.match(t.w.document.getElementById('draft-notes').textContent, /couldn’t improve these drafts this time/);
+      assert.deepStrictEqual(t.errors, []);
+    }
+  });
+
+  test('popup: a draft you already edited is never overwritten by the polish; moving to another person discards it', async () => {
+    let release; const gate = new Promise(r => { release = r; });
+    const t = await boot({ senderProfile: SENDER, onDevice: true }, { languageModel: readyLM(async () => { await gate; return MODEL_JSON; }) });
+    await tick(80);
+    await t.click('scrape-btn', 60);                         // templates are showing, model is "thinking"
+    const ta = t.$('generated-message');
+    ta.value = 'My own words.'; ta.dispatchEvent(new t.w.Event('input'));
+    release(); await tick(250);
+    assert.strictEqual(t.$('generated-message').value, 'My own words.', 'edited draft kept');
+    t.$('draft-tab-1').click(); await tick(20);
+    assert.strictEqual(t.$('generated-message').value, 'Polished B', 'the other drafts were upgraded');
+
+    let release2; const gate2 = new Promise(r => { release2 = r; });
+    const u = await boot({ senderProfile: SENDER, onDevice: true }, { languageModel: readyLM(async () => { await gate2; return MODEL_JSON; }) });
+    await tick(80);
+    await u.click('scrape-btn', 60);
+    u.setUrl('https://www.linkedin.com/in/someone-else/'); u.listeners[0](); await tick(260);
+    release2(); await tick(250);
+    assert.strictEqual(u.finishes.length, 0, 'stale polish is dropped before it is finished');
+    assert.ok(u.$('message-section').classList.contains('hidden'));
   });
 };

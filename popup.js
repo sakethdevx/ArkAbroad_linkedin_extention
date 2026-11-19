@@ -498,7 +498,60 @@ async function requestData(profile) {
 
 async function callQuickGenerate(profile) {
   const data = await requestData(profile);
-  return sendToBackground({ action: 'generateMessage', data });
+  const resp = await sendToBackground({ action: 'generateMessage', data });
+  maybePolishOnDevice(data, resp, profile);   // not awaited: the instant drafts show first, the polished ones replace them
+  return resp;
+}
+
+// ─── Free+: instant template drafts first, then Chrome's built-in AI polishes them in place ─────────────────────────
+// Guards: only in Free mode, only when the model is ready, only if you are still on the same person and no newer request
+// started, and a draft you have already edited is never replaced. Any failure leaves the template drafts exactly as they were.
+let polishToken = 0;
+let polishAbort = null;
+const sendMsg = (msg) => new Promise(r => chrome.runtime.sendMessage(msg, (x) => r(chrome.runtime.lastError ? null : x)));
+
+function cancelPolish() {
+  polishToken++;
+  if (polishAbort) { try { polishAbort.abort(); } catch (_) { /* already done */ } polishAbort = null; }
+  if (polishing) { polishing = false; if (drafts.length) updateDraftMeta(); }
+}
+
+async function maybePolishOnDevice(data, resp, profile) {
+  cancelPolish();
+  if (!resp || resp.source !== 'template' || data.forceFree) return;
+  if ((await getModeState()).ai || !(await onDeviceActive())) return;
+  const token = polishToken;
+  const stale = () => token !== polishToken || currentProfile !== profile;
+  const giveUp = (why) => {
+    if (token !== polishToken) return;
+    polishing = false;
+    polishAbort = null;
+    if (drafts.length) { updateDraftMeta(); if (why) { const p = document.createElement('p'); p.className = 'draft-note tip'; p.textContent = why; document.getElementById('draft-notes').appendChild(p); } }
+  };
+  polishing = true;
+  if (drafts.length) updateDraftMeta();
+  polishAbort = new AbortController();
+  const signal = polishAbort.signal;
+
+  const built = await sendMsg({ type: 'BUILD_PROMPT', payload: data });
+  if (stale()) return;
+  if (!built || !built.success) { giveUp(''); return; }
+  const raw = await OnDevice.polish({ system: built.system, user: built.user, schema: built.schema }, { timeoutMs: 25000, signal });
+  if (stale()) return;
+  if (!raw) { giveUp('On-device AI couldn’t improve these drafts this time, so you’re seeing the free ones.'); return; }
+  const fin = await sendMsg({ type: 'FINISH_DRAFTS', payload: { data, raw } });
+  if (stale()) return;
+  if (!fin || !fin.success || !fin.polished) { giveUp('On-device AI couldn’t improve these drafts this time, so you’re seeing the free ones.'); return; }
+
+  // merge: your edits win; everything else becomes the polished version
+  const given = givenSummary();
+  const merged = fin.variants.map((v, i) => (drafts[i] && drafts[i].edited ? { ...drafts[i] } : { ...v, given }));
+  const keep = activeDraft;
+  polishing = false;
+  polishAbort = null;
+  renderDrafts({ ...fin, variants: merged });
+  if (keep > 0 && keep < drafts.length) selectDraft(keep);
+  await saveToHistory();
 }
 
 // bump = true → "Regenerate" (new wording); false → same drafts re-made after a setting changed
@@ -806,7 +859,10 @@ const FORMAT_TIP = {
   note:    'For someone you are not connected with yet: this is the note that goes with your connection request. LinkedIn limits it to 200 characters, and free accounts get only a few per month.',
   message: 'For someone you are already connected with: a normal LinkedIn message, up to about 500 characters. Shorter still gets more replies.'
 };
-const sourceLabel = (d) => !d ? '' : d.source === 'ai' ? (AI_PROVIDERS[d.provider] || AI_PROVIDERS.anthropic).badge : 'Free draft · made on your device';
+let polishing = false;   // on-device AI is working on the instant drafts right now
+const sourceLabel = (d) => !d ? '' : d.source === 'ai' ? (AI_PROVIDERS[d.provider] || AI_PROVIDERS.anthropic).badge
+  : d.source === 'ondevice' ? 'Written on your device · Chrome’s built-in AI'
+  : (polishing ? 'Free draft · polishing on your device…' : 'Free draft · made on your device');
 
 const currentDraftText = () => document.getElementById('generated-message').value;
 
@@ -818,7 +874,7 @@ function draftCtx() {
 function renderDrafts(resp) {
   const wasHidden = document.getElementById('message-section').classList.contains('hidden');
   const list = resp.variants && resp.variants.length ? resp.variants : [{ text: resp.generatedMessage || '', source: 'template' }];
-  drafts = list.map(v => ({ text: v.text, source: v.source, hookKind: v.hookKind, provider: v.provider || resp.provider, because: v.because || null, given: givenSummary() }));
+  drafts = list.map(v => ({ text: v.text, source: v.source, hookKind: v.hookKind, provider: v.provider || resp.provider, because: v.because || null, given: v.given || givenSummary(), edited: !!v.edited }));
   document.getElementById('message-section').classList.remove('hidden');
   buildDraftTabs();
   selectDraft(0);
@@ -878,7 +934,7 @@ function selectDraft(i) {
 }
 
 function onDraftInput() {
-  if (drafts[activeDraft]) drafts[activeDraft].text = currentDraftText();
+  if (drafts[activeDraft]) { drafts[activeDraft].text = currentDraftText(); drafts[activeDraft].edited = true; }
   updateDraftMeta();
 }
 
@@ -942,8 +998,8 @@ function givenSummary() {
 }
 function renderBecause(d) {
   const el = document.getElementById('draft-because');
-  const text = d && d.source === 'ai' ? (d.given ? `Given to the AI: ${d.given}` : '') : (d && d.because ? describeBecause(d.because) : '');
-  el.textContent = text && d.source !== 'ai' ? `Built on: ${text}` : text;
+  const text = d && (d.source === 'ai' || d.source === 'ondevice') ? (d.given ? d.given : '') : (d && d.because ? describeBecause(d.because) : '');
+  el.textContent = !text ? '' : d.source === 'ai' ? `Given to the AI: ${text}` : d.source === 'ondevice' ? `Polished on your device from: ${text}` : `Built on: ${text}`;
   el.classList.toggle('hidden', !el.textContent);
 }
 
@@ -1252,6 +1308,7 @@ function resetForNewPage() {
   if (isGenerating || isEnriching) return;
   if (!currentProfile && !drafts.length) return;
   currentProfile = null; deepProfileJSON = null; deepEnrichmentJSON = null;
+  cancelPolish();
   formatAutoNote = ''; setFormat(currentFormat, { silent: true });
   overlapAll = []; overlapOff.clear(); spotlightOff = false; currentSpotlight = null; seed = 0;
   ['profile-section', 'read-card', 'overlap-panel'].forEach(id => document.getElementById(id).classList.add('hidden'));
