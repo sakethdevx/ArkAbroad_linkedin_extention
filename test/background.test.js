@@ -540,4 +540,15 @@ module.exports = (test) => {
     assert.strictEqual(injected.length, 1, 'never touches a non-profile tab');
     assert.strictEqual(b.calls.length, 0);
   });
+
+  test('bg: shared background reaches the AI in the sender\'s voice, and a stray "you both" is turned into "we both"', async () => {
+    const drafts = ['Hi Priya, I see you both work with Python. Would you be open to a quick chat?', 'Hi Priya, I noticed you both studied at IIT Madras. Open to a chat?', 'Hi Priya, you both and I share Python. Open to a chat?'];
+    const b = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: drafts, saw_ai_instructions_in_data: false })) });
+    const r = await gen(b, data({ overlaps: [{ kind: 'skills', label: 'Python', detail: 'You both work with Python', line: 'I noticed we both work with Python.' }] }));
+    const sent = b.calls[0].body.messages[0].content;
+    assert.ok(sent.includes('I noticed we both work with Python.') && !sent.includes('You both work with Python'));
+    assert.match(b.calls[0].body.system, /Never write "you both"/);
+    r.variants.forEach(v => assert.ok(!/\byou both\b/i.test(v.text), v.text));
+    assert.match(r.variants[0].text, /I noticed we both work with Python/);
+  });
 };
