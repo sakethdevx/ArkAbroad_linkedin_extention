@@ -226,3 +226,9 @@ A real Groq draft was exactly 200/200 and claimed the sender was "currently inte
 - A connection note must have no sign-off, but Llama appended the surname in capitals. A trailing line that is only the sender's name (or "Thanks, <name>") is now removed from notes; messages keep their sign-off.
 - With purpose "Job Opportunity" the ask was a generic chat. The prompt now spells out the right ask for each purpose (Networking, Job, Referral, Collaboration).
 - "built an AI report-generation PWA *there*" tied a project to a school. The prompt now says to use the intro as written, add at most one project or role, and never pair it with a school or employer unless the data does.
+
+### UX: Review Mode shows one next step at a time
+**Problem** Review Mode showed a three-row progress table, two buttons ("Read & Find Common Ground" and a greyed "Write Draft") and a message telling you to "Hit Generate Message", a button that doesn't exist. Users didn't know what to press.
+**Change** A single line says "Step 1 of 2: Read this profile and see what you have in common" with one button, **Read this profile**. When it finishes, the button becomes **Write my draft** and the line says "Step 2 of 2: check what I found, then write your draft", with a small "Read the page again" link. The hooks box is titled "What I found you can mention", and a scraped "Skills (23)" heading is no longer shown as a skill.
+
+**Also** My Free/AI header buttons reused the `.mode-btn` class of the Quick/Review buttons, so one restyled the other; the header buttons now have their own class (`aiswitch-btn`) and Quick/Review go back to their intended look.

@@ -599,7 +599,8 @@ function buildHooks(p, overlaps = []) {
   if (p.recentPosts.length) hooks.push(`Recent post: "${truncate(p.recentPosts[0], 90)}"`);
   if (p.currentTitle && p.currentCompany) hooks.push(`Works as ${p.currentTitle} at ${p.currentCompany}`);
   else if (p.currentCompany) hooks.push(`Currently at ${p.currentCompany}`);
-  if (p.skills.length) hooks.push(`Skilled in ${p.skills.slice(0, 3).join(', ')}`);
+  const realSkills = p.skills.filter(k => !/^skills?\b.*\(\d+\)$/i.test(k) && !/^skills?$/i.test(k));
+  if (realSkills.length) hooks.push(`Skills: ${realSkills.slice(0, 3).join(', ')}`);
   if (p.pastCompanies.length) hooks.push(`Previously at ${p.pastCompanies.slice(0, 2).join(' and ')}`);
   if (p.educationEntries.length) hooks.push(`Studied at ${stringify(p.educationEntries[0])}`);
   if (!hooks.length && p.headline) hooks.push(`Headline: ${p.headline}`);

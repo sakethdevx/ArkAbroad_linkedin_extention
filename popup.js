@@ -210,6 +210,7 @@ function wireCurrentEvents() {
   document.getElementById('scrape-btn').addEventListener('click', handleScrapeAndGenerate);
   document.getElementById('enrich-btn').addEventListener('click', handleEnrich);
   document.getElementById('deep-generate-btn').addEventListener('click', handleDeepGenerate);
+  document.getElementById('reread-btn').addEventListener('click', handleEnrich);
   document.getElementById('regenerate-btn').addEventListener('click', () => regenerate(true));
   document.getElementById('copy-btn').addEventListener('click', handleCopy);
   document.getElementById('generated-message').addEventListener('input', onDraftInput);
@@ -447,18 +448,16 @@ async function handleEnrich() {
 
   isEnriching = true;
   setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', true, 'Reading profile…');
-  setLayerStatus(1, 'running', 'Reading…');
 
   try {
     const raw = await sendToBackground({ action: 'scrapeProfile', tabId: await activeTabId() });
     await runEnrich(raw);
   } catch (err) {
-    setLayerStatus(1, 'error', 'Failed');
     showCurrentStatus(err.message, 'error');
     openPasteCard();
   } finally {
     isEnriching = false;
-    setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', false, 'Read &amp; Find Common Ground');
+    setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', false, 'Read this profile');
   }
 }
 
@@ -471,32 +470,26 @@ async function runEnrich(rawProfileData) {
   renderOverlaps(false);
 
   if (rawProfileData.quality && rawProfileData.quality.confidence === 'none') {
-    setLayerStatus(1, 'error', 'Nothing read');
     showCurrentStatus("I couldn't read anything useful from this page. Paste the profile text below instead.", 'error');
     openPasteCard();
     return;
   }
 
-  setLayerStatus(1, 'running', 'Parsing…');
   showCurrentStatus('Finding hooks…');
   const response = await new Promise(resolve => chrome.runtime.sendMessage({ type: 'RUN_ENRICH', payload: { rawProfileData } }, resolve));
 
   if (chrome.runtime.lastError || !response || response.status === 'error') {
-    setLayerStatus(1, 'error', 'Error');
-    setLayerStatus(2, 'error', 'Error');
     showCurrentStatus((response && response.error) || 'Something went wrong. Please try again.', 'error');
     return;
   }
 
-  setLayerStatus(1, 'done', 'Done');
-  setLayerStatus(2, 'done', 'Done');
   deepProfileJSON    = response.profileJSON;
   deepEnrichmentJSON = response.enrichmentJSON;
   renderProfileCard(deepProfileJSON);
   renderHooks(deepEnrichmentJSON);
-  setLayerStatus(3, '', 'Ready');
   document.getElementById('deep-generate-btn').disabled = false;
-  showCurrentStatus('Hooks found. Hit Generate Message.', 'success');
+  setDeepStep(2);
+  showCurrentStatus('Done reading. Now press “Write my draft”.', 'success');
 }
 
 async function handleDeepGenerate() {
@@ -504,7 +497,6 @@ async function handleDeepGenerate() {
 
   isGenerating = true;
   setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', true, 'Writing draft…');
-  setLayerStatus(3, 'running', 'Writing…');
   showCurrentStatus('Writing your draft…');
   hideMessage();
 
@@ -517,17 +509,15 @@ async function handleDeepGenerate() {
     if (chrome.runtime.lastError || !response) throw new Error('Generation failed. Please try again.');
     if (response.status === 'error') throw new Error(response.error);
 
-    setLayerStatus(3, 'done', 'Done');
     renderDrafts(response);
     const warn = response.warnings && response.warnings.length ? response.warnings[0] : '';
     showCurrentStatus(warn || 'Draft ready. Read it, make it yours, then send it yourself.', warn ? 'warning' : 'success');
     await saveToHistory();
   } catch (err) {
-    setLayerStatus(3, 'error', 'Stopped');
     showCurrentStatus(err.message, 'error');
   } finally {
     isGenerating = false;
-    setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', false, 'Write Draft');
+    setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', false, 'Write my draft');
   }
 }
 
@@ -648,15 +638,18 @@ async function handleValidateKey() {
 }
 
 // ─── Pipeline UI ──────────────────────────────────────────────────────────────
-function setLayerStatus(layer, status, text) {
-  document.getElementById(`l${layer}-dot`).className = `status-dot ${status}`;
-  document.getElementById(`l${layer}-text`).textContent = text;
+// Review Mode shows ONE next action at a time: step 1 = read the page, step 2 = write the draft.
+function setDeepStep(step) {
+  const two = step === 2;
+  document.getElementById('enrich-btn').classList.toggle('hidden', two);
+  document.getElementById('deep-generate-btn').classList.toggle('hidden', !two);
+  document.getElementById('reread-btn').classList.toggle('hidden', !two);
+  document.getElementById('deep-step').textContent = `Step ${step} of 2`;
+  document.getElementById('deep-guide-text').textContent = two
+    ? 'Check what I found below (and the shared background above), then write your draft.'
+    : 'Read this profile and see what you have in common.';
 }
-
-function resetLayerStatuses() {
-  [1,2].forEach(n => setLayerStatus(n, '', 'Ready'));
-  setLayerStatus(3, '', 'Waiting');
-}
+const resetLayerStatuses = () => setDeepStep(1);
 
 function renderHooks(enrichmentJSON) {
   const panel = document.getElementById('hooks-panel');
