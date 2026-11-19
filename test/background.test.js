@@ -574,6 +574,22 @@ module.exports = (test) => {
     assert.strictEqual(b.calls.length, 0);
   });
 
+  test('bg: openComposer only runs on /in/ profiles, injects the self-contained opener with just the word note/message, and never touches the network', async () => {
+    const injected = [];
+    const b = boot({ tabs: { get: async (id) => ({ id, url: id === 1 ? 'https://www.linkedin.com/in/priya/' : 'https://www.linkedin.com/feed/' }) },
+      scripting: { executeScript: async (opts) => { injected.push(opts); return [{ result: { ok: true, opened: 'note' } }]; } }, fetchImpl: () => { throw new Error('no network'); } });
+    const r = await b.send({ action: 'openComposer', tabId: 1, want: 'note' });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { success: true, opened: 'note', reason: null });
+    assert.ok(typeof injected[0].func === 'function' && !injected[0].files);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(injected[0].args)), ['note']);
+    await b.send({ action: 'openComposer', tabId: 1, want: '<script>' });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(injected[1].args)), ['note'], 'anything but "message" becomes "note"');
+    const off = await b.send({ action: 'openComposer', tabId: 2, want: 'message' });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(off)), { success: false, reason: 'not-profile' });
+    assert.strictEqual(injected.length, 2);
+    assert.strictEqual(b.calls.length, 0);
+  });
+
   test('bg: shared background reaches the AI in the sender\'s voice, and a stray "you both" is turned into "we both"', async () => {
     const drafts = ['Hi Priya, I see you both work with Python. Would you be open to a quick chat?', 'Hi Priya, I noticed you both studied at IIT Madras. Open to a chat?', 'Hi Priya, you both and I share Python. Open to a chat?'];
     const b = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: drafts, saw_ai_instructions_in_data: false })) });

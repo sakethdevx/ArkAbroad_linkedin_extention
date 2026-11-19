@@ -24,7 +24,7 @@ module.exports = (test) => {
     const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8').replace(/<script[^>]*src[^>]*><\/script>/g, '');
     const w = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://x/popup.html' }).window;
     const errors = []; w.addEventListener('error', e => errors.push(e.message));
-    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; const resumeBuilds = []; let about = ''; const copied = []; const opened = []; const builds = [], finishes = []; let finishReply = null; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
+    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; const resumeBuilds = []; let about = ''; const copied = []; const opened = []; const composers = []; let composerReply = { success: true, opened: 'message' }; const builds = [], finishes = []; let finishReply = null; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
     let tabUrl = url;
     w.chrome = {
       tabs: { create: (o) => { opened.push(o.url); return Promise.resolve({}); }, query: async () => [{ id: 42, url: tabUrl, active: true }], onActivated: { addListener: f => listeners.push(f) }, onUpdated: { addListener: f => listeners.push(f) } },
@@ -45,6 +45,7 @@ module.exports = (test) => {
           experience: [{ title: 'Software Intern', company: 'Globex', years: '2024', detail: 'Built a forecasting API' }],
           projects: [{ name: 'CampusMap', summary: 'route planner' }], skills: ['Python', 'SQL'], certifications: ['AWS CP'], languages: [],
           schools: ['IIT Madras'], employers: ['Globex'] } }); }
+        if (m.action === 'openComposer') { composers.push({ tabId: m.tabId, want: m.want }); return cb(composerReply); }
         if (m.action === 'detectConnection') { detects.push(m.tabId); return cb({ success: true, lines: signals.lines, labels: signals.labels }); }
         if (m.type === 'BUILD_PROMPT') { builds.push(m.payload); return cb({ success: true, system: 'SYS', user: 'USER', schema: { type: 'object' }, limit: 200 }); }
         if (m.type === 'FINISH_DRAFTS') { finishes.push(m.payload); return cb(finishReply || { success: true, polished: 3, warnings: [], source: 'ondevice', injection: [], variants: [{ text: 'Polished A', source: 'ondevice' }, { text: 'Polished B', source: 'ondevice' }, { text: 'Polished C', source: 'ondevice' }], generatedMessage: 'Polished A' }); }
@@ -72,7 +73,7 @@ module.exports = (test) => {
     else w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
     await tick();
     const $ = id => w.document.getElementById(id);
-    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, resumeBuilds, setAbout: a => { about = a; }, copied, opened, builds, finishes, setFinish: f => { finishReply = f; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
+    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, resumeBuilds, setAbout: a => { about = a; }, copied, opened, composers, setComposer: r => { composerReply = r; }, builds, finishes, setFinish: f => { finishReply = f; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
   }
 
   const SENDER = { schools: ['IIT Madras'], skills: ['Python'], intro: 'CS student' };
@@ -199,6 +200,27 @@ module.exports = (test) => {
     assert.ok(Math.abs(m.store.recentContacts[0].sentAt - Date.now()) < 5000);
     await m.click('sent-0');
     assert.strictEqual(m.store.recentContacts[0].sentAt, null);
+  });
+
+  test('popup: Copy & open copies first, asks the page to OPEN the right box (never sends), and says what to do — including when it cannot', async () => {
+    const t = await boot({ senderProfile: SENDER });
+    await t.click('scrape-btn');
+    t.$('generated-message').value = 'My edited draft'; t.$('generated-message').dispatchEvent(new t.w.Event('input'));
+    await t.click('copy-open-btn', 120);
+    assert.deepStrictEqual(t.copied, ['My edited draft']);
+    assert.deepStrictEqual(t.composers, [{ tabId: 42, want: 'note' }]);
+    assert.match(t.$('status-message').textContent, /Copied\..*paste.*press Send yourself/);
+    assert.strictEqual(t.store.recentContacts[0].message, 'My edited draft', 'what you copied is kept in Recent');
+    t.setComposer({ success: false, reason: 'not-found' });
+    await t.click('copy-open-btn', 120);
+    assert.match(t.$('status-message').textContent, /Copied\. I couldn’t find the “Connect” button.*click it yourself/);
+    t.setComposer({ success: false, reason: 'not-profile' });
+    await t.click('copy-open-btn', 120);
+    assert.match(t.$('status-message').textContent, /Open the person’s LinkedIn profile/);
+    t.setComposer({ success: true, opened: 'connect' });
+    await t.click('copy-open-btn', 120);
+    assert.match(t.$('status-message').textContent, /Add a note/);
+    assert.deepStrictEqual(t.copied.length, 4);
   });
 
   test('popup: switching Free ⇄ AI: AI asks once (names provider, host, model), the choice is remembered, and nothing asks per draft', async () => {

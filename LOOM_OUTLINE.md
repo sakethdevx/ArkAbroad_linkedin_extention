@@ -31,3 +31,10 @@ Show: open an ML profile, then a backend profile, with the same resume. The "Why
 
 ## Addendum: on-device AI and writing in their language
 Show (on a computer that qualifies): Settings → On-device AI → Turn on (one-time download). Then open a profile: the free draft appears instantly, a moment later the badge flips to "Written on your device" and the draft is polished, still with "Built on…". Then a German profile: the translate box opens by itself, press Translate, and point at the English check underneath. Say plainly: no key, nothing leaves the computer, and on computers that do not qualify the card says so and everything else is unchanged. Be honest that this was built against Chrome's documented API and tested with stand-ins.
+
+
+## Addendum: tracker features (about 90 seconds)
+1. **Recent knows who people are.** Click a name: their profile opens (handle stored, not just a name).
+2. **Best next move.** One line above the drafts, rule-based (connected → just message; recent post → warm up first).
+3. **Follow-up Coach.** Mark a message Sent; at day 4 it shows "Follow-up 1 of 2 is due", with an editable draft. Never more than two; "They replied" stops it.
+4. **Copy & open.** Copies the draft and opens LinkedIn's message or note box. You press Send. It refuses to click anything else.

@@ -342,6 +342,26 @@ async function handleCopy() {
   }, 2200);
 }
 
+// Copy, then open LinkedIn's own box for you. It never types or sends: you paste and press Send yourself.
+async function handleCopyAndOpen() {
+  if (!currentDraftText()) return;
+  await handleCopy();
+  const want = currentFormat;
+  const res = await new Promise(async (resolve) => {
+    try { chrome.runtime.sendMessage({ action: 'openComposer', tabId: await activeTabId(), want }, resolve); } catch (_) { resolve(null); }
+  });
+  const box = want === 'message' ? 'message box' : 'note box';
+  if (res && res.success && res.opened === 'connect') {
+    showCurrentStatus('Copied. LinkedIn’s connect box is open: click “Add a note”, paste, and press Send yourself.', 'success');
+  } else if (res && res.success) {
+    showCurrentStatus(`Copied. LinkedIn’s ${box} is open: paste (Ctrl/Cmd+V) and press Send yourself.`, 'success');
+  } else if (res && res.reason === 'not-profile') {
+    showCurrentStatus(`Copied. Open the person’s LinkedIn profile, click ${want === 'message' ? '“Message”' : '“Connect” → “Add a note”'} and paste.`);
+  } else {
+    showCurrentStatus(`Copied. I couldn’t find the ${want === 'message' ? '“Message”' : '“Connect”'} button on this page, so click it yourself and paste.`);
+  }
+}
+
 function showCurrentStatus(msg, type = '') {
   const el = document.getElementById('status-message');
   el.textContent = msg;

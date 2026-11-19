@@ -7,7 +7,7 @@
 //    are sent (see PREVIEW_PAYLOAD).
 //  • Profile, pasted and resume text are untrusted input; see utils/safety.js and SYSTEM_PROMPT below.
 
-importScripts('utils/compose.js', 'utils/safety.js', 'utils/draftcheck.js', 'utils/rules.js');
+importScripts('utils/compose.js', 'utils/safety.js', 'utils/draftcheck.js', 'utils/rules.js', 'utils/composer.js');
 
 const ANTHROPIC_URL   = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_MODEL = 'claude-haiku-5-5';
@@ -46,6 +46,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return;   // only our own extension pages
 
   if (message.action === 'detectConnection') { handleDetectConnection(message.tabId, sendResponse); return true; }
+  if (message.action === 'openComposer') { handleOpenComposer(message.tabId, message.want, sendResponse); return true; }
   if (message.action === 'scrapeProfile')  { handleScrapeProfile(message.tabId, sendResponse); return true; }
   if (message.action === 'generateMessage') { handleQuickGenerate(message.data, sendResponse); return true; }
   if (message.type === 'TEST_API_KEY')     { handleTestKey(message.payload, sendResponse); return true; }
@@ -93,6 +94,17 @@ async function handleDetectConnection(tabId, sendResponse) {
     const [res] = await chrome.scripting.executeScript({ target: { tabId }, func: readTopCardSignals });
     sendResponse({ success: true, ...(res && res.result ? res.result : { lines: [], labels: [] }) });
   } catch (_) { sendResponse({ success: false }); }
+}
+
+// "Copy & open": opens LinkedIn's message box or connection note box on a profile tab. It never types or sends.
+async function handleOpenComposer(tabId, want, sendResponse) {
+  try {
+    const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId) : null;
+    if (!tab || !/^https:\/\/www\.linkedin\.com\/in\//.test(tab.url || '')) { sendResponse({ success: false, reason: 'not-profile' }); return; }
+    const [res] = await chrome.scripting.executeScript({ target: { tabId }, func: Composer.open, args: [want === 'message' ? 'message' : 'note'] });
+    const r = (res && res.result) || {};
+    sendResponse({ success: !!r.ok, opened: r.opened || null, reason: r.reason || (r.ok ? null : 'failed') });
+  } catch (_) { sendResponse({ success: false, reason: 'failed' }); }
 }
 
 async function handleScrapeProfile(tabId, sendResponse) {

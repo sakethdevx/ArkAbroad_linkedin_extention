@@ -126,6 +126,7 @@ function wireCurrentEvents() {
   document.getElementById('regenerate-btn').addEventListener('click', () => regenerate(true));
   document.getElementById('spot-chip').addEventListener('click', onSpotlightToggle);
   document.getElementById('copy-btn').addEventListener('click', handleCopy);
+  document.getElementById('copy-open-btn').addEventListener('click', handleCopyAndOpen);
   document.getElementById('generated-message').addEventListener('input', onDraftInput);
   document.querySelectorAll('.format-btn').forEach(b => b.addEventListener('click', () => { formatByUser = true; formatAutoNote = ''; setFormat(b.dataset.format); }));
   ['message-type', 'tone'].forEach(id => document.getElementById(id).addEventListener('change', () => { savePrefs(); applyChangeLive(); }));
