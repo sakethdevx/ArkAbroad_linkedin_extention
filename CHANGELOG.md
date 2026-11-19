@@ -218,3 +218,6 @@ UI text, prompts, README, changelog and tests. The one exception is a heading de
 
 ### Quality: AI drafts greet by first name, shorter, plainer (from a real Groq draft)
 The first working Groq draft was 198/200 characters, skipped the recipient's name (the checklist flagged it) and used stiff phrasing ("spare a short reply", "recent AI/ML internship experience"). The request now carries `recipient_first_name` and a `target_chars` (80% of the limit); the prompt requires "Hi <first name>," and plain, natural wording with one ordinary question; and if a model still skips the greeting it is added when it fits the limit.
+
+### Quality: stop Llama hitting 200/200 and inventing "currently interning"
+A real Groq draft was exactly 200/200 and claimed the sender was "currently interning there" (not in the data); two of three drafts were still too long. Models cannot count characters, so the model is now told a limit with a safety margin (176 for a note, 440 for a message) while our check still enforces the true limit (a draft between the two is accepted). The prompt also forbids adding "currently", "recent", "experienced" or any date, role or place that is not written in the sender data.

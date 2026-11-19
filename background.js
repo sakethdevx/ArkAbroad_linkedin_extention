@@ -290,7 +290,8 @@ Rules for every draft:
 - Then one sentence on who the sender is (only from "sender"), then exactly ONE small, easy-to-decline ask that fits "purpose". "sender" may also list education, experience and projects: use at most ONE of them, only if it is clearly relevant to the recipient.
 - Avoid stock phrases ("I hope this finds you well", "pick your brain", "touch base", "I came across your profile and was impressed").
 - Begin every draft with "Hi <recipient_first_name>," when recipient_first_name is given.
-- Stay strictly within "max_chars_each" characters; aim for about "target_chars" so nothing overruns.
+- Stay strictly within "max_chars_each" characters (models miscount, so leave a few characters spare); aim for about "target_chars".
+- Describe the sender ONLY with facts in "sender". Never add words like "currently", "recent", "experienced" or any date, role or place that is not written there.
 - Write the way a friendly student would talk: simple words, one natural question (for example "Would you be open to a quick chat?"), no stiff phrases and no vague claims like "recent experience". Format "note" has no sign-off. Format "message" ends with a short sign-off and the sender's first name if one is given.
 - Tone: Formal = no contractions; Neutral = warm and plain; Casual = relaxed and friendly.
 - Write 3 drafts that differ in wording and structure.
@@ -320,7 +321,7 @@ const recipientFirst = (ctx) => { const f = ctx.profile && ctx.profile.firstName
 function buildAiRequest(ctx, provider = PROVIDERS.anthropic) {
   const limit = Compose.LIMITS[ctx.format];
   const payload = {
-    task: { purpose: ctx.messageType, tone: ctx.tone, format: ctx.format, max_chars_each: limit, sender_first_name: (ctx.senderName || '').split(/\s+/)[0] || null, recipient_first_name: recipientFirst(ctx), target_chars: Math.round(limit * 0.8) },
+    task: { purpose: ctx.messageType, tone: ctx.tone, format: ctx.format, max_chars_each: Math.round(limit * 0.88), sender_first_name: (ctx.senderName || '').split(/\s+/)[0] || null, recipient_first_name: recipientFirst(ctx), target_chars: Math.round(limit * 0.8) },
     sender: ctx.sender,
     recipient_profile: Safety.sanitizeProfileForPrompt(ctx.profile),
     verified_shared_background: ctx.overlaps.map(o => o.detail)
