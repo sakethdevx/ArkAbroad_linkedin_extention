@@ -13,7 +13,7 @@ Needs Chrome 116 or newer (side panel).
 
 ## What it does
 - **Reads the profile you're on** (only when you click), shows you *what it read* and lets you fix it. If the page can't be read, paste the profile text instead.
-- **Uses your résumé** (optional PDF, read on your device) to find what you two have in common: shared school, employer, skills, city.
+- **Uses your résumé** (optional PDF, read on your device) to find what you two have in common: shared school, employer, skills, city. In AI Mode the AI also fills in your whole profile (education, experience, projects, skills) from it, so you don't type anything.
 - **Writes 3 drafts** that open with that shared ground, say who you are in one line and make one small ask. Pick **Connection note** (≤ 200 characters, LinkedIn's limit) or **Message**.
 - **Checks the draft** as you edit: specific? one ask? fits? no stock phrases?
 
@@ -22,6 +22,7 @@ Needs Chrome 116 or newer (side panel).
 |---|---|---|
 | **Free** (no key) | Nothing | n/a |
 | **AI** (your own key) | A short, cleaned-up summary of the profile + the résumé info you approved, **shown to you first** | only the provider you chose: `api.anthropic.com` **or** `api.groq.com` |
+| **AI**, résumé upload | The résumé **text** (emails/phones already removed) so the AI can fill in your profile; you approve the exact text each time | the same provider |
 | Always | Never: your résumé PDF, emails, phone numbers, your key (header only), or anything else on the page | n/a |
 
 - Stored locally (`chrome.storage.local`): your key (if you add one), name/bio, résumé **text** (contact details removed; the PDF is not kept), your edited "about you" info, recent drafts.

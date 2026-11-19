@@ -97,6 +97,7 @@ async function refreshModeBadge() {
   document.getElementById('privacy-text').textContent = key
     ? `AI Mode: a short profile summary goes to ${p.name} (your key).`
     : 'Free Mode: everything stays on this device.';
+  refreshAiResumeBtn();
 }
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
@@ -201,7 +202,12 @@ function wireSettingsEvents() {
     ingestResumeText(text, 'Pasted résumé');
   });
   document.getElementById('resume-remove-btn').addEventListener('click', removeResume);
-  ['me-intro', 'me-schools', 'me-employers', 'me-skills', 'me-city'].forEach(id =>
+  document.getElementById('resume-ai-btn').addEventListener('click', async () => {
+    const { resumeText } = await storageGet(['resumeText']);
+    if (!resumeText) { setResumeStatus('Upload or paste your résumé first.', 'error'); return; }
+    await tryAiResume(resumeText);
+  });
+  ['me-intro', 'me-schools', 'me-employers', 'me-skills', 'me-city', 'me-education', 'me-experience', 'me-projects', 'me-certs', 'me-languages'].forEach(id =>
     document.getElementById(id).addEventListener('change', () => saveSenderFromCard()));
 }
 
@@ -916,6 +922,7 @@ function buildContactCard(contact, idx) {
 // ─── Consent: show exactly what AI Mode sends ─────────────────────────────────
 const CONSENT_VERSION = 1;
 let consentResolve = null;
+let consentKind = 'draft';
 
 async function previewPayload(data) {
   return new Promise(resolve => chrome.runtime.sendMessage({ type: 'PREVIEW_PAYLOAD', payload: data }, resolve));
@@ -937,6 +944,7 @@ function wireConsentDialog() {
   };
   document.getElementById('consent-send').addEventListener('click', async () => {
     const { userApiKey, aiProvider } = await loadStoredSettings();
+    if (consentKind === 'resume') { done('send'); return; }   // résumé reads are approved one by one, never remembered
     await storageSet({ aiConsent: { ackAt: Date.now(), version: CONSENT_VERSION, provider: resolveProvider(aiProvider, userApiKey).id } });
     done('send');
   });
@@ -955,12 +963,16 @@ async function ensureAiConsent(data) {
   return showConsentDialog(data, false);
 }
 
-async function showConsentDialog(data, viewOnly) {
-  const prev = await previewPayload(data);
+async function showConsentDialog(data, viewOnly, opts = {}) {
+  consentKind = opts.kind || 'draft';
+  const isResume = consentKind === 'resume';
+  const prev = isResume ? opts.prev : await previewPayload(data);
   const dlg = document.getElementById('consent-dialog');
   const pname = (prev && prev.providerName) || 'your AI provider';
-  document.getElementById('consent-title').textContent = viewOnly ? `What AI Mode sends to ${pname}` : `Send this to ${pname}?`;
-  document.getElementById('consent-desc').textContent = viewOnly
+  document.getElementById('consent-title').textContent = isResume ? `Let ${pname} read your résumé?` : viewOnly ? `What AI Mode sends to ${pname}` : `Send this to ${pname}?`;
+  document.getElementById('consent-desc').textContent = isResume
+    ? `${pname} will read this text and fill in your profile so every draft can use it. Email addresses and phone numbers were already removed. The PDF itself is never sent. You’ll be asked each time.`
+    : viewOnly
     ? 'This is what AI Mode sends for the current profile. In Free Mode nothing is sent.'
     : `You added your own ${pname} key, so ${pname} writes the draft. Please check what it will receive. You’ll be asked once per provider.`;
   document.getElementById('consent-host').textContent = (prev && prev.host) || '';
@@ -970,6 +982,9 @@ async function showConsentDialog(data, viewOnly) {
   document.getElementById('consent-send').classList.toggle('hidden', viewOnly);
   document.getElementById('consent-free').classList.toggle('hidden', viewOnly);
   document.getElementById('consent-cancel').textContent = viewOnly ? 'Close' : 'Cancel';
+  document.getElementById('consent-what').textContent = isResume ? 'to read your résumé:' : 'for this draft:';
+  document.getElementById('consent-free').textContent = isResume ? 'Keep it on this device' : 'Use a free draft';
+  document.getElementById('consent-send').textContent = isResume ? 'Read with AI' : 'Send';
   openDialog(dlg);
   document.getElementById(viewOnly ? 'consent-cancel' : 'consent-send').focus();
   return new Promise(resolve => { consentResolve = resolve; });
@@ -1059,6 +1074,15 @@ function setResumeFileUi(fileName) {
   document.getElementById('file-upload-area').classList.toggle('has-file', !!fileName);
 }
 
+// Rows are edited as "a | b | c" lines and stored as objects.
+const ROW_FIELDS = { education: ['school', 'degree', 'field', 'years'], experience: ['title', 'company', 'years', 'detail'], projects: ['name', 'summary'] };
+const rowsToText = (rows, keys) => (rows || []).map(r => keys.map(k => (r && r[k]) || '').join(' | ').replace(/(?: \| )+$/, '')).join('\n');
+const textToRows = (text, keys) => String(text || '').split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+  const parts = l.split('|').map(x => x.trim());
+  const o = {}; keys.forEach((k, i) => { o[k] = parts[i] || ''; });
+  return o;
+});
+
 function fillMeCard(sp) {
   document.getElementById('me-card').classList.remove('hidden');
   document.getElementById('me-intro').value     = sp.intro || '';
@@ -1066,16 +1090,36 @@ function fillMeCard(sp) {
   document.getElementById('me-employers').value = (sp.employers || []).join(', ');
   document.getElementById('me-skills').value    = (sp.skills || []).join(', ');
   document.getElementById('me-city').value      = sp.city || '';
+  document.getElementById('me-education').value  = rowsToText(sp.education, ROW_FIELDS.education);
+  document.getElementById('me-experience').value = rowsToText(sp.experience, ROW_FIELDS.experience);
+  document.getElementById('me-projects').value   = rowsToText(sp.projects, ROW_FIELDS.projects);
+  document.getElementById('me-certs').value      = (sp.certifications || []).join(', ');
+  document.getElementById('me-languages').value  = (sp.languages || []).join(', ');
+  refreshAiResumeBtn();
 }
 
+// Keeps fields the card does not show (summary, source, …) so a small edit never drops the rest of the profile.
 function readMeCard() {
+  const v = (id) => document.getElementById(id).value;
   return {
-    intro:     document.getElementById('me-intro').value.trim(),
-    schools:   toList(document.getElementById('me-schools').value),
-    employers: toList(document.getElementById('me-employers').value),
-    skills:    toList(document.getElementById('me-skills').value),
-    city:      document.getElementById('me-city').value.trim()
+    ...(senderProfile || {}),
+    intro:     v('me-intro').trim(),
+    schools:   toList(v('me-schools')),
+    employers: toList(v('me-employers')),
+    skills:    toList(v('me-skills')),
+    city:      v('me-city').trim(),
+    education:  textToRows(v('me-education'), ROW_FIELDS.education),
+    experience: textToRows(v('me-experience'), ROW_FIELDS.experience),
+    projects:   textToRows(v('me-projects'), ROW_FIELDS.projects),
+    certifications: toList(v('me-certs')),
+    languages:  toList(v('me-languages')),
+    updatedAt: Date.now()
   };
+}
+
+async function refreshAiResumeBtn() {
+  const s = await storageGet(['userApiKey', 'resumeText']);
+  document.getElementById('resume-ai-btn').classList.toggle('hidden', !((s.userApiKey || '').trim() && s.resumeText));
 }
 
 async function saveSenderFromCard() {
@@ -1084,17 +1128,18 @@ async function saveSenderFromCard() {
   renderOverlaps(true);
 }
 
+let autoName = '';   // a name we filled in ourselves (so a better one may replace it, but never one the user typed)
 async function ingestResumeText(text, fileName, opts = {}) {
   const parsed = Resume.parseResume(text);
   const prev = (await loadStoredSettings()).senderProfile || {};
-  senderProfile = { intro: prev.intro || '', schools: parsed.schools, employers: parsed.employers, skills: parsed.skills, city: parsed.city || prev.city || '' };
+  senderProfile = { intro: prev.intro || '', schools: parsed.schools, employers: parsed.employers, skills: parsed.skills, city: parsed.city || prev.city || '', source: 'device', updatedAt: Date.now() };
   await storageSet({ resumeText: parsed.redactedText, resumeFileName: fileName, senderProfile });
   await new Promise(r => chrome.storage.local.remove('resumeBase64', r));
 
   fillMeCard(senderProfile);
   setResumeFileUi(fileName);
   const nameEl = document.getElementById('user-name');
-  if (parsed.name && !nameEl.value.trim()) nameEl.value = parsed.name;
+  if (parsed.name && !nameEl.value.trim()) { nameEl.value = parsed.name; autoName = parsed.name; }
 
   if (!opts.quiet) {
     const found = [
@@ -1107,6 +1152,50 @@ async function ingestResumeText(text, fileName, opts = {}) {
   }
   renderOverlaps(true);
   refreshResumeTip();
+  if (!opts.quiet) await tryAiResume(parsed.redactedText, { afterDevice: true });
+}
+
+// AI Mode: let the provider the user chose read the résumé and fill in the whole profile.
+// Always shows the exact text first. Any failure leaves the on-device result in place.
+async function tryAiResume(text, opts = {}) {
+  const s = await loadStoredSettings();
+  if (!(s.userApiKey || '').trim()) return false;
+  const prev = await new Promise(r => chrome.runtime.sendMessage({ type: 'PREVIEW_RESUME', payload: { text } }, r));
+  if (!prev || !prev.success) return false;
+
+  const choice = await showConsentDialog(null, false, { kind: 'resume', prev });
+  if (choice !== 'send') {
+    if (opts.afterDevice) setResumeStatus('Read on this device ✓ Check what I found below. Use “Re-read with AI” any time.', 'success');
+    return false;
+  }
+  setResumeStatus(`Reading your résumé with ${prev.providerName}…`, 'pending');
+  const res = await new Promise(r => chrome.runtime.sendMessage({ type: 'PARSE_RESUME', payload: { text } }, r));
+  if (!res || !res.ok) {
+    setResumeStatus(`${(res && res.userMessage) || 'AI could not read the résumé.'} Using what was read on this device.`, 'error');
+    return false;
+  }
+  const ai = res.profile;
+  senderProfile = { ...ai, source: 'ai', provider: res.provider, updatedAt: Date.now() };
+  const toStore = { senderProfile };
+
+  // fill the other fields this profile belongs in, without overwriting what the user already typed
+  const nameEl = document.getElementById('user-name'), bioEl = document.getElementById('user-bio');
+  if (ai.name && (!nameEl.value.trim() || nameEl.value === autoName)) { nameEl.value = ai.name; toStore.userName = ai.name; }
+  const bio = ai.summary || ai.intro;
+  if (bio && !bioEl.value.trim()) { bioEl.value = bio; toStore.userBio = bio; }
+  await storageSet(toStore);
+
+  fillMeCard(senderProfile);
+  const bits = [
+    ai.education.length  && `${ai.education.length} education`,
+    ai.experience.length && `${ai.experience.length} experience`,
+    ai.projects.length   && `${ai.projects.length} project${ai.projects.length > 1 ? 's' : ''}`,
+    ai.skills.length     && `${ai.skills.length} skills`
+  ].filter(Boolean);
+  setResumeStatus(`${prev.providerName} read your résumé ✓ Filled in ${bits.join(', ') || 'your profile'}. Check it below.${res.sawInjection ? ' Note: the résumé contained text aimed at an AI; it was ignored.' : ''}`, 'success');
+  renderOverlaps(true);
+  refreshResumeTip();
+  return true;
 }
 
 async function processResumeFile(file) {

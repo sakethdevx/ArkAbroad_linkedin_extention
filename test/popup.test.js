@@ -24,7 +24,7 @@ module.exports = (test) => {
     const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8').replace(/<script[^>]*src[^>]*><\/script>/g, '');
     const w = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://x/popup.html' }).window;
     const errors = []; w.addEventListener('error', e => errors.push(e.message));
-    const calls = [], scrapes = [], listeners = [], permCalls = []; let granted = new Set(); let allowRequests = true;
+    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let granted = new Set(); let allowRequests = true;
     let tabUrl = url;
     w.chrome = {
       tabs: { query: async () => [{ id: 42, url: tabUrl, active: true }], onActivated: { addListener: f => listeners.push(f) }, onUpdated: { addListener: f => listeners.push(f) } },
@@ -38,6 +38,13 @@ module.exports = (test) => {
       runtime: { lastError: null, getURL: x => x, sendMessage: (m, cb) => {
         if (m.type === 'TEST_API_KEY') { return cb({ valid: true, provider: m.payload.provider }); }
         if (m.action === 'scrapeProfile') { scrapes.push(m); return cb({ success: true, data: PRIYA() }); }
+        if (m.type === 'PREVIEW_RESUME') return cb({ success: true, providerName: 'Anthropic', host: 'api.anthropic.com', model: 'claude-haiku-5-5', system: 'RSYS', user: '{"resume_text":"' + m.payload.text.slice(0, 20) + '"}' });
+        if (m.type === 'PARSE_RESUME') { resumeCalls.push(m.payload); return cb(resumeReply || { ok: true, provider: 'anthropic', profile: {
+          name: 'Asha Menon', intro: 'final-year CS student at IIT Madras', summary: 'CS student who builds data tools.', city: 'Chennai, India',
+          education: [{ school: 'IIT Madras', degree: 'B.Tech', field: 'Computer Science', years: '2021 - 2025' }],
+          experience: [{ title: 'Software Intern', company: 'Globex', years: '2024', detail: 'Built a forecasting API' }],
+          projects: [{ name: 'CampusMap', summary: 'route planner' }], skills: ['Python', 'SQL'], certifications: ['AWS CP'], languages: [],
+          schools: ['IIT Madras'], employers: ['Globex'] } }); }
         if (m.type === 'PREVIEW_PAYLOAD') {
           const g = (store.aiProvider === 'groq') || /^gsk_/.test(store.userApiKey || '');
           return cb({ success: true, model: g ? 'llama-3.3-70b-versatile' : 'claude-haiku-5-5', providerName: g ? 'Groq' : 'Anthropic', host: g ? 'api.groq.com' : 'api.anthropic.com', system: 'SYS', user: '{"recipient_profile":{"name":"Priya Rao"}}' });
@@ -56,7 +63,7 @@ module.exports = (test) => {
     w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
     await tick();
     const $ = id => w.document.getElementById(id);
-    return { w, $, errors, calls, scrapes, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
+    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
   }
 
   const SENDER = { schools: ['IIT Madras'], skills: ['Python'], intro: 'CS student' };
@@ -311,5 +318,69 @@ module.exports = (test) => {
     assert.match(t.$('key-status').textContent, /Groq/);
     const bare = await boot({ userApiKey: 'gsk_k' });   // no explicit provider stored → detected from the key
     assert.match(bare.$('key-status').textContent, /Groq/);
+  });
+
+  test('popup: AI Mode résumé read — shows the exact text first, then fills every field and stores the full profile', async () => {
+    const t = await boot({ userApiKey: 'sk-ant-abc' });
+    t.$('resume-paste').value = fs.readFileSync(path.join(__dirname, 'fixtures/resume_sample.txt'), 'utf8');
+    t.$('resume-paste-btn').click(); await tick(150);
+    assert.ok(t.$('consent-dialog').hasAttribute('open'), 'asks before sending the résumé');
+    assert.match(t.$('consent-title').textContent, /read your résumé/);
+    assert.match(t.$('consent-payload').textContent, /resume_text/);
+    assert.strictEqual(t.resumeCalls.length, 0, 'nothing sent before approval');
+    await t.click('consent-send', 150);
+    assert.strictEqual(t.resumeCalls.length, 1);
+    assert.ok(!/@|98765/.test(t.resumeCalls[0].text), 'contact details never leave the device');
+    assert.strictEqual(t.$('user-name').value, 'Asha Menon');
+    assert.match(t.$('user-bio').value, /builds data tools/);
+    assert.match(t.$('me-education').value, /IIT Madras \| B\.Tech \| Computer Science \| 2021 - 2025/);
+    assert.match(t.$('me-experience').value, /Software Intern \| Globex/);
+    assert.match(t.$('me-projects').value, /CampusMap/);
+    const sp = JSON.parse(JSON.stringify(t.store.senderProfile));
+    assert.strictEqual(sp.source, 'ai');
+    assert.strictEqual(sp.experience[0].company, 'Globex');
+    assert.strictEqual(t.store.userName, 'Asha Menon');
+    assert.match(t.$('resume-status').textContent, /Anthropic read your résumé/);
+    // a small edit must not drop the rest of the profile
+    t.$('me-skills').value = 'Python'; t.$('me-skills').dispatchEvent(new t.w.Event('change')); await tick(40);
+    const sp2 = JSON.parse(JSON.stringify(t.store.senderProfile));
+    assert.strictEqual(sp2.projects[0].name, 'CampusMap');
+    assert.strictEqual(sp2.summary, 'CS student who builds data tools.');
+    // asks again for the next upload (never remembered)
+    t.$('resume-ai-btn').click(); await tick(150);
+    assert.ok(t.$('consent-dialog').hasAttribute('open'));
+    await t.click('consent-cancel', 60);
+    assert.strictEqual(t.resumeCalls.length, 1);
+    assert.deepStrictEqual(t.errors, []);
+  });
+
+  test('popup: AI résumé read — declining keeps the on-device result; an AI failure falls back with a clear message; never overwrites typed name', async () => {
+    const t = await boot({ userApiKey: 'sk-ant-abc', userName: 'Typed Name' });
+    t.$('resume-paste').value = fs.readFileSync(path.join(__dirname, 'fixtures/resume_sample.txt'), 'utf8');
+    t.$('resume-paste-btn').click(); await tick(150);
+    await t.click('consent-free', 100);
+    assert.strictEqual(t.resumeCalls.length, 0);
+    assert.match(t.$('me-schools').value, /Indian Institute of Technology Madras/);
+    assert.match(t.$('resume-status').textContent, /Read on this device/);
+
+    t.setResumeReply({ ok: false, userMessage: 'Anthropic rejected the API key.' });
+    t.$('resume-ai-btn').click(); await tick(150);
+    await t.click('consent-send', 150);
+    assert.match(t.$('resume-status').textContent, /rejected the API key\. Using what was read on this device/);
+    assert.match(t.$('me-schools').value, /Indian Institute of Technology Madras/);
+
+    t.setResumeReply(null);
+    t.$('resume-ai-btn').click(); await tick(150);
+    await t.click('consent-send', 150);
+    assert.strictEqual(t.$('user-name').value, 'Typed Name');
+  });
+
+  test('popup: Free Mode résumé upload never opens the AI dialog or sends anything', async () => {
+    const t = await boot({});
+    t.$('resume-paste').value = fs.readFileSync(path.join(__dirname, 'fixtures/resume_sample.txt'), 'utf8');
+    await t.click('resume-paste-btn', 150);
+    assert.ok(!t.$('consent-dialog').hasAttribute('open'));
+    assert.strictEqual(t.resumeCalls.length, 0);
+    assert.ok(t.$('resume-ai-btn').classList.contains('hidden'));
   });
 };

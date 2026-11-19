@@ -325,6 +325,32 @@
             <input id="me-city" type="text" class="field-input" autocomplete="off" placeholder="e.g. Chennai, India" />
           </div>
           <p class="field-hint" id="me-list-hint">Separate items with commas. These are compared with each profile to find what you have in common.</p>
+          <details class="paste-card" id="me-more" open>
+            <summary>More detail from your résumé</summary>
+            <div class="paste-body">
+              <div class="field-group full">
+                <label class="field-label" for="me-education">Education <span class="me-sub">School | Degree | Field | Years</span></label>
+                <textarea id="me-education" class="field-textarea" rows="2" spellcheck="false"></textarea>
+              </div>
+              <div class="field-group full">
+                <label class="field-label" for="me-experience">Experience <span class="me-sub">Title | Company | Years | Highlight</span></label>
+                <textarea id="me-experience" class="field-textarea" rows="3" spellcheck="false"></textarea>
+              </div>
+              <div class="field-group full">
+                <label class="field-label" for="me-projects">Projects <span class="me-sub">Name | What it does</span></label>
+                <textarea id="me-projects" class="field-textarea" rows="2" spellcheck="false"></textarea>
+              </div>
+              <div class="field-group full">
+                <label class="field-label" for="me-certs">Certifications</label>
+                <input id="me-certs" type="text" class="field-input" autocomplete="off" />
+              </div>
+              <div class="field-group full">
+                <label class="field-label" for="me-languages">Languages</label>
+                <input id="me-languages" type="text" class="field-input" autocomplete="off" />
+              </div>
+            </div>
+          </details>
+          <button id="resume-ai-btn" class="btn btn-secondary btn-full hidden" type="button">Re-read my résumé with AI</button>
           <button id="resume-remove-btn" class="btn-ghost" type="button">Remove résumé &amp; this info</button>
         </fieldset>
 
@@ -335,7 +361,7 @@
           <strong>What leaves your device</strong>
           <ul>
             <li><b>Free Mode</b> (no key): nothing. Profiles are read, matched and drafted on this device.</li>
-            <li><b>AI Mode</b> (your own key): a short, cleaned-up summary of the profile and your résumé info goes to the provider you chose, <b>api.anthropic.com</b> (Claude) or <b>api.groq.com</b> (Llama), to write the draft. You see exactly what first. Your key is sent only to that provider.</li>
+            <li><b>AI Mode</b> (your own key): a short, cleaned-up summary of the profile and your résumé info goes to the provider you chose, <b>api.anthropic.com</b> (Claude) or <b>api.groq.com</b> (Llama), to write the draft. You see exactly what first. When you upload a résumé in AI Mode, its text (contact details removed) goes to the same provider to fill in your profile, after you approve the exact text each time. Your key is sent only to that provider.</li>
             <li><b>Never sent</b>: your résumé PDF, emails and phone numbers, or anything else on the page.</li>
             <li><b>Never automatic</b>: this tool doesn’t click, type or send on LinkedIn. You read and send every message yourself.</li>
           </ul>
@@ -350,7 +376,7 @@
     <form method="dialog" class="consent-form" id="consent-form">
       <h2 id="consent-title">Send this to your AI provider?</h2>
       <p id="consent-desc" class="consent-desc"></p>
-      <p class="consent-sub">Sent to <b id="consent-host">api.anthropic.com</b> (model <span id="consent-model"></span>) for this draft:</p>
+      <p class="consent-sub">Sent to <b id="consent-host">api.anthropic.com</b> (model <span id="consent-model"></span>) <span id="consent-what">for this draft:</span></p>
       <pre class="consent-payload" id="consent-payload" tabindex="0" aria-label="Exact data that will be sent"></pre>
       <details class="consent-instr"><summary>Instructions sent with it</summary><pre id="consent-system" tabindex="0"></pre></details>
       <p class="consent-sub">Not sent: your résumé PDF, emails, phone numbers, or your API key (it only goes in the request header).</p>

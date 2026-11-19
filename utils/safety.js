@@ -80,7 +80,75 @@
   function sanitizeSenderForPrompt(s) {
     if (!s) return null;
     const arr = (a, n, m) => (Array.isArray(a) ? a : []).slice(0, n).map(x => sanitizeText(x, m)).filter(Boolean);
-    return { intro: sanitizeText(s.intro, 120), schools: arr(s.schools, 2, 100), employers: arr(s.employers, 3, 80), skills: arr(s.skills, 8, 40), city: sanitizeText(s.city, 60) };
+    const rows = (a, n, fields) => (Array.isArray(a) ? a : []).slice(0, n).map(o => {
+      const out = {}; Object.keys(fields).forEach(k => { out[k] = sanitizeText(o && o[k], fields[k]); }); return out;
+    }).filter(o => Object.values(o).some(Boolean));
+    const out = { intro: sanitizeText(s.intro, 120), schools: arr(s.schools, 2, 100), employers: arr(s.employers, 3, 80), skills: arr(s.skills, 8, 40), city: sanitizeText(s.city, 60) };
+    // richer fields exist only after an AI résumé read; kept compact so the prompt stays small
+    const education = rows(s.education, 2, { school: 100, degree: 80, field: 80, years: 24 });
+    const experience = rows(s.experience, 3, { title: 80, company: 80, years: 24, detail: 160 });
+    const projects = rows(s.projects, 2, { name: 80, summary: 160 });
+    if (education.length) out.education = education;
+    if (experience.length) out.experience = experience;
+    if (projects.length) out.projects = projects;
+    if (s.summary) out.summary = sanitizeText(s.summary, 300);
+    return out;
+  }
+
+  // ── Résumé → structured sender profile (model output is untrusted too) ───────
+  // Keeps line breaks (a résumé is line-structured) but strips invisible characters and caps total size.
+  function sanitizeMultiline(s, max = 12000) {
+    const t = String(s == null ? '' : s).replace(INVISIBLE, '').replace(/\r/g, '').split('\n')
+      .map(l => l.replace(/[ \t]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    return clip(t, max);
+  }
+
+  const looksInjected = (s) => INJECTION.some(r => r.test(String(s || '')));
+  const alnum = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+  // True when an item the model returned really appears in the résumé (guards against invented schools/employers/skills).
+  function groundedIn(item, text) {
+    const hay = ' ' + alnum(text) + ' ';
+    const needle = alnum(item);
+    if (!needle) return false;
+    if (hay.includes(' ' + needle + ' ')) return true;
+    const words = needle.split(' ').filter(w => w.length >= 3);
+    return words.length > 0 && words.every(w => hay.includes(' ' + w));
+  }
+
+  // raw = whatever JSON the model returned; sourceText = the résumé text it was given. Returns a whitelisted, capped,
+  // grounded profile in the same shape the Settings card edits. Instruction-like or contact-like strings are dropped.
+  function sanitizeSenderProfile(raw, sourceText) {
+    const r = raw && typeof raw === 'object' ? raw : {};
+    const clean = (v, n) => {
+      const t = sanitizeText(typeof v === 'string' || typeof v === 'number' ? v : '', n);
+      return t && !looksInjected(t) && !EMAIL_RE.test(t) ? t : '';
+    };
+    const list = (a, n, m, ground) => [...new Set((Array.isArray(a) ? a : []).map(x => clean(x, m)).filter(Boolean)
+      .filter(x => !ground || !sourceText || groundedIn(x, sourceText)))].slice(0, n);
+    const objs = (a, n, shape, key, ground) => (Array.isArray(a) ? a : []).slice(0, n * 2).map(o => {
+      const out = {};
+      Object.keys(shape).forEach(k => { out[k] = clean(o && o[k], shape[k]); });
+      return out;
+    }).filter(o => o[key] && (!ground || !sourceText || groundedIn(o[key], sourceText))).slice(0, n);
+
+    const education  = objs(r.education, 4, { school: 100, degree: 80, field: 80, years: 24 }, 'school', true);
+    const experience = objs(r.experience, 6, { title: 80, company: 80, years: 24, detail: 160 }, 'company', true)
+      .map(e => ({ ...e }));
+    const projects   = objs(r.projects, 4, { name: 80, summary: 160 }, 'name', true);
+    const skills     = list(r.skills, 20, 40, true);
+
+    return {
+      name: clean(r.name, 80),
+      intro: clean(r.intro, 120),
+      summary: clean(r.summary, 300),
+      city: clean(r.city, 60),
+      education, experience, projects, skills,
+      certifications: list(r.certifications, 6, 80, true),
+      languages: list(r.languages, 6, 30, false),
+      schools: [...new Set(education.map(e => e.school))].slice(0, 4),
+      employers: [...new Set(experience.map(e => e.company))].slice(0, 6)
+    };
   }
 
   // ── Output validation ───────────────────────────────────────────────────────
@@ -106,5 +174,5 @@
     return { ok: problems.length === 0, text: t, problems };
   }
 
-  return { sanitizeText, sanitizeProfileForPrompt, sanitizeSenderForPrompt, detectInjection, validateOutput, hadInvisible, INVISIBLE };
+  return { sanitizeText, sanitizeMultiline, sanitizeSenderProfile, groundedIn, sanitizeProfileForPrompt, sanitizeSenderForPrompt, detectInjection, validateOutput, hadInvisible, INVISIBLE };
 });
