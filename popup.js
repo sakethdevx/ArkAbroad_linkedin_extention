@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('privacy-details-btn').addEventListener('click', showPrivacyDetails);
   wireProviderUi();
   wireModeSwitch();
-  document.getElementById('resume-tip-go').addEventListener('click', () => { switchTab('settings'); document.getElementById('file-upload-area').focus(); });
+  document.getElementById('resume-tip-go').addEventListener('click', () => { switchTab('settings'); document.getElementById('about-card').open = true; document.getElementById('file-upload-area').focus(); });
   document.getElementById('resume-tip-dismiss').addEventListener('click', async () => { await storageSet({ resumeTipDismissed: true }); refreshResumeTip(); });
   wireConsentDialog();
   [document.documentElement, document.body].forEach(el => el.addEventListener('scroll', pinShell, { passive: true }));
@@ -252,6 +252,7 @@ function wireSettingsEvents() {
     ingestResumeText(text, 'Pasted resume');
   });
   document.getElementById('resume-remove-btn').addEventListener('click', removeResume);
+  document.getElementById('user-name').addEventListener('input', renderAboutSummary);
   document.getElementById('resume-ai-btn').addEventListener('click', async () => {
     const { resumeText } = await storageGet(['resumeText']);
     if (!resumeText) { setResumeStatus('Upload or paste your resume first.', 'error'); return; }
@@ -547,6 +548,8 @@ async function loadSettings() {
     s = await loadStoredSettings();
   }
 
+  renderAboutSummary();
+  document.getElementById('about-card').open = !s.userName || !s.resumeFileName;   // folds once you are set up
   document.getElementById('ai-setup').open = !(s.userApiKey || '').trim();   // folds to one line once a key is saved
   senderProfile = s.senderProfile || null;
   if (senderProfile || s.resumeFileName) {
@@ -1128,6 +1131,7 @@ function setResumeStatus(msg, kind) {
 }
 
 function setResumeFileUi(fileName) {
+  setTimeout(renderAboutSummary, 0);
   document.getElementById('file-label').textContent = fileName || 'Click to upload or drag PDF here';
   document.getElementById('file-upload-area').classList.toggle('has-file', !!fileName);
 }
@@ -1154,6 +1158,7 @@ function fillMeCard(sp) {
   document.getElementById('me-certs').value      = (sp.certifications || []).join(', ');
   document.getElementById('me-languages').value  = (sp.languages || []).join(', ');
   renderMeSummary(sp);
+  renderAboutSummary();
   refreshAiResumeBtn();
 }
 
@@ -1174,6 +1179,13 @@ function readMeCard() {
     languages:  toList(v('me-languages')),
     updatedAt: Date.now()
   };
+}
+
+function renderAboutSummary() {
+  const name = document.getElementById('user-name').value.trim();
+  const hasResume = document.getElementById('file-upload-area').classList.contains('has-file');
+  const bits = [name, hasResume ? 'resume added' : ''].filter(Boolean);
+  document.getElementById('about-summary').textContent = bits.length ? bits.join(' · ') : 'add your name and resume';
 }
 
 function renderMeSummary(sp) {

@@ -249,8 +249,9 @@
         </details>
 
         <!-- 2 · About you -->
-        <section class="set-card set-static" aria-labelledby="about-title">
-          <h2 class="set-title" id="about-title">About you</h2>
+        <details class="set-card" id="about-card" open>
+          <summary><span class="set-title">About you</span><span class="set-chip" id="about-summary"></span></summary>
+          <div class="set-body">
           <div class="field-group full">
             <label class="field-label" for="user-name">Name</label>
             <input id="user-name" type="text" class="field-input" placeholder="Jane Smith" autocomplete="off" />
@@ -278,7 +279,8 @@
               </div>
             </details>
           </div>
-        </section>
+          </div>
+        </details>
 
         <!-- 3 · What I found (folded: one summary line, details on demand) -->
         <details class="set-card hidden" id="me-card">

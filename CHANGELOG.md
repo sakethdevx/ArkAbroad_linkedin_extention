@@ -240,3 +240,6 @@ A real Groq draft was exactly 200/200 and claimed the sender was "currently inte
 2. **About you**: name, short bio, resume upload (with paste as a fallback).
 3. **Your profile**: folded to one summary line ("2 schools · 2 employers · 20 skills · Chennai"). Opening it shows only the essentials (intro, city, skills, education, experience, projects); schools/employers lists, certifications and languages sit in a second fold, "Matching lists and extras". It opens by itself right after a resume is read so you can check it.
 - "What leaves your device" is a fold-away card (and opens when you tap "What's sent?" with no profile). **Save settings** stays pinned at the bottom while you scroll. Copy is shorter throughout. All field ids are unchanged.
+
+### UI: "About you" folds like the other Settings cards
+It is open until you have a name and a resume, then folds to a one-line summary ("Asha Menon · resume added") that stays current as you type or upload. The "add your resume" tip opens it so the upload box is reachable.

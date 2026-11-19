@@ -448,4 +448,24 @@ module.exports = (test) => {
     await t.click('reread-btn', 200);   // read again → back through the same flow
     assert.deepStrictEqual(t.errors, []);
   });
+
+  test('popup: Settings cards fold: "About you" is open until name + resume exist, then shows a one-line summary', async () => {
+    const fresh = await boot({});
+    assert.strictEqual(fresh.$('about-card').open, true);
+    assert.strictEqual(fresh.$('ai-setup').open, true);
+    assert.match(fresh.$('about-summary').textContent, /add your name and resume/);
+    fresh.$('user-name').value = 'Asha'; fresh.$('user-name').dispatchEvent(new fresh.w.Event('input'));
+    assert.match(fresh.$('about-summary').textContent, /^Asha/);
+
+    const done = await boot({ userName: 'Asha Menon', resumeFileName: 'r.pdf', senderProfile: SENDER, userApiKey: 'sk-ant-x', mode: 'ai', aiConsent: { version: 2, ackAt: 1, provider: 'anthropic' } });
+    await tick(60);
+    assert.strictEqual(done.$('about-card').open, false);
+    assert.strictEqual(done.$('ai-setup').open, false);
+    assert.match(done.$('about-summary').textContent, /Asha Menon · resume added/);
+    assert.match(done.$('ai-setup-status').textContent, /On · Anthropic/);
+    // the "add resume" tip opens the folded card so the upload box is reachable
+    await done.click('resume-tip-go', 40);
+    assert.strictEqual(done.$('about-card').open, true);
+    assert.deepStrictEqual(done.errors, []);
+  });
 };
