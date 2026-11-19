@@ -8,7 +8,7 @@ const vm = require('vm');
 module.exports = (test) => {
   const root = path.join(__dirname, '..');
 
-  function boot({ store = {}, fetchImpl }) {
+  function boot({ store = {}, fetchImpl, tabs = {}, scripting = {} }) {
     const calls = [];
     let listener;
     const ctx = { console, setTimeout, clearTimeout, URL, JSON, Promise, Object, Array, String, Number, Math, RegExp, Error, TypeError, Set, Map, Symbol };
@@ -16,7 +16,7 @@ module.exports = (test) => {
     ctx.chrome = {
       runtime: { id: 'ext-id', onMessage: { addListener: (fn) => { listener = fn; } } },
       storage: { local: { get: (keys, cb) => cb({ ...store }) } },
-      tabs: {}, scripting: {}
+      tabs, scripting
     };
     ctx.fetch = async (url, init) => { calls.push({ url, init, body: init && init.body ? JSON.parse(init.body) : null }); return fetchImpl(url, init, calls.length); };
     ctx.importScripts = (...files) => files.forEach(f => vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx, { filename: f }));
@@ -133,6 +133,36 @@ module.exports = (test) => {
     const r = await gen(b, data({ forceFree: true }));
     assert.strictEqual(r.source, 'template');
     assert.strictEqual(b.calls.length, 0);
+  });
+
+  test('bg: scrape uses the panel\'s tab id, injects the content script only when needed, and rejects non-profile pages', async () => {
+    const injected = [];
+    let ponged = false;
+    const tabsApi = {
+      get: async (id) => ({ id, url: id === 7 ? 'https://www.linkedin.com/in/priya/overlay/contact-info/' : id === 8 ? 'https://www.linkedin.com/feed/' : undefined }),
+      query: async () => { throw new Error('must not fall back to query when a tab id is given'); },
+      sendMessage: async (id, msg) => {
+        if (msg.action === 'ping') { if (ponged) return { ok: true }; throw new Error('Could not establish connection'); }
+        if (msg.action === 'scrapeProfile') return { success: true, data: { name: 'Priya Rao' } };
+      }
+    };
+    const scripting = { executeScript: async (o) => { injected.push(o.files.join(',')); ponged = true; } };
+    const b = boot({ fetchImpl: () => { throw new Error('x'); }, tabs: tabsApi, scripting });
+
+    const r1 = await b.send({ action: 'scrapeProfile', tabId: 7 });
+    assert.ok(r1.success);
+    assert.strictEqual(r1.data.name, 'Priya Rao');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(injected)), ['utils/profile_parse.js,content_script.js']);
+
+    await b.send({ action: 'scrapeProfile', tabId: 7 });          // already injected → no second injection
+    assert.strictEqual(injected.length, 1);
+
+    const r2 = await b.send({ action: 'scrapeProfile', tabId: 8 });
+    assert.strictEqual(r2.success, false);
+    assert.match(r2.error, /Open a LinkedIn profile/);
+    const r3 = await b.send({ action: 'scrapeProfile', tabId: 9 }); // tab we have no permission to see
+    assert.strictEqual(r3.success, false);
+    assert.strictEqual(injected.length, 1, 'never injects into a page that is not a profile');
   });
 
   test('bg: messages from anything but our own extension are ignored', async () => {

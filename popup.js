@@ -18,12 +18,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireReadCard();
   document.getElementById('paste-btn').addEventListener('click', handlePasteProfile);
   document.getElementById('privacy-details-btn').addEventListener('click', showPrivacyDetails);
+  document.getElementById('resume-tip-go').addEventListener('click', () => { switchTab('settings'); document.getElementById('file-upload-area').focus(); });
+  document.getElementById('resume-tip-dismiss').addEventListener('click', async () => { await storageSet({ resumeTipDismissed: true }); refreshResumeTip(); });
   wireConsentDialog();
   await checkCurrentPage();
   await loadSettings();
   await loadPrefs();
   await renderRecentContacts();
   await refreshModeBadge();
+  await refreshResumeTip();
   await onTabContextChanged();
   watchTabs();
 });
@@ -163,7 +166,7 @@ async function handleScrapeAndGenerate() {
   clearCurrentStatus();
 
   try {
-    const profile = await sendToBackground({ action: 'scrapeProfile' });
+    const profile = await sendToBackground({ action: 'scrapeProfile', tabId: await activeTabId() });
     await generateFromProfile(profile);
   } catch (err) {
     showCurrentStatus(err.message, 'error');
@@ -344,7 +347,7 @@ async function handleEnrich() {
   setLayerStatus(1, 'running', 'Reading…');
 
   try {
-    const raw = await sendToBackground({ action: 'scrapeProfile' });
+    const raw = await sendToBackground({ action: 'scrapeProfile', tabId: await activeTabId() });
     await runEnrich(raw);
   } catch (err) {
     setLayerStatus(1, 'error', 'Failed');
@@ -559,7 +562,7 @@ function draftCtx() {
 function renderDrafts(resp) {
   const wasHidden = document.getElementById('message-section').classList.contains('hidden');
   const list = resp.variants && resp.variants.length ? resp.variants : [{ text: resp.generatedMessage || '', source: 'template' }];
-  drafts = list.map(v => ({ text: v.text, source: v.source }));
+  drafts = list.map(v => ({ text: v.text, source: v.source, hookKind: v.hookKind }));
   document.getElementById('message-section').classList.remove('hidden');
   buildDraftTabs();
   selectDraft(0);
@@ -625,6 +628,9 @@ function updateDraftMeta() {
     wasOver = over;
   }
 
+  // A quoted post comes from their Activity section, which can include things they only reposted or liked.
+  document.getElementById('post-note').classList.toggle('hidden', !(drafts[activeDraft] && drafts[activeDraft].hookKind === 'post' && /[“"]/.test(text)));
+
   const badge = document.getElementById('source-badge');
   badge.textContent = (drafts[activeDraft] && SOURCE_LABEL[drafts[activeDraft].source]) || '';
 
@@ -642,6 +648,12 @@ function updateDraftMeta() {
   });
 }
 
+// First-run nudge: the résumé is what makes drafts specific, but it's optional, so ask once and let it go.
+async function refreshResumeTip() {
+  const { resumeTipDismissed } = await storageGet(['resumeTipDismissed']);
+  document.getElementById('resume-tip').classList.toggle('hidden', !!resumeTipDismissed || hasResumeInfo(senderProfile));
+}
+
 function renderDraftNotes(resp) {
   const box = document.getElementById('draft-notes');
   box.innerHTML = '';
@@ -650,6 +662,8 @@ function renderDraftNotes(resp) {
   if ((resp.injection && resp.injection.length) || resp.aiSawInjection) {
     add('This profile contains text that looks like instructions to an AI. I ignored it and only used the facts.', 'warn');
   }
+  const hasIntro = (senderProfile && senderProfile.intro) || document.getElementById('user-bio').value.trim();
+  if (!hasIntro) add('Tip: add a one-line intro in Settings (e.g. “final-year CS student at …”) so your draft can say who you are.', 'tip');
   if (currentProfile && (currentProfile.recentPosts || []).length) {
     add('Tip: like or comment on one of their posts first. In one vendor dataset, warm messages got about 4× the replies (directional, not a guarantee).', 'tip');
   }
@@ -873,15 +887,27 @@ async function showPrivacyDetails() {
   document.querySelector('.settings-note').focus?.();
 }
 
+async function activeTabId() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tabs[0] ? tabs[0].id : undefined;
+}
+
+// Identity of "the page I'm on". Same profile ⇒ same key, even when LinkedIn adds #hash, ?query or opens
+// /overlay/contact-info/ (which changes the URL but not the person).
+function pageKey(url) {
+  const m = String(url || '').match(/linkedin\.com\/in\/([^/?#]+)/i);
+  return m ? `in/${decodeURIComponent(m[1]).toLowerCase()}` : String(url || '').split(/[?#]/)[0];
+}
+
 // ─── Follow the active tab (the side panel stays open while you browse) ───────
 let lastPageUrl = null;
 
 async function onTabContextChanged() {
   await checkCurrentPage();
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  const url = ((tabs[0] && tabs[0].url) || '').split('?')[0];
-  if (lastPageUrl !== null && url !== lastPageUrl) resetForNewPage();
-  lastPageUrl = url;
+  const key = pageKey(tabs[0] && tabs[0].url);
+  if (lastPageUrl !== null && key !== lastPageUrl) resetForNewPage();
+  lastPageUrl = key;
 }
 
 // A draft written for one person must never sit under another person's profile.
@@ -923,6 +949,7 @@ function sendToBackground(msg) {
 // ─── Résumé: PDF → text → editable profile (all on-device) ─────────────────────
 const toList = (v) => String(v || '').split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
 const storageSet = (o) => new Promise(r => chrome.storage.local.set(o, r));
+const storageGet = (keys) => new Promise(r => chrome.storage.local.get(keys, r));
 
 function setResumeStatus(msg, kind) {
   const el = document.getElementById('resume-status');
@@ -982,6 +1009,7 @@ async function ingestResumeText(text, fileName, opts = {}) {
     else setResumeStatus("I read your résumé but couldn't pick out schools, employers or skills. Add them below and I'll use those.", 'pending');
   }
   renderOverlaps(true);
+  refreshResumeTip();
 }
 
 async function processResumeFile(file) {
@@ -1013,6 +1041,7 @@ async function removeResume() {
   setResumeFileUi('');
   setResumeStatus('Résumé and extracted info removed from this device.', 'success');
   renderOverlaps(true);
+  refreshResumeTip();
 }
 
 // ─── Shared background: what you two have in common ───────────────────────────
@@ -1078,7 +1107,7 @@ async function onChipToggle(id, btn) {
 
 function loadStoredSettings() {
   return new Promise(resolve => {
-    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile','prefs','aiConsent'], resolve);
+    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile','prefs','aiConsent','resumeTipDismissed'], resolve);
   });
 }
 

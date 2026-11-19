@@ -29,7 +29,7 @@ chrome.commands && chrome.commands.onCommand.addListener((command, tab) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return;   // only our own extension pages
 
-  if (message.action === 'scrapeProfile')  { handleScrapeProfile(sendResponse); return true; }
+  if (message.action === 'scrapeProfile')  { handleScrapeProfile(message.tabId, sendResponse); return true; }
   if (message.action === 'generateMessage') { handleQuickGenerate(message.data, sendResponse); return true; }
   if (message.type === 'TEST_API_KEY')     { handleTestKey(message.payload, sendResponse); return true; }
   if (message.type === 'RUN_ENRICH')       { handleEnrich(message.payload, sendResponse); return true; }
@@ -50,10 +50,10 @@ async function ensureContentScript(tabId) {
   await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_FILES });
 }
 
-async function handleScrapeProfile(sendResponse) {
+async function handleScrapeProfile(tabId, sendResponse) {
   try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const tab  = tabs[0];
+    // The panel tells us which tab it is looking at (correct even with several windows open).
+    const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId) : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
     if (!tab) throw new Error('No active tab found.');
     if (!tab.url || !/^https:\/\/www\.linkedin\.com\/in\//.test(tab.url)) {
       throw new Error('Open a LinkedIn profile (linkedin.com/in/…) first, or paste the profile text instead.');
@@ -125,7 +125,7 @@ async function handlePreview(data, sendResponse) {
 async function generateDrafts(data) {
   const ctx = await prepareContext(data);
   const composed = Compose.compose(ctx.composeCtx, { seed: ctx.seed }).variants
-    .map(v => ({ text: v.text, source: 'template' }));
+    .map(v => ({ text: v.text, source: 'template', hookKind: v.hookKind }));
   const warnings = [];
   const out = { success: true, injection: ctx.injection };
 

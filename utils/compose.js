@@ -78,7 +78,8 @@
     const post = (p.recentPosts || [])[0];
     if (!post) return null;
     const snip = wordClip(post, short ? 40 : 60);
-    return { text: pick([`I enjoyed your recent post: “${snip}”.`, `Your recent post “${snip}” caught my eye.`], n), kind: 'post' };
+    const dot = /[….!?]$/.test(snip) ? '' : '.';   // no "…”." pile-up when the quote was truncated
+    return { text: pick([`I enjoyed your recent post: “${snip}”${dot}`, `Your recent post “${snip}” caught my eye.`], n), kind: 'post' };
   }
 
   function roleHook(p, n) {

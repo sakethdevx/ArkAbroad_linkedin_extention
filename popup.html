@@ -34,6 +34,14 @@
     <!-- ── CURRENT tab ── -->
     <section class="tab-content active" id="tab-current" role="tabpanel" aria-labelledby="tabbtn-current">
 
+      <div class="resume-tip hidden" id="resume-tip">
+        <p>Add your résumé so drafts can mention what you have in common with them. It stays on your device.</p>
+        <div class="resume-tip-actions">
+          <button type="button" class="btn-link" id="resume-tip-go">Add résumé</button>
+          <button type="button" class="btn-link muted" id="resume-tip-dismiss">Not now</button>
+        </div>
+      </div>
+
       <div class="alert alert-info hidden" id="page-warning">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         Open a LinkedIn profile to read it automatically, or paste profile text below.
@@ -198,6 +206,7 @@
           <span class="sr-only" id="count-live" aria-live="polite"></span>
         </div>
         <ul class="checklist" id="draft-checklist" aria-label="Reply-ready checklist"></ul>
+        <p class="draft-note warn hidden" id="post-note">This draft quotes a post from their Activity. Check it is their own post, and that you really liked it, before sending.</p>
         <div class="draft-notes" id="draft-notes"></div>
         <div class="action-row">
           <button id="regenerate-btn" class="btn btn-secondary" type="button">
@@ -265,7 +274,7 @@
         <div class="field-group full">
           <label class="field-label" for="user-bio">Your Bio</label>
           <textarea id="user-bio" class="field-textarea" rows="3"
-            placeholder="Brief professional summary — used to personalize messages."></textarea>
+            placeholder="One or two sentences about you. Used when you haven’t written a one-line intro below."></textarea>
         </div>
 
         <div class="field-group full">
