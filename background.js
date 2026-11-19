@@ -11,6 +11,20 @@ importScripts('utils/compose.js', 'utils/safety.js');
 const ANTHROPIC_URL   = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_MODEL = 'claude-haiku-5-5';
 
+// ─── Side panel ───────────────────────────────────────────────────────────────
+// The panel stays open while you click around LinkedIn (a popup closes the moment you click the page,
+// which used to kill an in-flight draft). Clicking the toolbar icon, or Alt+Shift+O, opens it.
+function enableSidePanel() {
+  if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  }
+}
+enableSidePanel();
+chrome.runtime.onInstalled && chrome.runtime.onInstalled.addListener(enableSidePanel);
+chrome.commands && chrome.commands.onCommand.addListener((command, tab) => {
+  if (command === 'open-panel' && chrome.sidePanel && tab) chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+});
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return;   // only our own extension pages
@@ -115,7 +129,7 @@ async function generateDrafts(data) {
   const warnings = [];
   const out = { success: true, injection: ctx.injection };
 
-  const apiKey = await getApiKey();
+  const apiKey = data.forceFree ? '' : await getApiKey();   // forceFree: the user declined to send anything to Anthropic this time
   if (!apiKey) {
     return { ...out, variants: composed, generatedMessage: composed[0].text, source: 'template', warnings };
   }

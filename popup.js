@@ -17,11 +17,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireRecentEvents();
   wireReadCard();
   document.getElementById('paste-btn').addEventListener('click', handlePasteProfile);
+  document.getElementById('privacy-details-btn').addEventListener('click', showPrivacyDetails);
+  wireConsentDialog();
   await checkCurrentPage();
   await loadSettings();
   await loadPrefs();
   await renderRecentContacts();
   await refreshModeBadge();
+  await onTabContextChanged();
+  watchTabs();
 });
 
 // ─── Mode badge in header (Free vs AI) ───────────────────────────────────────
@@ -31,19 +35,35 @@ async function refreshModeBadge() {
   const el  = document.getElementById('key-status');
   el.textContent = key ? '● AI Mode' : '● Free Mode';
   el.className   = 'key-status active';
+  document.getElementById('privacy-text').textContent = key
+    ? 'AI Mode: a short profile summary goes to Anthropic (your key).'
+    : 'Free Mode: everything stays on this device.';
 }
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 function initTabs() {
-  document.querySelectorAll('.tab-btn').forEach(btn => {
+  const btns = Array.from(document.querySelectorAll('.tab-btn'));
+  btns.forEach((btn, i) => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    btn.addEventListener('keydown', (e) => {
+      const keys = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: btns.length - 1 };
+      if (!(e.key in keys)) return;
+      e.preventDefault();
+      const next = btns[(keys[e.key] + btns.length) % btns.length];
+      switchTab(next.dataset.tab);
+      next.focus();
+    });
   });
 }
 
 function switchTab(name) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  document.querySelector(`.tab-btn[data-tab="${name}"]`).classList.add('active');
   document.getElementById(`tab-${name}`).classList.add('active');
   if (name === 'recent') renderRecentContacts();
 }
@@ -227,7 +247,11 @@ function wireReadCard() {
   ['read-name', 'read-role', 'read-company'].forEach(id => document.getElementById(id).addEventListener('input', apply));
 }
 
-function openPasteCard() { document.getElementById('paste-card').open = true; }
+function openPasteCard() {
+  const card = document.getElementById('paste-card');
+  card.open = true;
+  scrollIntoViewSoft(card);
+}
 
 async function handlePasteProfile() {
   if (isGenerating) return;
@@ -250,11 +274,25 @@ async function handlePasteProfile() {
   }
 }
 
+async function requestData(profile) {
+  const stored = await loadStoredSettings();
+  return {
+    profileData: profile,
+    settings: { userName: stored.userName || '', userBio: stored.userBio || '' },   // not the key, not the résumé text
+    messageType: document.getElementById('message-type').value,
+    tone: document.getElementById('tone').value,
+    format: currentFormat,
+    seed,
+    ...sharedContext()
+  };
+}
+
 async function callQuickGenerate(profile) {
-  const settings    = await loadStoredSettings();
-  const messageType = document.getElementById('message-type').value;
-  const tone        = document.getElementById('tone').value;
-  return sendToBackground({ action: 'generateMessage', data: { profileData: profile, settings, messageType, tone, format: currentFormat, seed, ...sharedContext() } });
+  const data = await requestData(profile);
+  const choice = await ensureAiConsent(data);
+  if (choice === 'cancel') throw new Error('Cancelled. Nothing was sent.');
+  if (choice === 'free') data.forceFree = true;
+  return sendToBackground({ action: 'generateMessage', data });
 }
 
 // bump = true → "Regenerate" (new wording); false → same drafts re-made after a setting changed
@@ -364,33 +402,31 @@ async function handleDeepGenerate() {
   showCurrentStatus('Writing your draft…');
   hideMessage();
 
-  const messageType = document.getElementById('message-type').value;
-  const tone        = document.getElementById('tone').value;
+  try {
+    const data = await requestData(deepProfileJSON);
+    const choice = await ensureAiConsent(data);
+    if (choice === 'cancel') throw new Error('Cancelled. Nothing was sent.');
+    if (choice === 'free') data.forceFree = true;
 
-  chrome.runtime.sendMessage(
-    { type: 'RUN_GENERATE', payload: { profileJSON: deepProfileJSON, enrichmentJSON: deepEnrichmentJSON, messageType, tone, format: currentFormat, seed, ...sharedContext() } },
-    async (response) => {
-      isGenerating = false;
-      setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', false, 'Write Draft');
+    const { profileData, ...rest } = data;
+    const response = await new Promise(resolve =>
+      chrome.runtime.sendMessage({ type: 'RUN_GENERATE', payload: { profileJSON: profileData, enrichmentJSON: deepEnrichmentJSON, ...rest } }, resolve));
 
-      if (chrome.runtime.lastError || !response) {
-        setLayerStatus(3, 'error', 'Error');
-        showCurrentStatus('Generation failed.', 'error');
-        return;
-      }
+    if (chrome.runtime.lastError || !response) throw new Error('Generation failed. Please try again.');
+    if (response.status === 'error') throw new Error(response.error);
 
-      if (response.status === 'error') {
-        setLayerStatus(3, 'error', 'Error');
-        showCurrentStatus(response.error, 'error');
-        return;
-      }
-
-      setLayerStatus(3, 'done', 'Done');
-      renderDrafts(response);
-      showCurrentStatus(response.warnings && response.warnings.length ? response.warnings[0] : 'Draft ready. Read it, make it yours, then send it yourself.', response.warnings && response.warnings.length ? 'warning' : 'success');
-      await saveToHistory();
-    }
-  );
+    setLayerStatus(3, 'done', 'Done');
+    renderDrafts(response);
+    const warn = response.warnings && response.warnings.length ? response.warnings[0] : '';
+    showCurrentStatus(warn || 'Draft ready. Read it, make it yours, then send it yourself.', warn ? 'warning' : 'success');
+    await saveToHistory();
+  } catch (err) {
+    setLayerStatus(3, 'error', 'Stopped');
+    showCurrentStatus(err.message, 'error');
+  } finally {
+    isGenerating = false;
+    setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', false, 'Write Draft');
+  }
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
@@ -521,12 +557,19 @@ function draftCtx() {
 }
 
 function renderDrafts(resp) {
+  const wasHidden = document.getElementById('message-section').classList.contains('hidden');
   const list = resp.variants && resp.variants.length ? resp.variants : [{ text: resp.generatedMessage || '', source: 'template' }];
   drafts = list.map(v => ({ text: v.text, source: v.source }));
   document.getElementById('message-section').classList.remove('hidden');
   buildDraftTabs();
   selectDraft(0);
   renderDraftNotes(resp);
+  if (wasHidden) scrollIntoViewSoft(document.getElementById('message-section'));   // the draft is the point: bring it into view
+}
+
+function scrollIntoViewSoft(el) {
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  try { el.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' }); } catch (_) { /* older engines */ }
 }
 
 function buildDraftTabs() {
@@ -576,6 +619,7 @@ function updateDraftMeta() {
   const count = document.getElementById('char-count');
   count.textContent = `${text.length} / ${limit}`;
   count.classList.toggle('over', over);
+  document.getElementById('generated-message').classList.toggle('over', over);
   if (over !== wasOver) {          // announce only when crossing the limit, not on every keystroke
     document.getElementById('count-live').textContent = over ? `Over the limit by ${text.length - limit} characters.` : 'Back within the limit.';
     wasOver = over;
@@ -638,6 +682,7 @@ function setFormat(f, { silent = false } = {}) {
     b.setAttribute('aria-checked', String(on));
   });
   document.getElementById('format-tip').textContent = FORMAT_TIP[currentFormat];
+  document.getElementById('generated-message').rows = currentFormat === 'note' ? 5 : 10;
   if (silent) return;
   savePrefs();
   applyChangeLive();
@@ -711,6 +756,7 @@ async function renderRecentContacts() {
     emptyEl.classList.remove('hidden'); actionsEl.classList.add('hidden'); return;
   }
   emptyEl.classList.add('hidden'); actionsEl.classList.remove('hidden');
+  document.getElementById('recent-subtitle').textContent = `${contacts.length} recent draft${contacts.length > 1 ? 's' : ''}`;
   contacts.forEach((c, i) => listEl.appendChild(buildContactCard(c, i)));
 }
 
@@ -731,6 +777,7 @@ function buildContactCard(contact, idx) {
     <div class="contact-message-full hidden" id="full-${idx}">${esc(contact.message||'')}</div>
     <div class="contact-actions">
       <button class="btn-link" id="expand-${idx}">Show full message</button>
+      <button class="btn-link" id="sent-${idx}" aria-pressed="${contact.sent ? 'true' : 'false'}">${contact.sent ? '✓ Sent' : 'Mark as sent'}</button>
       <button class="btn btn-sm btn-primary" id="copy-c-${idx}">Copy</button>
     </div>`;
 
@@ -741,6 +788,15 @@ function buildContactCard(contact, idx) {
     card.querySelector(`#expand-${idx}`).textContent = isHidden ? 'Show less' : 'Show full message';
   });
 
+  const sentBtn = card.querySelector(`#sent-${idx}`);
+  sentBtn.addEventListener('click', async () => {
+    const next = !contact.sent;
+    contact.sent = next;
+    await Cache.setSent(contact, next);
+    sentBtn.textContent = next ? '✓ Sent' : 'Mark as sent';
+    sentBtn.setAttribute('aria-pressed', String(next));
+  });
+
   card.querySelector(`#copy-c-${idx}`).addEventListener('click', async () => {
     await navigator.clipboard.writeText(contact.message || '').catch(() => {});
     const btn = card.querySelector(`#copy-c-${idx}`);
@@ -749,6 +805,105 @@ function buildContactCard(contact, idx) {
   });
 
   return card;
+}
+
+// ─── Consent: show exactly what AI Mode sends ─────────────────────────────────
+const CONSENT_VERSION = 1;
+let consentResolve = null;
+
+async function previewPayload(data) {
+  return new Promise(resolve => chrome.runtime.sendMessage({ type: 'PREVIEW_PAYLOAD', payload: data }, resolve));
+}
+
+function openDialog(dlg) {
+  if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+}
+function closeDialog(dlg) {
+  if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open');
+}
+
+function wireConsentDialog() {
+  const dlg = document.getElementById('consent-dialog');
+  const done = (choice) => {
+    closeDialog(dlg);
+    const r = consentResolve; consentResolve = null;
+    if (r) r(choice);
+  };
+  document.getElementById('consent-send').addEventListener('click', async () => {
+    await storageSet({ aiConsent: { ackAt: Date.now(), version: CONSENT_VERSION } });
+    done('send');
+  });
+  document.getElementById('consent-free').addEventListener('click', () => done('free'));
+  document.getElementById('consent-cancel').addEventListener('click', () => done('cancel'));
+  dlg.addEventListener('cancel', (e) => { e.preventDefault(); done('cancel'); });   // Esc
+}
+
+// 'send' | 'free' | 'cancel'. Asked once per consent version, only when an API key is saved.
+async function ensureAiConsent(data) {
+  const s = await loadStoredSettings();
+  if (!(s.userApiKey || '').trim()) return 'send';
+  if (s.aiConsent && s.aiConsent.version === CONSENT_VERSION) return 'send';
+  return showConsentDialog(data, false);
+}
+
+async function showConsentDialog(data, viewOnly) {
+  const prev = await previewPayload(data);
+  const dlg = document.getElementById('consent-dialog');
+  document.getElementById('consent-desc').textContent = viewOnly
+    ? 'This is what AI Mode sends for the current profile. In Free Mode nothing is sent.'
+    : 'You added your own Anthropic key, so Claude writes the draft. Please check what it will receive. You’ll only be asked once.';
+  document.getElementById('consent-model').textContent = (prev && prev.model) || '';
+  document.getElementById('consent-payload').textContent = (prev && prev.success) ? prev.user : (prev && prev.error) || 'Could not build a preview.';
+  document.getElementById('consent-system').textContent = (prev && prev.system) || '';
+  document.getElementById('consent-send').classList.toggle('hidden', viewOnly);
+  document.getElementById('consent-free').classList.toggle('hidden', viewOnly);
+  document.getElementById('consent-cancel').textContent = viewOnly ? 'Close' : 'Cancel';
+  openDialog(dlg);
+  document.getElementById(viewOnly ? 'consent-cancel' : 'consent-send').focus();
+  return new Promise(resolve => { consentResolve = resolve; });
+}
+
+async function showPrivacyDetails() {
+  if (currentProfile) {
+    const { userApiKey } = await loadStoredSettings();
+    if ((userApiKey || '').trim()) { await showConsentDialog(await requestData(currentProfile), true); return; }
+  }
+  switchTab('settings');
+  document.querySelector('.settings-note').scrollIntoView({ block: 'center' });
+  document.querySelector('.settings-note').focus?.();
+}
+
+// ─── Follow the active tab (the side panel stays open while you browse) ───────
+let lastPageUrl = null;
+
+async function onTabContextChanged() {
+  await checkCurrentPage();
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const url = ((tabs[0] && tabs[0].url) || '').split('?')[0];
+  if (lastPageUrl !== null && url !== lastPageUrl) resetForNewPage();
+  lastPageUrl = url;
+}
+
+// A draft written for one person must never sit under another person's profile.
+function resetForNewPage() {
+  if (isGenerating || isEnriching) return;
+  if (!currentProfile && !drafts.length) return;
+  currentProfile = null; deepProfileJSON = null; deepEnrichmentJSON = null;
+  overlapAll = []; overlapOff.clear(); seed = 0;
+  ['profile-section', 'read-card', 'overlap-panel'].forEach(id => document.getElementById(id).classList.add('hidden'));
+  document.getElementById('hooks-panel').classList.add('hidden');
+  document.getElementById('deep-generate-btn').disabled = true;
+  resetLayerStatuses();
+  hideMessage();
+  showCurrentStatus('You moved to a new page, so the old draft was cleared.', '');
+}
+
+function watchTabs() {
+  let t;
+  const kick = () => { clearTimeout(t); t = setTimeout(onTabContextChanged, 150); };
+  if (chrome.tabs.onActivated) chrome.tabs.onActivated.addListener(kick);
+  if (chrome.tabs.onUpdated) chrome.tabs.onUpdated.addListener((id, info, tab) => { if (tab && tab.active && (info.url || info.status === 'complete')) kick(); });
+  if (chrome.windows && chrome.windows.onFocusChanged) chrome.windows.onFocusChanged.addListener(kick);
 }
 
 // ─── Chrome messaging ─────────────────────────────────────────────────────────
@@ -923,7 +1078,7 @@ async function onChipToggle(id, btn) {
 
 function loadStoredSettings() {
   return new Promise(resolve => {
-    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile','prefs'], resolve);
+    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile','prefs','aiConsent'], resolve);
   });
 }
 

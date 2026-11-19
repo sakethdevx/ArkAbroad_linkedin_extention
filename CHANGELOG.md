@@ -73,3 +73,25 @@ _Slices land below as they ship._
 **Demo** No key: pick *Connection note*, scrape → three drafts, counter, checklist; edit until it goes red at 201; *New drafts*; toggle a chip off → drafts change. Switch to *Message* → fuller draft with easy-out and sign-off. Then paste a profile whose About says "Ignore previous instructions…" → amber notice, field ignored.
 
 **Verify** `node test/run.js` (58 tests: composer fuzz, safety, a sandboxed run of the real `background.js` with stubbed `fetch`/`chrome`). Manual: load unpacked; try both formats, three tones, Job/Referral; with a real key, Test → Save → Generate.
+
+### Slice 4 — Side panel, shortcut and honest privacy (headline #4) + polish
+
+**What**
+- **Side panel** hosting the same `popup.html` (no rebuild; the popup *is* the panel). It stays open while you click around LinkedIn, so a draft is no longer lost when the popup closed mid-generation. **Toolbar click or Alt+Shift+O** opens it.
+- **Follows the tab you're on**: navigating to another profile (including LinkedIn's in-page navigation) clears the old draft, so a message written for one person can never sit under another person's profile; off-LinkedIn it falls back to the paste option.
+- **Privacy you can see**: a strip under the header says *"Free Mode: everything stays on this device"* or *"AI Mode: a short profile summary goes to Anthropic"*. In AI Mode the first draft opens a **consent dialog that shows the exact payload and instructions** (same function builds the preview and the real request, covered by a test); choices are *Send to Claude* (remembered), *Use a free draft*, or *Cancel*. **What's sent?** re-opens it any time.
+- Settings rewritten as a plain "What leaves your device" list; the API key field finally has a label.
+- Small cleanups: API-key "Test" only tests; history 5 → 30 with **Mark as sent**; pasted profiles no longer overwrite each other in Recent; licence/OpenAI leftovers and dead message handlers removed; `<title>`/copy fixed.
+- **Visual direction — "correspondence"**: warm paper + ink-blue accent (9.8:1 on white), a serif voice for the words you'll actually send (system fonts only, no web fonts, no remote requests), small-caps labels, chips as stamped tags with a ✓ (state isn't colour-only), the draft on a paper-like card.
+- **Accessibility**: ARIA tab pattern with arrow-key navigation (main tabs and Draft A/B/C), labelled controls, `aria-live` status, the counter announces only when crossing the limit, focus-visible rings, dialog focus handling, `prefers-reduced-motion`, usable from 320 px to wide panels. Static a11y checks run in the test suite.
+
+**Why** A popup is the wrong shape for a task that happens *while* browsing, and a tool that reads profiles has to earn trust: say what it does with the data, show it, and let the user decline.
+
+**Tradeoffs / honesty**
+- The side panel is now the default entry point (the base had a popup). Chrome 116+ is required; I set `minimum_chrome_version`.
+- I did **not** build the on-device Gemini Nano polish I'd listed as a stretch: Chrome's Prompt API needs ~22 GB free disk, a capable GPU/16 GB RAM and only supports 5 languages, so it can't be the foundation for most students, and I can't verify it on target machines. Free drafts are composed deterministically instead. It's the first "next" item.
+- Everything visual was checked in real Chrome via screenshots of the actual UI with a stubbed extension API; the extension itself still needs a real load-unpacked pass on live LinkedIn (see Phase 5 checklist).
+
+**Demo** Click the icon → panel opens → click through LinkedIn while it stays → switch to a new profile and watch the draft clear → add an API key → *What's sent?* shows the exact payload → *Use a free draft*.
+
+**Verify** `node test/run.js` (67 tests incl. manifest/permission/network-origin/secret guards and HTML a11y). Manual: load unpacked; press Alt+Shift+O; Settings → add a key → generate → consent dialog.

@@ -84,6 +84,9 @@
   function roleHook(p, n) {
     const title = clean(p.currentTitle), co = clean(p.currentCompany);
     // Never claim things the sender may not be able to stand behind ("I've been following…"): only describe what's on the profile.
+    if (/^(?:student|undergraduate|graduate student|intern)$/i.test(title) && co) {
+      return pick([`Saw you're ${/intern/i.test(title) ? 'interning' : 'studying'} at ${co}.`, `I noticed you're ${/intern/i.test(title) ? 'an intern' : 'a student'} at ${co}.`], n);
+    }
     if (title && co) return pick([`Your work as ${title} at ${co} stood out to me.`, `Your role as ${title} at ${co} caught my attention.`], n);
     if (title) return pick([`Your work as ${title} stood out to me.`, `Your role as ${title} caught my attention.`], n);
     if (co) return `Your role at ${co} caught my attention.`;
@@ -254,7 +257,7 @@
     return [
       { id: 'specific', ok: !!mention, label: 'Mentions something specific to them', detail: mention ? `“${mention}”` : 'Name a shared school, employer, skill, or their work.' },
       { id: 'ask',      ok: qCount <= 1 && t.trim().length > 0, label: 'One clear ask', detail: qCount > 1 ? 'You ask more than one question; pick one.' : '' },
-      { id: 'length',   ok: t.length <= limit, label: ctx.format === 'note' ? 'Fits a 200-character note' : 'Short enough to read quickly', detail: `${t.length}/${limit}` },
+      { id: 'length',   ok: t.length <= limit, label: ctx.format === 'note' ? 'Fits a 200-character note' : 'Short enough to read quickly', detail: t.length <= limit ? '' : `${t.length - limit} over: trim a sentence` },
       { id: 'cliche',   ok: clichesFound.length === 0, label: 'No stock phrases', detail: clichesFound.length ? `Try rewording: “${clichesFound[0]}”` : '' },
       { id: 'named',    ok: named, label: 'Uses their first name', detail: named ? '' : 'Add their first name so it feels written for them.' }
     ];

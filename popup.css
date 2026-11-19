@@ -628,7 +628,7 @@ body {
 .hidden { display: none !important; }
 
 /* ── License Key Section ───────────────────────────────────────────────────── */
-.license-key-section {
+.api-key-section {
   background: var(--surface);
   border: 1.5px solid var(--accent);
   border-radius: var(--radius);
@@ -636,7 +636,7 @@ body {
   margin-bottom: 12px;
 }
 
-.license-key-label {
+.api-key-label {
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -645,18 +645,18 @@ body {
   margin-bottom: 4px;
 }
 
-.license-key-desc {
+.api-key-desc {
   font-size: 12px;
   color: var(--text-2);
   margin-bottom: 10px;
 }
 
-.license-key-input-wrap {
+.api-key-input-wrap {
   display: flex;
   gap: 8px;
 }
 
-.license-key-input {
+.api-key-input {
   flex: 1;
   padding: 9px 12px;
   border: 1px solid var(--border);
@@ -670,7 +670,7 @@ body {
   outline: none;
 }
 
-.license-key-input:focus { border-color: var(--accent); }
+.api-key-input:focus { border-color: var(--accent); }
 
 .validate-btn {
   padding: 9px 16px;
@@ -944,3 +944,88 @@ body {
 .draft-note.warn { background: var(--warning-bg); color: var(--warning); }
 .draft-note.tip  { background: var(--accent-light); color: var(--accent); }
 .review-note { margin-top: 8px; font-size: 11px; color: var(--text-2); text-align: center; }
+
+/* ── Side panel layout + visual direction (slice 4) ────────────────────────────
+   Direction: "correspondence". Warm paper, ink-blue accent, a serif voice for the words you will actually send,
+   small-caps labels. System fonts only: no web fonts, no remote requests. */
+:root {
+  --accent:       #23408E;   /* ink blue; 9.8:1 on white */
+  --accent-light: #E8EDF9;
+  --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Charter, Georgia, serif;
+}
+
+html, body { height: 100%; }
+body {
+  width: 100%;
+  min-width: 320px;
+  min-height: 0;
+  max-height: none;
+  height: 100vh;
+}
+.app { flex: 1; min-height: 0; }
+.tab-content { padding: 12px clamp(12px, 4vw, 20px) 20px; }
+.tab-content > * { max-width: 560px; margin-left: auto; margin-right: auto; }
+
+.app-header { padding: 12px clamp(12px, 4vw, 20px) 10px; }
+.header-icon {
+  display: grid; place-items: center;
+  width: 28px; height: 28px; border-radius: 7px;
+  background: var(--accent); color: #FFFEFB;
+}
+.app-title { font-family: var(--serif); font-size: 17px; font-weight: 700; letter-spacing: 0; }
+.key-status { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--text-2); }
+
+.privacy-strip {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px clamp(12px, 4vw, 20px);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px; color: var(--text-2);
+}
+.privacy-strip .btn-link { font-size: 11.5px; white-space: nowrap; }
+
+.tab-btn { font-size: 11px; }
+.tab-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.field-label, .layer-title { font-size: 11px; }
+.btn:focus-visible, .btn-link:focus-visible, .btn-ghost:focus-visible, .mode-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.settings-note { font-size: 12px; line-height: 1.5; color: var(--text-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.settings-note strong { display: block; color: var(--text); margin-bottom: 4px; font-family: var(--serif); font-size: 13px; }
+.settings-note ul { margin: 0; padding-left: 16px; display: grid; gap: 4px; }
+
+.contact-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.contact-actions .btn-primary { margin-left: auto; }
+
+/* consent dialog */
+dialog#consent-dialog {
+  width: min(92vw, 440px);
+  max-height: 88vh;
+  overflow: auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 12px 40px rgba(26, 23, 18, 0.28);
+}
+dialog#consent-dialog::backdrop { background: rgba(26, 23, 18, 0.45); }
+.consent-form { display: grid; gap: 10px; padding: 16px; }
+.consent-form h2 { font-family: var(--serif); font-size: 17px; }
+.consent-desc, .consent-sub { font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
+.consent-payload, .consent-instr pre {
+  margin: 0; padding: 8px 10px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 190px; overflow: auto;
+}
+.consent-instr summary { font-size: 12px; color: var(--accent); cursor: pointer; margin-bottom: 6px; }
+.consent-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.consent-cancel { justify-self: center; }
+
+.api-key-label { display: block; }
+
+.checklist li.ok .check-detail { flex-basis: auto; padding-left: 0; }
+.checklist li.ok .check-detail::before { content: '· '; }
+.message-textarea { min-height: 0; }
+.message-textarea.over { border-color: var(--error); }
+.api-key-input { text-transform: none; letter-spacing: 0; }

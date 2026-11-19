@@ -140,7 +140,7 @@ test('pasted text → profile (Spanish headings, no crash on junk)', () => {
 
 // ── Runner ───────────────────────────────────────────────────────────────────
 // Later slices append test modules; dom.test.js needs jsdom and skips itself without it.
-['dom', 'overlap', 'compose', 'safety', 'resume', 'background'].forEach(n => {
+['dom', 'overlap', 'compose', 'safety', 'resume', 'background', 'manifest', 'html'].forEach(n => {
   try { require(`./${n}.test.js`)(test, load); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND' || !String(e.message).includes(`${n}.test.js`)) throw e; }
 });
 

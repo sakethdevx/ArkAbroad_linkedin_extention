@@ -128,6 +128,13 @@ module.exports = (test) => {
     assert.ok(!JSON.stringify(prev).includes('SECRET'));
   });
 
+  test('bg: forceFree never touches the network even with a key saved', async () => {
+    const b = boot({ store: { userApiKey: 'k' }, fetchImpl: () => { throw new Error('must not call'); } });
+    const r = await gen(b, data({ forceFree: true }));
+    assert.strictEqual(r.source, 'template');
+    assert.strictEqual(b.calls.length, 0);
+  });
+
   test('bg: messages from anything but our own extension are ignored', async () => {
     const b = boot({ fetchImpl: () => { throw new Error('x'); } });
     assert.strictEqual(await b.send({ action: 'generateMessage', data: data() }, 'some-other-extension'), '__no_response__');

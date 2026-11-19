@@ -2,10 +2,12 @@
   "manifest_version": 3,
   "name": "LinkedIn Outreach AI",
   "version": "3.2.0",
+  "minimum_chrome_version": "116",
   "description": "Draft a short, specific LinkedIn message you review and send yourself. Works free, on your device.",
   "permissions": [
     "storage",
-    "scripting"
+    "scripting",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://www.linkedin.com/*",
@@ -15,8 +17,18 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "LinkedIn Outreach AI"
+    "default_title": "Open Outreach AI"
+  },
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "commands": {
+    "open-panel": {
+      "suggested_key": {
+        "default": "Alt+Shift+O"
+      },
+      "description": "Open Outreach AI side panel"
+    }
   },
   "icons": {
     "16": "icons/icon16.png",
