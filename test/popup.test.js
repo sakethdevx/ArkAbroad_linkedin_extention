@@ -11,7 +11,7 @@ module.exports = (test) => {
   const root = path.join(__dirname, '..');
   const PP = require(path.join(root, 'utils/profile_parse.js'));
   const tick = (n = 40) => new Promise(r => setTimeout(r, n));
-  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/compose.js', 'utils/resume.js', 'utils/cache.js', 'popup.js'];
+  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/compose.js', 'utils/resume.js', 'utils/cache.js', 'popup.js'];
 
   const PRIYA = () => PP.buildProfile({
     name: 'Priya Rao', headline: 'Data Scientist at Globex', location: 'Chennai, India',
@@ -20,11 +20,11 @@ module.exports = (test) => {
     skills: ['Python'], recentPosts: ['Shipped a forecasting model this week and learned a lot about drift'], profileUrl: 'https://www.linkedin.com/in/priya/'
   });
 
-  async function boot(store = {}, { url = 'https://www.linkedin.com/in/priya/', signals: initialSignals, languageModel } = {}) {
+  async function boot(store = {}, { url = 'https://www.linkedin.com/in/priya/', signals: initialSignals, languageModel, translator, detector } = {}) {
     const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8').replace(/<script[^>]*src[^>]*><\/script>/g, '');
     const w = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://x/popup.html' }).window;
     const errors = []; w.addEventListener('error', e => errors.push(e.message));
-    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; const builds = [], finishes = []; let finishReply = null; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
+    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; let about = ''; const copied = []; const builds = [], finishes = []; let finishReply = null; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
     let tabUrl = url;
     w.chrome = {
       tabs: { query: async () => [{ id: 42, url: tabUrl, active: true }], onActivated: { addListener: f => listeners.push(f) }, onUpdated: { addListener: f => listeners.push(f) } },
@@ -37,7 +37,7 @@ module.exports = (test) => {
         request: async (q) => { permCalls.push(q.origins[0]); if (allowRequests) q.origins.forEach(o => granted.add(o)); return allowRequests; } },
       runtime: { lastError: null, getURL: x => x, sendMessage: (m, cb) => {
         if (m.type === 'TEST_API_KEY') { return cb({ valid: true, provider: m.payload.provider }); }
-        if (m.action === 'scrapeProfile') { scrapes.push(m); return cb({ success: true, data: { ...PRIYA(), connectionDegree: degree, isConnection: degree === '' ? null : degree === '1st' } }); }
+        if (m.action === 'scrapeProfile') { scrapes.push(m); return cb({ success: true, data: { ...PRIYA(), about, connectionDegree: degree, isConnection: degree === '' ? null : degree === '1st' } }); }
         if (m.type === 'PREVIEW_RESUME') return cb({ success: true, providerName: 'Anthropic', host: 'api.anthropic.com', model: 'claude-haiku-5-5', system: 'RSYS', user: '{"resume_text":"' + m.payload.text.slice(0, 20) + '"}' });
         if (m.type === 'PARSE_RESUME') { resumeCalls.push(m.payload); return cb(resumeReply || { ok: true, provider: 'anthropic', profile: {
           name: 'Asha Menon', intro: 'final-year CS student at IIT Madras', summary: 'CS student who builds data tools.', city: 'Chennai, India',
@@ -65,13 +65,15 @@ module.exports = (test) => {
       } }
     };
     if (languageModel) w.LanguageModel = languageModel;
-    w.navigator.clipboard = { writeText: async () => {} };
+    if (translator) w.Translator = translator;
+    if (detector) w.LanguageDetector = detector;
+    w.navigator.clipboard = { writeText: async (x) => { copied.push(x); } };
     w.eval(SCRIPTS.map(f => fs.readFileSync(path.join(root, f), 'utf8').replace(/^'use strict';/, '')).join('\n;'));
     if (w.document.readyState === 'loading') await new Promise(r => w.document.addEventListener('DOMContentLoaded', () => r()));   // jsdom fires it itself; dispatching again would run init twice
     else w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
     await tick();
     const $ = id => w.document.getElementById(id);
-    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, builds, finishes, setFinish: f => { finishReply = f; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
+    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, setAbout: a => { about = a; }, copied, builds, finishes, setFinish: f => { finishReply = f; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
   }
 
   const SENDER = { schools: ['IIT Madras'], skills: ['Python'], intro: 'CS student' };
@@ -728,5 +730,80 @@ module.exports = (test) => {
     release2(); await tick(250);
     assert.strictEqual(u.finishes.length, 0, 'stale polish is dropped before it is finished');
     assert.ok(u.$('message-section').classList.contains('hidden'));
+  });
+
+  const trStub = (log = {}, opts = {}) => ({ availability: async (o) => { log.avail = (log.avail || []).concat([`${o.sourceLanguage}>${o.targetLanguage}`]); return opts.unavailable && opts.unavailable(o) ? 'unavailable' : 'available'; },
+    create: async (o) => { if (o.sourceLanguage !== 'en' && opts.refuseBack && !log.allowBack) { const e = new Error('x'); e.name = 'NotAllowedError'; throw e; }
+      if (o.monitor) { const l = {}; o.monitor({ addEventListener: (n, f) => { l[n] = f; } }); l.downloadprogress && l.downloadprogress({ loaded: 0.5 }); }
+      return { translate: async (x) => (o.sourceLanguage === 'en' ? `[${o.targetLanguage}] ${x}` : `English check of: ${x.replace(/^\[\w+\] /, '')}`), destroy: () => {} }; } });
+  const detStub = (lang, conf = 0.95) => ({ availability: async () => 'available', create: async () => ({ detect: async () => [{ detectedLanguage: lang, confidence: conf }], destroy: () => {} }) });
+  const GERMAN_ABOUT = 'Ich leite ein Team für Datenplattformen und schreibe gern über Softwarearchitektur und Cloud.';
+
+  test('popup: "Write in another language" appears only where Chrome has the Translator, and detects a non-English profile on its own', async () => {
+    const none = await boot({ senderProfile: SENDER });
+    none.setAbout(GERMAN_ABOUT); await none.click('scrape-btn', 120);
+    assert.ok(none.$('translate-card').classList.contains('hidden'));
+
+    const t = await boot({ senderProfile: SENDER }, { translator: trStub(), detector: detStub('de') });
+    t.setAbout(GERMAN_ABOUT);
+    await t.click('scrape-btn', 200);
+    assert.ok(!t.$('translate-card').classList.contains('hidden'));
+    assert.ok(t.$('tr-lang').options.length >= 15);
+    assert.strictEqual(t.$('tr-lang').value, 'de');
+    assert.strictEqual(t.$('tr-hint').textContent, 'Their profile looks German');
+    assert.strictEqual(t.$('translate-card').open, true);
+    // English profile: stays quiet, card still available for manual use
+    const en = await boot({ senderProfile: SENDER }, { translator: trStub(), detector: detStub('en') });
+    en.setAbout('I lead a data platform team and write about software architecture and cloud systems.');
+    await en.click('scrape-btn', 200);
+    assert.strictEqual(en.$('tr-hint').textContent, '');
+    assert.strictEqual(en.$('translate-card').open, false);
+    assert.deepStrictEqual(t.errors.concat(en.errors, none.errors), []);
+  });
+
+  test('popup: Translate gives the translation AND an English back-translation, warns when a note gets too long, and copies the edited text', async () => {
+    const log = {};
+    const t = await boot({ senderProfile: SENDER }, { translator: trStub(log), detector: detStub('de') });
+    t.setAbout(GERMAN_ABOUT);
+    await t.click('scrape-btn', 200);
+    const english = t.$('generated-message').value;
+    await t.click('tr-go', 250);
+    assert.ok(!t.$('tr-result').classList.contains('hidden'));
+    assert.strictEqual(t.$('tr-out').value, `[de] ${english}`);
+    assert.match(t.$('tr-back').textContent, /^English check of: Hi Priya/);
+    assert.deepStrictEqual(log.avail, ['en>de', 'de>en']);
+    assert.strictEqual(t.$('generated-message').value, english, 'the English draft is untouched');
+    assert.match(t.$('tr-count').textContent, /characters \(LinkedIn notes allow 200\)/);
+    assert.ok(t.$('tr-count').classList.contains('over') === (t.$('tr-out').value.length > 200));
+    t.$('tr-out').value = 'Hallo Priya, bearbeitet.'; t.$('tr-out').dispatchEvent(new t.w.Event('input'));
+    await t.click('tr-copy', 60);
+    assert.deepStrictEqual(t.copied, ['Hallo Priya, bearbeitet.']);
+    assert.deepStrictEqual(t.errors, []);
+  });
+
+  test('popup: translation problems are explained: unavailable pair, refused back-check (retry works), empty draft; moving away clears it', async () => {
+    const u = await boot({ senderProfile: SENDER }, { translator: trStub({}, { unavailable: (o) => o.targetLanguage === 'ko' }) });
+    await u.click('scrape-btn', 150);
+    u.$('tr-lang').value = 'ko'; await u.click('tr-go', 150);
+    assert.match(u.$('tr-msg').textContent, /can’t translate English to Korean on this computer/);
+    assert.ok(u.$('tr-result').classList.contains('hidden'));
+
+    const log = {};
+    const t = await boot({ senderProfile: SENDER }, { translator: trStub(log, { refuseBack: true }) });
+    await t.click('scrape-btn', 150);
+    t.$('tr-lang').value = 'fr'; await t.click('tr-go', 250);
+    assert.ok(t.$('tr-out').value.startsWith('[fr] '));
+    assert.strictEqual(t.$('tr-back').textContent, 'Not checked yet.');
+    assert.ok(!t.$('tr-check').classList.contains('hidden'));
+    assert.match(t.$('tr-msg').textContent, /Press “Check it in English”/);
+    log.allowBack = true;
+    await t.click('tr-check', 200);
+    assert.match(t.$('tr-back').textContent, /^English check of:/);
+    assert.ok(t.$('tr-check').classList.contains('hidden'));
+
+    t.setUrl('https://www.linkedin.com/in/someone-else/'); t.listeners[0](); await tick(300);
+    assert.ok(t.$('tr-result').classList.contains('hidden'));
+    assert.strictEqual(t.$('tr-out').value, '');
+    assert.deepStrictEqual(t.errors.concat(u.errors), []);
   });
 };

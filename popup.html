@@ -185,6 +185,29 @@
         </div>
         <ul class="checklist" id="draft-checklist" aria-label="Reply-ready checklist"></ul>
         <p class="draft-because" id="draft-because"></p>
+
+        <details class="translate-card hidden" id="translate-card">
+          <summary><span class="tr-title">Write in another language</span><span class="set-chip" id="tr-hint"></span></summary>
+          <div class="tr-body">
+            <div class="tr-row">
+              <label class="sr-only" for="tr-lang">Language</label>
+              <select id="tr-lang" class="field-select"></select>
+              <button type="button" class="btn btn-secondary" id="tr-go">Translate this draft</button>
+            </div>
+            <div class="od-progress hidden" id="tr-progress" role="progressbar" aria-label="Downloading translation model" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="od-bar" id="tr-bar"></div></div>
+            <div class="tr-result hidden" id="tr-result">
+              <label class="field-label" for="tr-out">Translation <span class="me-sub">you can edit it</span></label>
+              <textarea id="tr-out" class="field-textarea" rows="5" spellcheck="true"></textarea>
+              <p class="tr-count" id="tr-count"></p>
+              <p class="field-label tr-back-title">What it says in English</p>
+              <p class="tr-back" id="tr-back"></p>
+              <button type="button" class="btn-link hidden" id="tr-check">Check it in English</button>
+              <p class="field-hint">Translations can be imperfect. Read the English check above, or ask someone who speaks the language, before you send.</p>
+              <button type="button" class="btn btn-primary" id="tr-copy">Copy translation</button>
+            </div>
+            <p class="field-hint" id="tr-msg" role="status" aria-live="polite"></p>
+          </div>
+        </details>
         <p class="draft-note warn hidden" id="post-note">This draft quotes a post from their Activity. Check it is their own post, and that you really liked it, before sending.</p>
         <div class="draft-notes" id="draft-notes"></div>
         <div class="action-row">
@@ -400,6 +423,7 @@
 
   <script src="utils/safety.js"></script>
   <script src="utils/ondevice.js"></script>
+  <script src="utils/translate.js"></script>
   <script src="utils/profile_parse.js"></script>
   <script src="utils/overlap.js"></script>
   <script src="utils/spotlight.js"></script>

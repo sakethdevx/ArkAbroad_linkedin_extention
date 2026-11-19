@@ -2,7 +2,7 @@
 
 Draft a short, specific LinkedIn message for the person whose profile you're looking at. **You read it, edit it and send it yourself.** Nothing is ever sent or clicked for you.
 
-Works **free, on your device**, with no account and no API key. Optionally add your own key and flip the **Free ⇄ AI** switch in the top bar so an AI writes the drafts instead: **Anthropic (Claude)** or **Groq (Llama, which has a free plan with usage limits)**.
+Works **free, on your device**, with no account and no API key. On a capable computer, Chrome's own built-in AI can polish your free drafts (**on-device AI**, optional). Optionally add your own key and flip the **Free ⇄ AI** switch in the top bar so an AI writes the drafts instead: **Anthropic (Claude)** or **Groq (Llama, which has a free plan with usage limits)**.
 
 ## Install (unpacked, no build step)
 1. `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → choose this folder.
@@ -16,6 +16,7 @@ Needs Chrome 116 or newer (side panel).
 - **Reads the profile you're on** (the full read only when you click), shows you *what it read* and lets you fix it. If the page can't be read, paste the profile text instead.
 - **Uses your resume** (optional PDF, read on your device) to find what you two have in common: shared school, employer, skills, city. In AI Mode the AI also fills in your whole profile (education, experience, projects, skills) from it, so you don't type anything.
 - **Picks your most relevant work** for each person (the one project or role that matches their field, with the matching words shown) and explains every draft ("Built on: …"). You can leave it out with one tap. Nothing is invented: it only selects something already in your profile, and it says nothing rather than force a weak link.
+- **Writes in their language.** If their profile is in German, Spanish, French… a "Write in another language" box translates your draft on your device and shows what it says back in English, so you can check it before sending.
 - **Writes 3 drafts** that open with that shared ground, say who you are in one line and make one small ask. Pick **Connection note** (≤ 200 characters, LinkedIn's limit) or **Message**.
 - **Checks the draft** as you edit: specific? one ask? fits? no stock phrases?
 
@@ -25,6 +26,7 @@ Needs Chrome 116 or newer (side panel).
 | **Free** (no key) | Nothing | n/a |
 | **AI** (your own key, switch on) | A short, cleaned-up summary of the profile + a short summary of you (intro, skills, schools, employers, goal) + the **one** project or role picked for this person. Your other projects and roles stay on your device. You say yes **once** when you turn AI on, and "What's sent?" always shows the exact data | only the provider you chose: `api.anthropic.com` **or** `api.groq.com` |
 | **AI**, resume upload | The resume **text** (emails/phones already removed) so the AI can fill in your profile | the same provider |
+| **Free + on-device AI** | Nothing. Chrome downloads its AI model once (a large one-time download done by Chrome, not by this extension) and runs it on your computer; translation works the same way | n/a |
 | Always | Never: your resume PDF, emails, phone numbers, your key (header only), or anything else on the page | n/a |
 
 - The profile card shows the person's photo, loaded from LinkedIn's own image servers (`*.licdn.com`, https only) exactly as the page does. The photo is never stored, never sent to an AI, and never leaves the panel.
@@ -51,7 +53,11 @@ test/   unit, sandbox, DOM and accessibility tests
 CHANGELOG.md   what changed and why (base: tag base-v3.1.0)
 ```
 
+## On-device AI and translation: requirements
+Built-in AI needs desktop Chrome 138+, about 22 GB free disk and 16 GB of memory or a graphics card with 4 GB+. Where a computer doesn't qualify, Settings says so and nothing else changes. Translation depends on Chrome supporting the language pair. Both ask for a click before the first download.
+
 ## Known limits
+- On-device AI and translation were built against Chrome's documented APIs and tested with stand-ins; they have not been run on real Gemini Nano in this repo's test environment.
 - LinkedIn changes its markup often. The reader is tested on fixtures, not every live layout, hence the "What I read" check and the paste fallback.
 - Resume parsing is heuristic; the extracted info is editable and that edited copy is what's used.
 - Scanned (image-only) PDFs have no text; paste the resume text instead.

@@ -27,3 +27,7 @@ Source of truth for details: `CHANGELOG.md`. Tip: demo on **your own** profile (
 
 ## Addendum: resume-aware relevance (after the Groq and UX work)
 Show: open an ML profile, then a backend profile, with the same resume. The "Why you two" card picks a different project each time and shows the matched words; tap the "Your work" chip to leave it out and watch the draft change; point at "Built on: …" under the draft. Say plainly: it only selects from your own resume, returns nothing rather than a weak link, and in AI Mode only that one item leaves the device.
+
+
+## Addendum: on-device AI and writing in their language
+Show (on a computer that qualifies): Settings → On-device AI → Turn on (one-time download). Then open a profile: the free draft appears instantly, a moment later the badge flips to "Written on your device" and the draft is polished, still with "Built on…". Then a German profile: the translate box opens by itself, press Translate, and point at the English check underneath. Say plainly: no key, nothing leaves the computer, and on computers that do not qualify the card says so and everything else is unchanged. Be honest that this was built against Chrome's documented API and tested with stand-ins.

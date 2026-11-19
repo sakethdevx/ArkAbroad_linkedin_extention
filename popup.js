@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('privacy-details-btn').addEventListener('click', showPrivacyDetails);
   wireProviderUi();
   wireOnDevice();
+  wireTranslate();
   wireModeSwitch();
   document.getElementById('resume-tip-go').addEventListener('click', () => { switchTab('settings'); document.getElementById('about-card').open = true; document.getElementById('file-upload-area').focus(); });
   document.getElementById('resume-tip-dismiss').addEventListener('click', async () => { await storageSet({ resumeTipDismissed: true }); refreshResumeTip(); });
@@ -214,6 +215,104 @@ function wireOnDevice() {
   document.getElementById('od-disable').addEventListener('click', async () => { await storageSet({ onDevice: false }); await refreshOnDeviceCard(); });
 }
 
+// ─── Write in another language (on-device Translator + Language Detector) ──────────────────────────────────────────
+// The English draft stays the source of truth. The translation is shown next to a back-translation into English, so you
+// can see what you are about to send even if you do not speak the language. Nothing is sent anywhere.
+const trEl = (id) => document.getElementById(id);
+let trBack = '';
+const langName = (code) => { try { return new Intl.DisplayNames(['en'], { type: 'language' }).of(code) || code; } catch (_) { return code; } };
+
+function setupTranslateCard() {
+  const card = trEl('translate-card');
+  const ok = typeof Translate !== 'undefined' && Translate.supported();
+  card.classList.toggle('hidden', !ok);
+  if (!ok) return false;
+  const sel = trEl('tr-lang');
+  if (!sel.options.length) Translate.LANGS.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = langName(c); sel.appendChild(o); });
+  return true;
+}
+
+function resetTranslate() {
+  trBack = '';
+  if (!trEl('tr-result')) return;
+  trEl('tr-result').classList.add('hidden');
+  trEl('tr-out').value = '';
+  trEl('tr-back').textContent = '';
+  trEl('tr-msg').textContent = '';
+  trEl('tr-hint').textContent = '';
+  trEl('tr-check').classList.add('hidden');
+  trEl('translate-card').open = false;
+}
+
+// After a profile is read: if their text is clearly in another language, say so and pre-select it. Silent when unsure.
+async function suggestTranslation(profile) {
+  if (!setupTranslateCard()) return;
+  resetTranslate();
+  const text = [profile.about, profile.headline, ...(profile.recentPosts || [])].filter(Boolean).join('. ');
+  const det = await Translate.detect(text);
+  if (!det || currentProfile !== profile) return;
+  trEl('tr-lang').value = det.lang;
+  trEl('tr-hint').textContent = `Their profile looks ${langName(det.lang)}`;
+  trEl('translate-card').open = true;
+}
+
+function showTrLength() {
+  const n = trEl('tr-out').value.length, limit = Compose.LIMITS[currentFormat];
+  const el = trEl('tr-count');
+  el.textContent = `${n} characters` + (currentFormat === 'note' ? ` (LinkedIn notes allow ${limit})` : '');
+  el.classList.toggle('over', n > limit);
+}
+
+async function checkInEnglish(lang, text) {
+  trEl('tr-check').classList.add('hidden');
+  trEl('tr-back').textContent = 'Checking what it says…';
+  const b = await Translate.back(text, lang, (f) => setTrProgress(f));
+  setTrProgress(null);
+  if (b.ok) { trBack = b.text; trEl('tr-back').textContent = b.text; trEl('tr-msg').textContent = ''; return; }
+  trEl('tr-back').textContent = 'Not checked yet.';
+  trEl('tr-check').classList.remove('hidden');
+  trEl('tr-msg').textContent = b.reason === 'NotAllowedError' ? 'Press “Check it in English” so Chrome can set up the checker.' : 'The English check isn’t available for this language on this computer.';
+}
+
+function setTrProgress(f) {
+  const wrap = trEl('tr-progress');
+  if (f === null) { wrap.classList.add('hidden'); trEl('tr-bar').style.width = '0'; return; }
+  wrap.classList.remove('hidden');
+  trEl('tr-bar').style.width = `${Math.round(f * 100)}%`;
+  wrap.setAttribute('aria-valuenow', String(Math.round(f * 100)));
+}
+
+function wireTranslate() {
+  trEl('tr-go').addEventListener('click', async () => {
+    const lang = trEl('tr-lang').value, text = currentDraftText();
+    if (!text.trim()) { trEl('tr-msg').textContent = 'Write or generate a draft first.'; return; }
+    const btn = trEl('tr-go');
+    btn.disabled = true;
+    trEl('tr-msg').textContent = `Translating into ${langName(lang)}… the first time Chrome may download a small model.`;
+    const r = await Translate.translate(text, lang, (f) => setTrProgress(f));
+    setTrProgress(null);
+    btn.disabled = false;
+    if (!r.ok) {
+      trEl('tr-msg').textContent = r.reason === 'pair-unavailable' ? `Chrome can’t translate English to ${langName(lang)} on this computer.`
+        : r.reason === 'NotAllowedError' ? 'Chrome needs a click to start the download. Press Translate again.'
+        : 'The translation didn’t work this time. Your English draft is unchanged.';
+      return;
+    }
+    trEl('tr-msg').textContent = '';
+    trEl('tr-result').classList.remove('hidden');
+    trEl('tr-out').value = r.text;
+    showTrLength();
+    await checkInEnglish(lang, r.text);
+  });
+  trEl('tr-out').addEventListener('input', showTrLength);
+  trEl('tr-check').addEventListener('click', () => checkInEnglish(trEl('tr-lang').value, trEl('tr-out').value));
+  trEl('tr-copy').addEventListener('click', async () => {
+    await navigator.clipboard.writeText(trEl('tr-out').value).catch(() => {});
+    const b = trEl('tr-copy'); b.textContent = 'Copied!';
+    setTimeout(() => { b.textContent = 'Copy translation'; }, 2200);
+  });
+}
+
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 function initTabs() {
   const btns = Array.from(document.querySelectorAll('.tab-btn'));
@@ -387,6 +486,7 @@ async function handleScrapeAndGenerate() {
 async function generateFromProfile(profile, setBusy = (t) => setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, t)) {
   currentProfile = profile;
   maybeAutoFormat(profile);
+  suggestTranslation(profile);   // not awaited
   renderProfileCard(profile);
   renderReadCard(profile);
   renderOverlaps(false);
@@ -1309,6 +1409,7 @@ function resetForNewPage() {
   if (!currentProfile && !drafts.length) return;
   currentProfile = null; deepProfileJSON = null; deepEnrichmentJSON = null;
   cancelPolish();
+  resetTranslate();
   formatAutoNote = ''; setFormat(currentFormat, { silent: true });
   overlapAll = []; overlapOff.clear(); spotlightOff = false; currentSpotlight = null; seed = 0;
   ['profile-section', 'read-card', 'overlap-panel'].forEach(id => document.getElementById(id).classList.add('hidden'));
