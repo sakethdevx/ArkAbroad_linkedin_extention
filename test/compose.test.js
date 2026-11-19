@@ -112,4 +112,14 @@ module.exports = (test, load) => {
       [{ label: 'Python and SQL' }]);
     ['Globex', 'Analyst', 'IIT Madras', 'Python', 'SQL'].forEach(x => assert.ok(m.includes(x), x));
   });
+
+  test('compose: a message to someone already connected never asks to connect (any purpose, any seed, even in the short fallback)', () => {
+    const base = { profile: { firstName: 'Priya', currentCompany: 'Globex', headline: 'Data Scientist at Globex', recentPosts: [] }, sender: { intro: 'CS student' }, overlaps: [], tone: 'Neutral', format: 'message', senderName: 'Asha' };
+    for (const messageType of ['Networking', 'Job', 'Referral', 'Collaboration']) {
+      for (let seed = 0; seed < 9; seed++) {
+        const r = C.compose({ ...base, messageType }, { seed });
+        r.variants.forEach(v => assert.ok(!/\bconnect(?:ing|ion)?\b/i.test(v.text), `${messageType}/${seed}: ${v.text}`));
+      }
+    }
+  });
 };

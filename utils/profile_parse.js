@@ -281,6 +281,17 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
   }
 
   // ── Build the normalised profile + quality report ───────────────────────────
+  // LinkedIn shows "· 1st / 2nd / 3rd" beside the name. Only a short line that is basically just the badge counts.
+  function parseConnectionDegree(lines) {
+    for (const raw of (Array.isArray(lines) ? lines : []).slice(0, 30)) {
+      const t = clean(raw);
+      if (t.length > 40) continue;
+      const m = t.match(/^(?:[·•]\s*)?\(?(1st|2nd|3rd\+?)\)?$/i) || t.match(/[·•]\s*(1st|2nd|3rd\+?)\b/i);
+      if (m) return m[1].toLowerCase();
+    }
+    return '';
+  }
+
   function buildProfile(parts = {}) {
     const experience = Array.isArray(parts.experience) ? parts.experience : [];
     const fromHeadline = titleCompanyFromHeadline(parts.headline);
@@ -316,6 +327,7 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
       educationEntries:  (parts.education || []).slice(0, 3),
       skills:            (parts.skills || []).slice(0, 10),
       profileUrl:        parts.profileUrl || '',
+      connectionDegree:  parts.connectionDegree || '',
       source:            parts.source || 'page'
     };
     profile.quality = assessQuality(profile, { currentInferred: !cur && !fromHeadline && !!(currentTitle || currentCompany), extraWarnings: parts.warnings });
@@ -394,6 +406,6 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
     parseRoleLines, parseExperienceBlocks, parseExperienceLines,
     parseEducationBlocks, parseEducationLines, parseSkills,
     titleCompanyFromHeadline, nameFromPageTitle, nameFromUrl,
-    buildProfile, assessQuality, parseProfileText, headingKey, plausibleLabel, extractPostText
+    parseConnectionDegree, buildProfile, assessQuality, parseProfileText, headingKey, plausibleLabel, extractPostText
   };
 });

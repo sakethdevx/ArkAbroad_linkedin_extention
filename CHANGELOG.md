@@ -246,3 +246,11 @@ It is open until you have a name and a resume, then folds to a one-line summary 
 
 ### Fix: "2 AI drafts couldn't be used (too long)" kept appearing
 Llama still overran 200 characters by a sentence even with a margin and a repair pass. Now a draft that is only slightly over is shortened locally by dropping whole sentences from the middle (the greeting/hook and the final ask stay). Nothing is reworded or added, so it cannot introduce a new claim, and no extra API call is spent. If a draft still can't fit, the repair pass and free-draft fallback apply as before.
+
+### Feature: "New connection" vs "Already connected", chosen for you when LinkedIn says so
+**Problem** The only hint that the second format was for existing connections was a small tip, and its button just said "Message".
+**Change**
+- The two options are now **New connection (note · 200)** and **Already connected (message)**, each with a plain one-line explanation underneath.
+- The extension reads LinkedIn's 1st / 2nd / 3rd badge from the top card. A 1st-degree connection switches to *Already connected* automatically (and says so); anyone else uses *New connection*. If you pick a format yourself, we stop choosing for you. If the badge can't be read, nothing changes.
+- Drafts for an already-connected person never ask to connect (free composer for every purpose, and the AI prompt now says so explicitly), and they keep the longer layout with an easy out and a sign-off.
+**Tests** Badge parsing, auto-selection and manual override, labels, and a sweep proving no "connect" ask in message drafts; 137 total. **Unverified live**: the badge markup on a real profile (the parser is deliberately strict and falls back to your own choice).

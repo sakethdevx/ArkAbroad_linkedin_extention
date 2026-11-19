@@ -115,7 +115,7 @@
   }
 
   // ── Asks (ONE per message) ──────────────────────────────────────────────────
-  function askFor(type, p, overlaps, n, short) {
+  function askFor(type, p, overlaps, n, short, already) {
     const co = isLabel(p.currentCompany, 60) ? clean(p.currentCompany) : '';
     const atCo = co ? ` at ${co}` : '';
     const skills = (overlaps || []).find(o => o.kind === 'skills');
@@ -138,7 +138,9 @@
       }
     };
     const set = A[type] || A.Networking;
-    return pick(short ? set.short : set.long, n);
+    let opts = short ? set.short : set.long;
+    if (already) { const f = opts.filter(x => !/\bconnect/i.test(x)); if (f.length) opts = f; }   // they are already connected: never ask to connect
+    return pick(opts, n);
   }
 
   // ── Fit to the budget: drop the least valuable slot first ───────────────────
@@ -182,7 +184,7 @@
     const cred = flags.cred === false ? null : credLine(sender, ctx.bio, kept[0] && kept[0].kind === 'school' ? kept[0].label : '');
     if (cred) parts.push(cred);
 
-    const ask = askFor(messageType, p, kept, n, short);
+    const ask = askFor(messageType, p, kept, n, short, !isNote);
     const outLine = !isNote && flags.out !== false ? pick(OUT[tone] || OUT.Neutral, n) : null;
     const name = clean(ctx.senderName);
     const greet = (GREET[tone] || GREET.Neutral)(first);

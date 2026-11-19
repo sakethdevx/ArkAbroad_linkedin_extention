@@ -58,7 +58,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ─── Scrape profile from active tab ───────────────────────────────────────────
 // The content script is NOT declared in the manifest: nothing runs on LinkedIn until
 // the user clicks Generate. We inject it on demand (guarded against double-injection).
-const CONTENT_VERSION = 'scroll-2';   // keep in sync with content_script.js
+const CONTENT_VERSION = 'scroll-3';   // keep in sync with content_script.js
 const CONTENT_FILES = ['utils/profile_parse.js', 'utils/page_scroll.js', 'content_script.js'];
 
 async function ensureContentScript(tabId) {
@@ -293,7 +293,7 @@ Rules for every draft:
 - Stay strictly within "max_chars_each" characters (models miscount, so leave a few characters spare); aim for about "target_chars".
 - The ask must fit "purpose": Networking = a quick chat or one question about their path; Job = whether they know of openings or how to approach applying; Referral = whether they would be open to referring, only if there is a real connection; Collaboration = a specific small idea to explore together.
 - Describe the sender ONLY with facts in "sender". Use "sender.intro" as written; add at most one project or role and never attach it to a school or employer unless the data pairs them. Never add words like "currently", "recent", "experienced" or any date, role or place that is not written there.
-- Write the way a friendly student would talk: simple words, one natural question (for example "Would you be open to a quick chat?"), no stiff phrases and no vague claims like "recent experience". Format "note" has no sign-off. Format "message" ends with a short sign-off and the sender's first name if one is given.
+- Write the way a friendly student would talk: simple words, one natural question (for example "Would you be open to a quick chat?"), no stiff phrases and no vague claims like "recent experience". Format "note" is sent with a connection request to someone new. Format "message" goes to someone the sender is ALREADY connected with, so never ask to connect. Format "note" has no sign-off. Format "message" ends with a short sign-off and the sender's first name if one is given.
 - Tone: Formal = no contractions; Neutral = warm and plain; Casual = relaxed and friendly.
 - Write 3 drafts that differ in wording and structure.
 
@@ -597,6 +597,7 @@ function normalizeProfile(raw = {}) {
     educationEntries:  Array.isArray(raw.educationEntries) ? raw.educationEntries : [],
     skills:            Array.isArray(raw.skills) ? raw.skills : [],
     profileUrl:        raw.profileUrl || '',
+    connectionDegree:  raw.connectionDegree || '',
     quality:           raw.quality || null
   };
 }

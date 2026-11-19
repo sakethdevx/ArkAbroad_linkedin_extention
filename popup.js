@@ -217,7 +217,7 @@ function wireCurrentEvents() {
   document.getElementById('regenerate-btn').addEventListener('click', () => regenerate(true));
   document.getElementById('copy-btn').addEventListener('click', handleCopy);
   document.getElementById('generated-message').addEventListener('input', onDraftInput);
-  document.querySelectorAll('.format-btn').forEach(b => b.addEventListener('click', () => setFormat(b.dataset.format)));
+  document.querySelectorAll('.format-btn').forEach(b => b.addEventListener('click', () => { formatByUser = true; formatAutoNote = ''; setFormat(b.dataset.format); }));
   ['message-type', 'tone'].forEach(id => document.getElementById(id).addEventListener('change', () => { savePrefs(); applyChangeLive(); }));
 }
 
@@ -293,6 +293,7 @@ async function handleScrapeAndGenerate() {
 // Shared by scraping and pasted text: show what was read, then draft unless nothing was readable.
 async function generateFromProfile(profile, setBusy = (t) => setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, t)) {
   currentProfile = profile;
+  maybeAutoFormat(profile);
   renderProfileCard(profile);
   renderReadCard(profile);
   renderOverlaps(false);
@@ -469,6 +470,7 @@ async function handleEnrich() {
 async function runEnrich(rawProfileData) {
   resetDeepState();
   currentProfile = rawProfileData;
+  maybeAutoFormat(rawProfileData);
   renderProfileCard(rawProfileData);
   renderReadCard(rawProfileData);
   renderOverlaps(false);
@@ -691,11 +693,13 @@ let drafts = [];
 let activeDraft = 0;
 let seed = 0;
 let currentFormat = 'note';
+let formatByUser = false;    // once you pick a format yourself, we stop choosing for you
+let formatAutoNote = '';
 let wasOver = false;
 
 const FORMAT_TIP = {
-  note:    'LinkedIn limits connection notes to 200 characters, and free accounts get only a few per month. Over 200? Use “Message” after they accept.',
-  message: 'For people you’re already connected with. Shorter still gets more replies: aim for under 400 characters.'
+  note:    'For someone you are not connected with yet: this is the note that goes with your connection request. LinkedIn limits it to 200 characters, and free accounts get only a few per month.',
+  message: 'For someone you are already connected with: a normal LinkedIn message, up to about 500 characters. Shorter still gets more replies.'
 };
 const sourceLabel = (d) => !d ? '' : d.source === 'ai' ? (AI_PROVIDERS[d.provider] || AI_PROVIDERS.anthropic).badge : 'Free draft · made on your device';
 
@@ -845,6 +849,15 @@ async function saveToHistory() {
 }
 
 // ─── Format (note vs message) + remembered preferences ─────────────────────────
+// LinkedIn shows a 1st / 2nd / 3rd badge. If it was read and you have not chosen yourself, pick the matching format.
+function maybeAutoFormat(profile) {
+  const deg = profile && profile.connectionDegree;
+  if (!deg || formatByUser) return;
+  const want = deg === '1st' ? 'message' : 'note';
+  formatAutoNote = want === 'message' ? 'They are a 1st-degree connection, so I chose “Already connected”.' : '';
+  if (want !== currentFormat || formatAutoNote) setFormat(want, { silent: true });
+}
+
 function setFormat(f, { silent = false } = {}) {
   currentFormat = f === 'message' ? 'message' : 'note';
   document.querySelectorAll('.format-btn').forEach(b => {
@@ -852,7 +865,7 @@ function setFormat(f, { silent = false } = {}) {
     b.classList.toggle('active', on);
     b.setAttribute('aria-checked', String(on));
   });
-  document.getElementById('format-tip').textContent = FORMAT_TIP[currentFormat];
+  document.getElementById('format-tip').textContent = FORMAT_TIP[currentFormat] + (formatAutoNote ? ' ' + formatAutoNote : '');
   document.getElementById('generated-message').rows = currentFormat === 'note' ? 5 : 10;
   if (silent) return;
   savePrefs();

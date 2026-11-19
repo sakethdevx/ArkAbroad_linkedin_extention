@@ -23,6 +23,15 @@ test('date lines: ranges, present, non-English, education years', () => {
   assert.strictEqual(PP.isDateLine('Class of 2020 Coordinator'), false);
 });
 
+test('connection badge: reads 1st/2nd/3rd from the top card, ignores look-alikes', () => {
+  assert.strictEqual(PP.parseConnectionDegree(['Priya Rao', '· 1st', 'Data Scientist']), '1st');
+  assert.strictEqual(PP.parseConnectionDegree(['Priya Rao · 2nd']), '2nd');
+  assert.strictEqual(PP.parseConnectionDegree(['3rd+']), '3rd+');
+  assert.strictEqual(PP.parseConnectionDegree(['I finished 1st in my class and love it so much that I wrote a very long sentence about it here']), '');
+  assert.strictEqual(PP.parseConnectionDegree(['Data Scientist', 'Chennai']), '');
+  assert.strictEqual(PP.parseConnectionDegree(null), '');
+});
+
 test('single role: Marketing Intern keeps its title', () => {
   const r = PP.parseRoleLines(['Marketing Intern', 'Acme Corp · Internship', 'Jun 2024 - Aug 2024 · 3 mos', 'Chennai, India']);
   assert.strictEqual(r.title, 'Marketing Intern');

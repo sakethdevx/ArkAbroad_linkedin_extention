@@ -6,7 +6,7 @@
 
 (function () {
   // Guard against double-registering, but keyed by version so new code replaces stale code after an update.
-  const VERSION = 'scroll-2';
+  const VERSION = 'scroll-3';
   if (window.__outreachAiLoaded === VERSION) return;
   window.__outreachAiLoaded = VERSION;
 
@@ -191,7 +191,7 @@
       return out;
     }, [], warnings);
 
-    const profile = PP.buildProfile({ name, headline, location, about, experience, education, skills, recentPosts, profileUrl: url, warnings });
+    const profile = PP.buildProfile({ name, headline, location, about, experience, education, skills, recentPosts, profileUrl: url, warnings, connectionDegree: safe('the connection badge', () => PP.parseConnectionDegree(topLines), '', warnings) });
     profile.rawTitle = document.title;
     return profile;
   }

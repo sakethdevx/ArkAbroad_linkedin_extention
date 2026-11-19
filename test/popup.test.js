@@ -24,7 +24,7 @@ module.exports = (test) => {
     const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8').replace(/<script[^>]*src[^>]*><\/script>/g, '');
     const w = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://x/popup.html' }).window;
     const errors = []; w.addEventListener('error', e => errors.push(e.message));
-    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let granted = new Set(); let allowRequests = true;
+    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; let granted = new Set(); let allowRequests = true;
     let tabUrl = url;
     w.chrome = {
       tabs: { query: async () => [{ id: 42, url: tabUrl, active: true }], onActivated: { addListener: f => listeners.push(f) }, onUpdated: { addListener: f => listeners.push(f) } },
@@ -37,7 +37,7 @@ module.exports = (test) => {
         request: async (q) => { permCalls.push(q.origins[0]); if (allowRequests) q.origins.forEach(o => granted.add(o)); return allowRequests; } },
       runtime: { lastError: null, getURL: x => x, sendMessage: (m, cb) => {
         if (m.type === 'TEST_API_KEY') { return cb({ valid: true, provider: m.payload.provider }); }
-        if (m.action === 'scrapeProfile') { scrapes.push(m); return cb({ success: true, data: PRIYA() }); }
+        if (m.action === 'scrapeProfile') { scrapes.push(m); return cb({ success: true, data: { ...PRIYA(), connectionDegree: degree } }); }
         if (m.type === 'PREVIEW_RESUME') return cb({ success: true, providerName: 'Anthropic', host: 'api.anthropic.com', model: 'claude-haiku-5-5', system: 'RSYS', user: '{"resume_text":"' + m.payload.text.slice(0, 20) + '"}' });
         if (m.type === 'PARSE_RESUME') { resumeCalls.push(m.payload); return cb(resumeReply || { ok: true, provider: 'anthropic', profile: {
           name: 'Asha Menon', intro: 'final-year CS student at IIT Madras', summary: 'CS student who builds data tools.', city: 'Chennai, India',
@@ -66,7 +66,7 @@ module.exports = (test) => {
     else w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
     await tick();
     const $ = id => w.document.getElementById(id);
-    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
+    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
   }
 
   const SENDER = { schools: ['IIT Madras'], skills: ['Python'], intro: 'CS student' };
@@ -467,5 +467,26 @@ module.exports = (test) => {
     await done.click('resume-tip-go', 40);
     assert.strictEqual(done.$('about-card').open, true);
     assert.deepStrictEqual(done.errors, []);
+  });
+
+  test('popup: the two formats are labelled by who you are writing to, and a 1st-degree badge picks "Already connected" for you (until you choose)', async () => {
+    const t = await boot({ senderProfile: SENDER });
+    const labels = [...t.w.document.querySelectorAll('.format-btn')].map(b => b.textContent.replace(/\s+/g, ' ').trim());
+    assert.deepStrictEqual(labels, ['New connection note · 200', 'Already connected message']);
+    t.setDegree('1st');
+    await t.click('scrape-btn');
+    assert.strictEqual(t.calls.at(-1).format, 'message');
+    assert.match(t.$('format-tip').textContent, /1st-degree connection/);
+    assert.match(t.$('char-count').textContent, /\/ 500$/);
+    // you pick a format yourself → we stop choosing
+    t.w.document.querySelector('.format-btn[data-format="note"]').click(); await tick(100);
+    assert.strictEqual(t.calls.at(-1).format, 'note');
+    await t.click('scrape-btn');
+    assert.strictEqual(t.calls.at(-1).format, 'note', 'manual choice is respected');
+    // not connected → note
+    const n = await boot({ senderProfile: SENDER });
+    n.setDegree('2nd'); await n.click('scrape-btn');
+    assert.strictEqual(n.calls.at(-1).format, 'note');
+    assert.deepStrictEqual(t.errors.concat(n.errors), []);
   });
 };

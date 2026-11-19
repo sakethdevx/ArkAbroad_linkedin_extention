@@ -334,7 +334,7 @@ module.exports = (test) => {
       get: async (id) => ({ id, url: id === 7 ? 'https://www.linkedin.com/in/priya/overlay/contact-info/' : id === 8 ? 'https://www.linkedin.com/feed/' : undefined }),
       query: async () => { throw new Error('must not fall back to query when a tab id is given'); },
       sendMessage: async (id, msg) => {
-        if (msg.action === 'ping') { if (ponged) return { ok: true, version: 'scroll-2' }; throw new Error('Could not establish connection'); }
+        if (msg.action === 'ping') { if (ponged) return { ok: true, version: 'scroll-3' }; throw new Error('Could not establish connection'); }
         if (msg.action === 'scrapeProfile') return { success: true, data: { name: 'Priya Rao' } };
       }
     };
