@@ -17,7 +17,11 @@
         </svg>
       </div>
       <h1 class="app-title">Outreach AI</h1>
-      <div class="key-status" id="key-status"></div>
+      <div class="mode-switch" role="group" aria-label="How drafts are written">
+        <button type="button" class="mode-btn" id="mode-free" aria-pressed="true" title="Free: written on this device, nothing is sent">Free</button>
+        <button type="button" class="mode-btn" id="mode-ai" aria-pressed="false" title="AI: written by your own AI key">AI</button>
+      </div>
+      <div class="sr-only" id="key-status" aria-live="polite"></div>
     </header>
 
     <div class="privacy-strip" id="privacy-strip">
@@ -269,6 +273,7 @@
           </div>
           <p class="provider-help" id="provider-help"></p>
           <div class="key-validation-status hidden" id="key-validation-status" role="status" aria-live="polite"></div>
+          <p class="field-hint">Saving a key turns AI on. Switch between Free and AI any time from the top bar; your key stays saved and you are never asked again.</p>
         </div>
 
         <div class="field-group full">
@@ -361,7 +366,7 @@
           <strong>What leaves your device</strong>
           <ul>
             <li><b>Free Mode</b> (no key): nothing. Profiles are read, matched and drafted on this device.</li>
-            <li><b>AI Mode</b> (your own key): a short, cleaned-up summary of the profile and your résumé info goes to the provider you chose, <b>api.anthropic.com</b> (Claude) or <b>api.groq.com</b> (Llama), to write the draft. You see exactly what first. When you upload a résumé in AI Mode, its text (contact details removed) goes to the same provider to fill in your profile, after you approve the exact text each time. Your key is sent only to that provider.</li>
+            <li><b>AI Mode</b> (your own key): a short, cleaned-up summary of the profile and your résumé info goes to the provider you chose, <b>api.anthropic.com</b> (Claude) or <b>api.groq.com</b> (Llama), to write the draft. You see exactly what first. When you upload a résumé in AI Mode, its text (contact details removed) goes to the same provider to fill in your profile. You say yes once when you turn AI on. Your key is sent only to that provider.</li>
             <li><b>Never sent</b>: your résumé PDF, emails and phone numbers, or anything else on the page.</li>
             <li><b>Never automatic</b>: this tool doesn’t click, type or send on LinkedIn. You read and send every message yourself.</li>
           </ul>

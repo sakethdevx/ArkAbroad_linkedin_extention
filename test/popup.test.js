@@ -60,7 +60,8 @@ module.exports = (test) => {
     };
     w.navigator.clipboard = { writeText: async () => {} };
     w.eval(SCRIPTS.map(f => fs.readFileSync(path.join(root, f), 'utf8').replace(/^'use strict';/, '')).join('\n;'));
-    w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
+    if (w.document.readyState === 'loading') await new Promise(r => w.document.addEventListener('DOMContentLoaded', () => r()));   // jsdom fires it itself; dispatching again would run init twice
+    else w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
     await tick();
     const $ = id => w.document.getElementById(id);
     return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
@@ -121,36 +122,56 @@ module.exports = (test) => {
     assert.strictEqual(t.store.recentContacts[0].sent, true);
   });
 
-  test('popup: Free Mode never shows the consent dialog; AI Mode asks once and respects each choice', async () => {
+  test('popup: switching Free ⇄ AI: AI asks once (names provider, host, model), the choice is remembered, and nothing asks per draft', async () => {
     const free = await boot({ senderProfile: SENDER });
     await free.click('scrape-btn');
     assert.ok(!free.$('consent-dialog').hasAttribute('open'));
     assert.match(free.$('privacy-text').textContent, /everything stays on this device/);
+    assert.strictEqual(free.$('mode-free').getAttribute('aria-pressed'), 'true');
 
-    const ai = await boot({ userApiKey: 'sk-ant-x', senderProfile: SENDER });
-    assert.match(ai.$('privacy-text').textContent, /Anthropic/);
-    await ai.click('scrape-btn');
-    assert.ok(ai.$('consent-dialog').hasAttribute('open'));
-    assert.match(ai.$('consent-payload').textContent, /recipient_profile/);
-    assert.strictEqual(ai.calls.length, 0, 'nothing is sent before the user decides');
-    await ai.click('consent-free');
-    assert.strictEqual(ai.calls[0].forceFree, true);
-    assert.ok(!ai.store.aiConsent, 'choosing a free draft must not store consent');
-    await ai.click('scrape-btn'); await ai.click('consent-send');
-    assert.strictEqual(ai.store.aiConsent.version, 1);
-    assert.strictEqual(ai.calls[1].forceFree, undefined);
-    await ai.click('scrape-btn');
-    assert.ok(!ai.$('consent-dialog').hasAttribute('open'), 'asked only once');
+    // a key is saved but never turned on → still Free, with a clear next step
+    const t = await boot({ userApiKey: 'sk-ant-x', senderProfile: SENDER });
+    assert.strictEqual(t.$('mode-ai').getAttribute('aria-pressed'), 'false');
+    assert.match(t.$('privacy-text').textContent, /Tap AI to use it/);
+    await t.click('mode-ai', 150);
+    assert.ok(t.$('consent-dialog').hasAttribute('open'));
+    assert.match(t.$('consent-title').textContent, /Turn on AI with Anthropic/);
+    assert.strictEqual(t.$('consent-host').textContent, 'api.anthropic.com');
+    assert.strictEqual(t.store.mode, 'free', 'nothing changes before the yes');
+    await t.click('consent-send', 150);
+    assert.strictEqual(t.store.mode, 'ai');
+    assert.strictEqual(t.store.aiConsent.version, 2);
+    assert.strictEqual(t.$('mode-ai').getAttribute('aria-pressed'), 'true');
+    assert.match(t.$('privacy-text').textContent, /Anthropic/);
+    await t.click('scrape-btn');
+    assert.ok(!t.$('consent-dialog').hasAttribute('open'), 'no dialog per draft');
+    assert.strictEqual(t.calls[0].forceFree, undefined);
 
-    const cancel = await boot({ userApiKey: 'k', senderProfile: SENDER });
-    await cancel.click('scrape-btn'); await cancel.click('consent-cancel');
-    assert.strictEqual(cancel.calls.length, 0);
-    assert.match(cancel.$('status-message').textContent, /Nothing was sent/);
-    assert.ok(cancel.$('message-section').classList.contains('hidden'));
+    await t.click('mode-free', 100);
+    assert.strictEqual(t.store.mode, 'free');
+    assert.strictEqual(t.store.userApiKey, 'sk-ant-x', 'the key stays saved');
+    await t.click('mode-ai', 100);
+    assert.ok(!t.$('consent-dialog').hasAttribute('open'), 'switching back never asks again');
+    assert.strictEqual(t.store.mode, 'ai');
+
+    // "Not now" leaves things as they were
+    const n = await boot({ userApiKey: 'sk-ant-x' });
+    await n.click('mode-ai', 150); await n.click('consent-cancel', 100);
+    assert.notStrictEqual(n.store.mode, 'ai');
+    assert.deepStrictEqual(n.errors, []);
+  });
+
+  test('popup: tapping AI with no key sends you to Settings with the key field focused', async () => {
+    const t = await boot({});
+    await t.click('mode-ai', 100);
+    assert.strictEqual(t.$('tab-settings').classList.contains('active'), true);
+    assert.strictEqual(t.w.document.activeElement.id, 'api-key');
+    assert.match(t.$('settings-status').textContent, /Add your API key/);
+    assert.notStrictEqual(t.store.mode, 'ai');
   });
 
   test('popup: AI Mode does not spend a request on chip/format toggles (asks you to press New drafts)', async () => {
-    const t = await boot({ userApiKey: 'k', aiConsent: { version: 1, ackAt: 1 }, senderProfile: SENDER });
+    const t = await boot({ userApiKey: 'k', mode: 'ai', aiConsent: { version: 2, ackAt: 1, provider: 'anthropic' }, senderProfile: SENDER });
     await t.click('scrape-btn');
     const n = t.calls.length;
     t.w.document.querySelector('#overlap-chips .chip').click(); await tick(100);
@@ -244,7 +265,12 @@ module.exports = (test) => {
   test('provider: saving a Groq key asks Chrome for api.groq.com first; Anthropic asks for nothing; the key saves with its provider', async () => {
     const g = await boot({});
     g.$('api-key').value = 'gsk_abc123'; g.$('api-key').dispatchEvent(new g.w.Event('input'));
-    await g.click('save-settings-btn', 80);
+    await g.click('save-settings-btn', 120);
+    assert.ok(g.$('consent-dialog').hasAttribute('open'), 'saving a key asks the one-time yes');
+    assert.match(g.$('consent-title').textContent, /Turn on AI with Groq/);
+    await g.click('consent-send', 150);
+    assert.strictEqual(g.store.mode, 'ai', 'saving a key turns AI on');
+    assert.match(g.$('settings-status').textContent, /AI is on \(Groq\)/);
     assert.deepStrictEqual(g.permCalls, ['https://api.groq.com/*']);
     assert.strictEqual(g.store.userApiKey, 'gsk_abc123');
     assert.strictEqual(g.store.aiProvider, 'groq');
@@ -253,7 +279,7 @@ module.exports = (test) => {
 
     const a = await boot({});
     a.$('api-key').value = 'sk-ant-abc'; a.$('api-key').dispatchEvent(new a.w.Event('input'));
-    await a.click('save-settings-btn', 80);
+    await a.click('save-settings-btn', 120); await a.click('consent-send', 150);
     assert.deepStrictEqual(a.permCalls, []);
     assert.strictEqual(a.store.aiProvider, 'anthropic');
     assert.match(a.$('key-status').textContent, /AI Mode · Anthropic/);
@@ -292,43 +318,42 @@ module.exports = (test) => {
     assert.match(d.$('key-validation-status').textContent, /Allow access to api\.groq\.com/);
   });
 
-  test('provider: consent is per provider (legacy Anthropic consent does not cover Groq); dialog names the provider and host', async () => {
+  test('provider: consent is per provider (legacy Anthropic consent does not cover Groq); dialog names provider, host, model', async () => {
     const t = await boot({ userApiKey: 'gsk_k', aiProvider: 'groq', aiConsent: { version: 1, ackAt: 1 } });   // legacy record = Anthropic
-    await t.click('scrape-btn');
-    assert.ok(t.$('consent-dialog').hasAttribute('open'), 'asked again for a new provider');
-    assert.match(t.$('consent-title').textContent, /Send this to Groq\?/);
+    assert.strictEqual(t.$('mode-ai').getAttribute('aria-pressed'), 'false', 'not silently switched on for a new provider');
+    await t.click('mode-ai', 150);
+    assert.match(t.$('consent-title').textContent, /Turn on AI with Groq/);
     assert.strictEqual(t.$('consent-host').textContent, 'api.groq.com');
     assert.strictEqual(t.$('consent-model').textContent, 'llama-3.3-70b-versatile');
-    assert.strictEqual(t.calls.length, 0);
-    await t.click('consent-send');
+    await t.click('consent-send', 150);
     assert.strictEqual(t.store.aiConsent.provider, 'groq');
-    assert.match(t.$('source-badge').textContent, /Written by Llama via Groq/);
     await t.click('scrape-btn');
-    assert.ok(!t.$('consent-dialog').hasAttribute('open'), 'then remembered');
+    assert.ok(!t.$('consent-dialog').hasAttribute('open'));
+    assert.match(t.$('source-badge').textContent, /Written by Llama via Groq/);
 
     const legacy = await boot({ userApiKey: 'sk-ant-k', aiConsent: { version: 1, ackAt: 1 }, senderProfile: SENDER });
+    assert.strictEqual(legacy.$('mode-ai').getAttribute('aria-pressed'), 'true', 'existing Anthropic users keep AI on');
     await legacy.click('scrape-btn');
-    assert.ok(!legacy.$('consent-dialog').hasAttribute('open'), 'existing Anthropic users are not re-asked');
+    assert.ok(!legacy.$('consent-dialog').hasAttribute('open'));
     assert.match(legacy.$('source-badge').textContent, /Written by Claude/);
   });
 
   test('provider: saved settings restore the provider selection', async () => {
-    const t = await boot({ userApiKey: 'gsk_k', aiProvider: 'groq' });
+    const t = await boot({ userApiKey: 'gsk_k', aiProvider: 'groq', mode: 'ai' });
     assert.strictEqual(t.w.document.querySelector('.provider-btn[data-provider="groq"]').getAttribute('aria-checked'), 'true');
     assert.match(t.$('key-status').textContent, /Groq/);
-    const bare = await boot({ userApiKey: 'gsk_k' });   // no explicit provider stored → detected from the key
+    const bare = await boot({ userApiKey: 'gsk_k', mode: 'ai' });   // no explicit provider stored → detected from the key
     assert.match(bare.$('key-status').textContent, /Groq/);
   });
 
-  test('popup: AI Mode résumé read — shows the exact text first, then fills every field and stores the full profile', async () => {
-    const t = await boot({ userApiKey: 'sk-ant-abc' });
-    t.$('resume-paste').value = fs.readFileSync(path.join(__dirname, 'fixtures/resume_sample.txt'), 'utf8');
-    t.$('resume-paste-btn').click(); await tick(150);
-    assert.ok(t.$('consent-dialog').hasAttribute('open'), 'asks before sending the résumé');
-    assert.match(t.$('consent-title').textContent, /read your résumé/);
-    assert.match(t.$('consent-payload').textContent, /resume_text/);
-    assert.strictEqual(t.resumeCalls.length, 0, 'nothing sent before approval');
-    await t.click('consent-send', 150);
+  const V2 = { version: 2, ackAt: 1, provider: 'anthropic' };
+  const RESUME_TXT = () => fs.readFileSync(path.join(__dirname, 'fixtures/resume_sample.txt'), 'utf8');
+
+  test('popup: AI Mode résumé upload reads it automatically (no dialog), fills every field and stores the full profile', async () => {
+    const t = await boot({ userApiKey: 'sk-ant-abc', mode: 'ai', aiConsent: V2 });
+    t.$('resume-paste').value = RESUME_TXT();
+    await t.click('resume-paste-btn', 200);
+    assert.ok(!t.$('consent-dialog').hasAttribute('open'), 'already said yes when AI was turned on');
     assert.strictEqual(t.resumeCalls.length, 1);
     assert.ok(!/@|98765/.test(t.resumeCalls[0].text), 'contact details never leave the device');
     assert.strictEqual(t.$('user-name').value, 'Asha Menon');
@@ -341,38 +366,40 @@ module.exports = (test) => {
     assert.strictEqual(sp.experience[0].company, 'Globex');
     assert.strictEqual(t.store.userName, 'Asha Menon');
     assert.match(t.$('resume-status').textContent, /Anthropic read your résumé/);
-    // a small edit must not drop the rest of the profile
     t.$('me-skills').value = 'Python'; t.$('me-skills').dispatchEvent(new t.w.Event('change')); await tick(40);
     const sp2 = JSON.parse(JSON.stringify(t.store.senderProfile));
-    assert.strictEqual(sp2.projects[0].name, 'CampusMap');
+    assert.strictEqual(sp2.projects[0].name, 'CampusMap', 'a small edit keeps the rest of the profile');
     assert.strictEqual(sp2.summary, 'CS student who builds data tools.');
-    // asks again for the next upload (never remembered)
-    t.$('resume-ai-btn').click(); await tick(150);
-    assert.ok(t.$('consent-dialog').hasAttribute('open'));
-    await t.click('consent-cancel', 60);
-    assert.strictEqual(t.resumeCalls.length, 1);
+    await t.click('resume-ai-btn', 200);
+    assert.strictEqual(t.resumeCalls.length, 2, 're-read works without any dialog');
     assert.deepStrictEqual(t.errors, []);
   });
 
-  test('popup: AI résumé read — declining keeps the on-device result; an AI failure falls back with a clear message; never overwrites typed name', async () => {
-    const t = await boot({ userApiKey: 'sk-ant-abc', userName: 'Typed Name' });
-    t.$('resume-paste').value = fs.readFileSync(path.join(__dirname, 'fixtures/resume_sample.txt'), 'utf8');
-    t.$('resume-paste-btn').click(); await tick(150);
-    await t.click('consent-free', 100);
+  test('popup: turning AI on later reads an already-uploaded résumé by itself', async () => {
+    const t = await boot({ userApiKey: 'sk-ant-abc', resumeText: RESUME_TXT(), resumeFileName: 'r.pdf', senderProfile: SENDER });
     assert.strictEqual(t.resumeCalls.length, 0);
-    assert.match(t.$('me-schools').value, /Indian Institute of Technology Madras/);
-    assert.match(t.$('resume-status').textContent, /Read on this device/);
+    await t.click('mode-ai', 150); await t.click('consent-send', 300);
+    assert.strictEqual(t.resumeCalls.length, 1);
+    assert.strictEqual(JSON.parse(JSON.stringify(t.store.senderProfile)).source, 'ai');
+  });
 
+  test('popup: AI résumé read — an AI failure falls back with a clear message; a typed name is never overwritten; Free Mode switch stops it', async () => {
+    const t = await boot({ userApiKey: 'sk-ant-abc', mode: 'ai', aiConsent: V2, userName: 'Typed Name' });
     t.setResumeReply({ ok: false, userMessage: 'Anthropic rejected the API key.' });
-    t.$('resume-ai-btn').click(); await tick(150);
-    await t.click('consent-send', 150);
+    t.$('resume-paste').value = RESUME_TXT();
+    await t.click('resume-paste-btn', 200);
     assert.match(t.$('resume-status').textContent, /rejected the API key\. Using what was read on this device/);
     assert.match(t.$('me-schools').value, /Indian Institute of Technology Madras/);
-
     t.setResumeReply(null);
-    t.$('resume-ai-btn').click(); await tick(150);
-    await t.click('consent-send', 150);
+    await t.click('resume-ai-btn', 200);
     assert.strictEqual(t.$('user-name').value, 'Typed Name');
+
+    await t.click('mode-free', 100);
+    const before = t.resumeCalls.length;
+    t.$('resume-paste').value = RESUME_TXT() + ' ';
+    await t.click('resume-paste-btn', 200);
+    assert.strictEqual(t.resumeCalls.length, before, 'Free Mode never sends the résumé');
+    assert.ok(t.$('resume-ai-btn').classList.contains('hidden'));
   });
 
   test('popup: Free Mode résumé upload never opens the AI dialog or sends anything', async () => {

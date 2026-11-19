@@ -2,7 +2,7 @@
 
 Draft a short, specific LinkedIn message for the person whose profile you're looking at. **You read it, edit it and send it yourself.** Nothing is ever sent or clicked for you.
 
-Works **free, on your device**, with no account and no API key. Optionally add your own key and an AI writes the drafts instead: **Anthropic (Claude)** or **Groq (Llama, which has a free plan with usage limits)**.
+Works **free, on your device**, with no account and no API key. Optionally add your own key and flip the **Free ⇄ AI** switch in the top bar so an AI writes the drafts instead: **Anthropic (Claude)** or **Groq (Llama, which has a free plan with usage limits)**.
 
 ## Install (unpacked, no build step)
 1. `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → choose this folder.
@@ -21,8 +21,8 @@ Needs Chrome 116 or newer (side panel).
 | Mode | What is sent | Where |
 |---|---|---|
 | **Free** (no key) | Nothing | n/a |
-| **AI** (your own key) | A short, cleaned-up summary of the profile + the résumé info you approved, **shown to you first** | only the provider you chose: `api.anthropic.com` **or** `api.groq.com` |
-| **AI**, résumé upload | The résumé **text** (emails/phones already removed) so the AI can fill in your profile; you approve the exact text each time | the same provider |
+| **AI** (your own key, switch on) | A short, cleaned-up summary of the profile + your profile details. You say yes **once** when you turn AI on, and "What's sent?" always shows the exact data | only the provider you chose: `api.anthropic.com` **or** `api.groq.com` |
+| **AI**, résumé upload | The résumé **text** (emails/phones already removed) so the AI can fill in your profile | the same provider |
 | Always | Never: your résumé PDF, emails, phone numbers, your key (header only), or anything else on the page | n/a |
 
 - Stored locally (`chrome.storage.local`): your key (if you add one), name/bio, résumé **text** (contact details removed; the PDF is not kept), your edited "about you" info, recent drafts.

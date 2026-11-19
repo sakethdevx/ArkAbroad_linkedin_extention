@@ -179,3 +179,15 @@ _Slices land below as they ship._
 **Safety** Résumé text is data, in the same untrusted-content framing; the model's answer is whitelisted, length-capped, checked for instruction-like text and emails, and every school, employer, skill, project and certification must actually appear in the résumé text (invented ones are dropped). Approval is asked on every upload and never remembered. Free Mode never opens the dialog or sends anything. If the AI fails, the on-device result stays and the message says so. Editing one field no longer drops the rest of the profile.
 **Tests** Anthropic and Groq routes, grounding and injection drops, preview sends nothing, error/junk fallbacks, popup flow (consent first, fills every field, name not overwritten, decline path, Free Mode); 122 total.
 **Unverified live** I can't call either provider from here; the schema and prompts follow their documented JSON modes.
+
+### UX: one Free ⇄ AI switch, one yes, no more repeated questions
+**Problem** Whether you were in AI mode depended on a hidden fact (is a key saved?). The only way back to Free was deleting the key, a dialog interrupted every draft, and every résumé upload asked again. Confusing and stressful for a non-technical student.
+**Change**
+- A **Free | AI** switch in the header, always visible, remembered (`mode` in `chrome.storage.local`). The key stays saved when you switch to Free, so flipping back is one tap.
+- **One consent**, shown the first time you turn AI on for a provider (v2): it lists what is sent for drafts and for résumé uploads. After that nothing asks again: no per-draft dialog, no per-résumé dialog. "What's sent?" still shows the exact live data any time.
+- Saving a key in Settings turns AI on (after that one yes). Tapping AI with no key takes you to the key field. "Not now" leaves everything as it was.
+- Turning AI on with a résumé already uploaded reads it with AI automatically; uploading in AI Mode does the same.
+- Existing users: a key with a prior consent for the same provider stays in AI mode; a key without consent (or a different provider) starts in Free and shows "AI is ready. Tap AI to use it."
+- Background honours the switch: in Free the key is never used and no request is made.
+**Also** Fixed the test harness firing the page's init twice (it hid double-binding).
+**Tests** Switch flow, remembered choice, no per-draft dialog, key-less AI tap, résumé auto-read, Free never sends, legacy consent; 125 total.

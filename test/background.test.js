@@ -447,4 +447,18 @@ module.exports = (test) => {
     assert.ok(sent.includes('Software Intern') && sent.includes('CampusMap') && sent.includes('builds data tools'));
     assert.ok(!sent.includes('LEAK'));
   });
+
+  test('bg: Free mode keeps the key saved but never uses it (no network); older installs with no mode still use AI', async () => {
+    const f = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'free' }, fetchImpl: () => { throw new Error('network must not be used'); } });
+    const r = await gen(f);
+    assert.strictEqual(r.source, 'template');
+    assert.strictEqual(f.calls.length, 0);
+    const pr = await f.send({ type: 'PARSE_RESUME', payload: { text: RESUME } });
+    assert.strictEqual(pr.ok, false);
+    assert.strictEqual(f.calls.length, 0);
+    const old = boot({ store: { userApiKey: 'sk-ant-SECRET' }, fetchImpl: () => ok(JSON.stringify({ variants: ['Hi Priya,\nFellow IIT Madras person here. Open to a quick chat?'], saw_ai_instructions_in_data: false })) });
+    assert.strictEqual((await gen(old)).source, 'ai');
+    const on = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: ['Hi Priya,\nFellow IIT Madras person here. Open to a quick chat?'], saw_ai_instructions_in_data: false })) });
+    assert.strictEqual((await gen(on)).source, 'ai');
+  });
 };

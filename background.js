@@ -568,8 +568,9 @@ function buildHooks(p, overlaps = []) {
 // ─── Utils ────────────────────────────────────────────────────────────────────
 function getAiConfig() {
   return new Promise(resolve => {
-    chrome.storage.local.get(['userApiKey', 'aiProvider'], r => {
-      const apiKey = (r.userApiKey || '').trim();
+    chrome.storage.local.get(['userApiKey', 'aiProvider', 'mode'], r => {
+      // Free mode keeps the key saved but never uses it. No mode stored (older installs) behaves as before: key present = AI.
+      const apiKey = r.mode === 'free' ? '' : (r.userApiKey || '').trim();
       resolve({ apiKey, provider: resolveProvider(r.aiProvider, apiKey) });
     });
   });

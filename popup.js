@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('paste-btn').addEventListener('click', handlePasteProfile);
   document.getElementById('privacy-details-btn').addEventListener('click', showPrivacyDetails);
   wireProviderUi();
+  wireModeSwitch();
   document.getElementById('resume-tip-go').addEventListener('click', () => { switchTab('settings'); document.getElementById('file-upload-area').focus(); });
   document.getElementById('resume-tip-dismiss').addEventListener('click', async () => { await storageSet({ resumeTipDismissed: true }); refreshResumeTip(); });
   wireConsentDialog();
@@ -37,9 +38,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ─── AI providers (bring your own key) ───────────────────────────────────────
 // Keep in sync with PROVIDERS in background.js. Groq's host is an OPTIONAL permission, requested only when it's chosen.
 const AI_PROVIDERS = {
-  anthropic: { id: 'anthropic', name: 'Anthropic', host: 'api.anthropic.com', origin: null, placeholder: 'sk-ant-…', prefix: /^sk-ant-/, badge: 'Written by Claude · using your key',
+  anthropic: { id: 'anthropic', name: 'Anthropic', host: 'api.anthropic.com', model: 'claude-haiku-5-5', origin: null, placeholder: 'sk-ant-…', prefix: /^sk-ant-/, badge: 'Written by Claude · using your key',
     help: 'Get a key at console.anthropic.com. Pay as you go.', link: 'https://console.anthropic.com/settings/keys', linkText: 'Open Anthropic Console' },
-  groq:      { id: 'groq', name: 'Groq', host: 'api.groq.com', origin: 'https://api.groq.com/*', placeholder: 'gsk_…', prefix: /^gsk_/, badge: 'Written by Llama via Groq · using your key',
+  groq:      { id: 'groq', name: 'Groq', host: 'api.groq.com', model: 'llama-3.3-70b-versatile', origin: 'https://api.groq.com/*', placeholder: 'gsk_…', prefix: /^gsk_/, badge: 'Written by Llama via Groq · using your key',
     help: 'Groq has a free plan with usage limits. Saving asks Chrome to allow access to api.groq.com.', link: 'https://console.groq.com/keys', linkText: 'Get a Groq key' }
 };
 let selectedProvider = 'anthropic';
@@ -86,18 +87,63 @@ function wireProviderUi() {
   setProvider(selectedProvider);
 }
 
-// ─── Mode badge in header (Free vs AI) ───────────────────────────────────────
-async function refreshModeBadge() {
-  const s   = await loadStoredSettings();
+// ─── Mode: Free ⇄ AI (one switch in the header; the choice is remembered) ─────
+// mode 'ai' only takes effect while a key is saved; the key stays saved when you switch back to Free.
+async function getModeState(s) {
+  s = s || await loadStoredSettings();
   const key = (s.userApiKey || '').trim();
-  const p   = resolveProvider(s.aiProvider, key);
-  const el  = document.getElementById('key-status');
-  el.textContent = key ? `● AI Mode · ${p.name}` : '● Free Mode';
-  el.className   = 'key-status active';
-  document.getElementById('privacy-text').textContent = key
-    ? `AI Mode: a short profile summary goes to ${p.name} (your key).`
-    : 'Free Mode: everything stays on this device.';
+  const provider = resolveProvider(s.aiProvider, key);
+  const consentOk = !!s.aiConsent && (s.aiConsent.provider || 'anthropic') === provider.id;
+  const mode = s.mode || (key && consentOk ? 'ai' : 'free');   // before the switch existed: a key with consent meant AI
+  return { key, provider, mode, ai: mode === 'ai' && !!key, hasKey: !!key, consent: s.aiConsent };
+}
+
+async function refreshModeBadge() {
+  const m = await getModeState();
+  document.getElementById('mode-free').setAttribute('aria-pressed', String(!m.ai));
+  document.getElementById('mode-ai').setAttribute('aria-pressed', String(m.ai));
+  document.getElementById('key-status').textContent = m.ai ? `AI Mode · ${m.provider.name}` : 'Free Mode';
+  document.getElementById('privacy-text').textContent = m.ai
+    ? `AI Mode: a short profile summary goes to ${m.provider.name} (your key).`
+    : `Free Mode: everything stays on this device.${m.hasKey ? ' AI is ready. Tap AI to use it.' : ''}`;
   refreshAiResumeBtn();
+}
+
+async function setAiMode(mode) {
+  await storageSet({ mode });
+  await refreshModeBadge();
+}
+
+// The one-time "yes, use my key" step. Covers drafts AND résumé reading, so nothing asks again afterwards.
+async function ensureAiEnabled() {
+  const m = await getModeState();
+  if (!m.hasKey) return false;
+  if (m.consent && m.consent.version >= CONSENT_VERSION && (m.consent.provider || 'anthropic') === m.provider.id) return true;
+  return (await showConsentDialog(null, false, { kind: 'enable', provider: m.provider })) === 'send';
+}
+
+async function turnOnAi() {
+  const m = await getModeState();
+  if (!m.hasKey) {
+    switchTab('settings');
+    document.getElementById('api-key').focus();
+    showSettingsStatus('Add your API key below and press Save. That turns AI on.', '', 8000);
+    return;
+  }
+  if (!(await ensureAiEnabled())) { showCurrentStatus('AI stays off. Free Mode still works.', ''); return; }
+  await setAiMode('ai');
+  showCurrentStatus(`AI is on (${m.provider.name}). Your next draft is written by AI.`, 'success');
+  await autoReadResumeWithAi();
+}
+
+async function turnOffAi() {
+  await setAiMode('free');
+  showCurrentStatus('Free Mode: drafts are written on this device and nothing is sent.', 'success');
+}
+
+function wireModeSwitch() {
+  document.getElementById('mode-free').addEventListener('click', turnOffAi);
+  document.getElementById('mode-ai').addEventListener('click', turnOnAi);
 }
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
@@ -354,9 +400,6 @@ async function requestData(profile) {
 
 async function callQuickGenerate(profile) {
   const data = await requestData(profile);
-  const choice = await ensureAiConsent(data);
-  if (choice === 'cancel') throw new Error('Cancelled. Nothing was sent.');
-  if (choice === 'free') data.forceFree = true;
   return sendToBackground({ action: 'generateMessage', data });
 }
 
@@ -384,8 +427,7 @@ async function regenerate(bump) {
 async function applyChangeLive() {
   const hasDraft = !document.getElementById('message-section').classList.contains('hidden');
   if (!hasDraft) return;
-  const { userApiKey } = await loadStoredSettings();
-  if (!(userApiKey || '').trim()) regenerate(false);
+  if (!(await getModeState()).ai) regenerate(false);
   else showCurrentStatus('Press Regenerate to apply this (AI mode uses a request).', '');
 }
 
@@ -469,10 +511,6 @@ async function handleDeepGenerate() {
 
   try {
     const data = await requestData(deepProfileJSON);
-    const choice = await ensureAiConsent(data);
-    if (choice === 'cancel') throw new Error('Cancelled. Nothing was sent.');
-    if (choice === 'free') data.forceFree = true;
-
     const { profileData, ...rest } = data;
     const response = await new Promise(resolve =>
       chrome.runtime.sendMessage({ type: 'RUN_GENERATE', payload: { profileJSON: profileData, enrichmentJSON: deepEnrichmentJSON, ...rest } }, resolve));
@@ -497,6 +535,7 @@ async function handleDeepGenerate() {
 // ─── Settings ─────────────────────────────────────────────────────────────────
 async function loadSettings() {
   let s = await loadStoredSettings();
+  if (!s.mode) { await storageSet({ mode: (await getModeState(s)).mode }); }   // remember the choice from now on
   if (s.userApiKey) document.getElementById('api-key').value = s.userApiKey;
   setProvider(resolveProvider(s.aiProvider, s.userApiKey).id);
   if (s.userName)   document.getElementById('user-name').value   = s.userName;
@@ -545,9 +584,26 @@ async function handleSaveSettings() {
 
   await new Promise(resolve => chrome.storage.local.set(toSave, resolve));
   await saveSenderFromCard({ quiet: true });
-  if (keyDenied) showSettingsStatus(`Your key wasn't saved: ${provider.name} needs permission to contact ${provider.host}. Press Save again and choose Allow.`, 'error', 6000);
-  else showSettingsStatus('Settings saved!', 'success');
+
+  // A key you just saved means you want AI: ask the one-time yes, then switch on. No key → Free.
+  let msg = 'Settings saved!', kind = 'success', turnedOn = false;
+  if (keyDenied) {
+    msg = `Your key wasn't saved: ${provider.name} needs permission to contact ${provider.host}. Press Save again and choose Allow.`; kind = 'error';
+  } else if (toSave.userApiKey) {
+    if (await ensureAiEnabled()) { await setAiMode('ai'); msg = `Saved. AI is on (${provider.name}).`; turnedOn = true; }
+    else { await setAiMode('free'); msg = 'Saved. AI stays off until you tap AI in the top bar.'; }
+  } else if (!userApiKey) {
+    await setAiMode('free');
+  }
+  showSettingsStatus(msg, kind, keyDenied ? 6000 : 3500);
   await refreshModeBadge();
+  if (turnedOn) await autoReadResumeWithAi();
+}
+
+// After AI is switched on, an already-uploaded résumé gets the same full read, so the student never has to ask.
+async function autoReadResumeWithAi() {
+  const { resumeText } = await storageGet(['resumeText']);
+  if (resumeText && (!senderProfile || senderProfile.source !== 'ai')) await tryAiResume(resumeText);
 }
 
 async function handleValidateKey() {
@@ -920,9 +976,9 @@ function buildContactCard(contact, idx) {
 }
 
 // ─── Consent: show exactly what AI Mode sends ─────────────────────────────────
-const CONSENT_VERSION = 1;
+const CONSENT_VERSION = 2;   // 2 = one consent for drafts and résumé reading
 let consentResolve = null;
-let consentKind = 'draft';
+let consentKind = 'view';
 
 async function previewPayload(data) {
   return new Promise(resolve => chrome.runtime.sendMessage({ type: 'PREVIEW_PAYLOAD', payload: data }, resolve));
@@ -944,7 +1000,6 @@ function wireConsentDialog() {
   };
   document.getElementById('consent-send').addEventListener('click', async () => {
     const { userApiKey, aiProvider } = await loadStoredSettings();
-    if (consentKind === 'resume') { done('send'); return; }   // résumé reads are approved one by one, never remembered
     await storageSet({ aiConsent: { ackAt: Date.now(), version: CONSENT_VERSION, provider: resolveProvider(aiProvider, userApiKey).id } });
     done('send');
   });
@@ -953,47 +1008,47 @@ function wireConsentDialog() {
   dlg.addEventListener('cancel', (e) => { e.preventDefault(); done('cancel'); });   // Esc
 }
 
-// 'send' | 'free' | 'cancel'. Asked once per consent version, only when an API key is saved.
-async function ensureAiConsent(data) {
-  const s = await loadStoredSettings();
-  if (!(s.userApiKey || '').trim()) return 'send';
-  const provider = resolveProvider(s.aiProvider, s.userApiKey);
-  // consent is per provider: a legacy record (no provider) was given for Anthropic; switching providers asks again
-  if (s.aiConsent && s.aiConsent.version === CONSENT_VERSION && (s.aiConsent.provider || 'anthropic') === provider.id) return 'send';
-  return showConsentDialog(data, false);
-}
+const ENABLE_SUMMARY = [
+  'When you press "Read profile & write draft":',
+  '  • a short, cleaned-up summary of the LinkedIn profile you are viewing (name, headline, role, about, a few posts, skills, education)',
+  '  • what you two have in common, your name and bio, and your profile details',
+  '',
+  'When you upload a résumé:',
+  '  • the résumé text, with emails and phone numbers already removed',
+  '',
+  'Never sent: the PDF itself, emails, phone numbers, anything else on the page.',
+  'Your key goes only in the request header, to this provider.'
+].join('\n');
 
 async function showConsentDialog(data, viewOnly, opts = {}) {
-  consentKind = opts.kind || 'draft';
-  const isResume = consentKind === 'resume';
-  const prev = isResume ? opts.prev : await previewPayload(data);
+  consentKind = opts.kind || 'view';
+  const isEnable = consentKind === 'enable';
+  const prev = isEnable
+    ? { success: true, providerName: opts.provider.name, host: opts.provider.host, model: opts.provider.model || '', user: ENABLE_SUMMARY, system: '' }
+    : await previewPayload(data);
   const dlg = document.getElementById('consent-dialog');
   const pname = (prev && prev.providerName) || 'your AI provider';
-  document.getElementById('consent-title').textContent = isResume ? `Let ${pname} read your résumé?` : viewOnly ? `What AI Mode sends to ${pname}` : `Send this to ${pname}?`;
-  document.getElementById('consent-desc').textContent = isResume
-    ? `${pname} will read this text and fill in your profile so every draft can use it. Email addresses and phone numbers were already removed. The PDF itself is never sent. You’ll be asked each time.`
-    : viewOnly
-    ? 'This is what AI Mode sends for the current profile. In Free Mode nothing is sent.'
-    : `You added your own ${pname} key, so ${pname} writes the draft. Please check what it will receive. You’ll be asked once per provider.`;
+  document.getElementById('consent-title').textContent = isEnable ? `Turn on AI with ${pname}?` : `What AI Mode sends to ${pname}`;
+  document.getElementById('consent-desc').textContent = isEnable
+    ? `${pname} will write your drafts and read your résumé using your own key. You say yes once; after that nothing asks again. Switch back to Free any time from the top bar.`
+    : 'This is what AI Mode sends for the current profile. In Free Mode nothing is sent.';
   document.getElementById('consent-host').textContent = (prev && prev.host) || '';
   document.getElementById('consent-model').textContent = (prev && prev.model) || '';
+  document.getElementById('consent-what').textContent = isEnable ? 'This is what is sent:' : 'for this draft:';
   document.getElementById('consent-payload').textContent = (prev && prev.success) ? prev.user : (prev && prev.error) || 'Could not build a preview.';
   document.getElementById('consent-system').textContent = (prev && prev.system) || '';
-  document.getElementById('consent-send').classList.toggle('hidden', viewOnly);
-  document.getElementById('consent-free').classList.toggle('hidden', viewOnly);
-  document.getElementById('consent-cancel').textContent = viewOnly ? 'Close' : 'Cancel';
-  document.getElementById('consent-what').textContent = isResume ? 'to read your résumé:' : 'for this draft:';
-  document.getElementById('consent-free').textContent = isResume ? 'Keep it on this device' : 'Use a free draft';
-  document.getElementById('consent-send').textContent = isResume ? 'Read with AI' : 'Send';
+  document.getElementById('consent-send').classList.toggle('hidden', !isEnable);
+  document.getElementById('consent-free').classList.add('hidden');
+  document.getElementById('consent-send').textContent = 'Turn on AI';
+  document.getElementById('consent-cancel').textContent = isEnable ? 'Not now' : 'Close';
   openDialog(dlg);
-  document.getElementById(viewOnly ? 'consent-cancel' : 'consent-send').focus();
+  document.getElementById(isEnable ? 'consent-send' : 'consent-cancel').focus();
   return new Promise(resolve => { consentResolve = resolve; });
 }
 
 async function showPrivacyDetails() {
   if (currentProfile) {
-    const { userApiKey } = await loadStoredSettings();
-    if ((userApiKey || '').trim()) { await showConsentDialog(await requestData(currentProfile), true); return; }
+    if ((await getModeState()).ai) { await showConsentDialog(await requestData(currentProfile), true); return; }
   }
   switchTab('settings');
   scrollIntoViewSoft(document.querySelector('.settings-note'));
@@ -1118,8 +1173,8 @@ function readMeCard() {
 }
 
 async function refreshAiResumeBtn() {
-  const s = await storageGet(['userApiKey', 'resumeText']);
-  document.getElementById('resume-ai-btn').classList.toggle('hidden', !((s.userApiKey || '').trim() && s.resumeText));
+  const s = await storageGet(['resumeText']);
+  document.getElementById('resume-ai-btn').classList.toggle('hidden', !((await getModeState()).ai && s.resumeText));
 }
 
 async function saveSenderFromCard() {
@@ -1156,18 +1211,15 @@ async function ingestResumeText(text, fileName, opts = {}) {
 }
 
 // AI Mode: let the provider the user chose read the résumé and fill in the whole profile.
-// Always shows the exact text first. Any failure leaves the on-device result in place.
+// Runs by itself in AI Mode (you said yes when you turned AI on). Any failure leaves the on-device result in place.
 async function tryAiResume(text, opts = {}) {
-  const s = await loadStoredSettings();
-  if (!(s.userApiKey || '').trim()) return false;
-  const prev = await new Promise(r => chrome.runtime.sendMessage({ type: 'PREVIEW_RESUME', payload: { text } }, r));
-  if (!prev || !prev.success) return false;
-
-  const choice = await showConsentDialog(null, false, { kind: 'resume', prev });
-  if (choice !== 'send') {
-    if (opts.afterDevice) setResumeStatus('Read on this device ✓ Check what I found below. Use “Re-read with AI” any time.', 'success');
+  const m = await getModeState();
+  if (!m.ai) return false;                                  // Free Mode: the résumé never leaves this device
+  if (!(await ensureAiEnabled())) {                         // one-time yes (older installs said yes only to drafts)
+    if (opts.afterDevice) setResumeStatus('Read on this device ✓ Check what I found below.', 'success');
     return false;
   }
+  const prev = { providerName: m.provider.name };
   setResumeStatus(`Reading your résumé with ${prev.providerName}…`, 'pending');
   const res = await new Promise(r => chrome.runtime.sendMessage({ type: 'PARSE_RESUME', payload: { text } }, r));
   if (!res || !res.ok) {
@@ -1293,7 +1345,7 @@ async function onChipToggle(id, btn) {
 
 function loadStoredSettings() {
   return new Promise(resolve => {
-    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile','prefs','aiConsent','resumeTipDismissed','aiProvider'], resolve);
+    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile','prefs','aiConsent','resumeTipDismissed','aiProvider','mode'], resolve);
   });
 }
 
