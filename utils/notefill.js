@@ -22,7 +22,7 @@
   const VERSION = 'notefill-3';
   const NOTE_WORDS = /invitation|add a note|personal note|your note/i;
   // short breadcrumbs in the page console (DevTools → Console → filter "Outreach AI"), never the draft's text
-  const log = (...a) => { try { console.debug('[Outreach AI]', ...a); } catch (_) { /* no console */ } };
+  const log = (...a) => { try { console.info('[Outreach AI]', ...a); } catch (_) { /* no console */ } };
 
   const isShown = (el) => !!el && !el.hidden && el.getAttribute('aria-hidden') !== 'true' && !el.closest('[hidden], [aria-hidden="true"]');
 
