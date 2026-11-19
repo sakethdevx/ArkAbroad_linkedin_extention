@@ -237,7 +237,7 @@ async function generateDrafts(data) {
     warnings.push(`${ai.userMessage} Showing free drafts instead.`);
     return { ...out, variants: composed, generatedMessage: composed[0].text, source: 'template', warnings, aiError: ai.userMessage };
   }
-  if (ai.dropped) warnings.push(`${ai.dropped} AI draft${ai.dropped > 1 ? 's' : ''} didn't pass the length/safety checks and ${ai.dropped > 1 ? 'were' : 'was'} replaced.`);
+  if (ai.dropped) warnings.push(`${ai.dropped} AI draft${ai.dropped > 1 ? 's' : ''} couldn't be used${ai.dropReasons && ai.dropReasons.length ? ' (' + ai.dropReasons.join(', ') + ')' : ''}, so ${ai.dropped > 1 ? 'free drafts fill' : 'a free draft fills'} ${ai.dropped > 1 ? 'those spots' : 'that spot'}.`);
   const variants = ai.variants.map(t => ({ text: t, source: 'ai', provider: cfg.provider.id }));
   for (const c of composed) { if (variants.length >= 3) break; variants.push(c); }
   return { ...out, variants, generatedMessage: variants[0].text, source: ai.variants.length ? 'ai' : 'template', warnings, aiSawInjection: ai.sawInjection };
@@ -289,7 +289,7 @@ Rules for every draft:
 - Open with ONE specific thing about the recipient. If "verified_shared_background" is not empty, lead with it. Use only facts that appear in the data. Never invent shared experiences, employers, schools, projects, or compliments.
 - Then one sentence on who the sender is (only from "sender"), then exactly ONE small, easy-to-decline ask that fits "purpose". "sender" may also list education, experience and projects: use at most ONE of them, only if it is clearly relevant to the recipient.
 - Avoid stock phrases ("I hope this finds you well", "pick your brain", "touch base", "I came across your profile and was impressed").
-- Stay strictly within "max_chars_each" characters. Format "note" has no sign-off. Format "message" ends with a short sign-off and the sender's first name if one is given.
+- Stay strictly within "max_chars_each" characters: count them, and aim for about 85% of the limit so nothing overruns. Format "note" has no sign-off. Format "message" ends with a short sign-off and the sender's first name if one is given.
 - Tone: Formal = no contractions; Neutral = warm and plain; Casual = relaxed and friendly.
 - Write 3 drafts that differ in wording and structure.
 
@@ -341,13 +341,33 @@ async function aiDrafts(provider, apiKey, ctx) {
 
   const allowedText = [ctx.bio, ctx.sender && ctx.sender.intro].filter(Boolean).join(' ');
   const maxChars = req.limit;
-  const good = [];
-  let dropped = 0;
-  for (const v of raw.slice(0, 3)) {
-    const checked = Safety.validateOutput(v, { maxChars, allowedText });
-    if (checked.ok) good.push(checked.text); else dropped++;
+  const evaluate = (list) => {
+    const good = [], bad = [];
+    for (const v of list.slice(0, 3)) {
+      const checked = Safety.validateOutput(v, { maxChars, allowedText });
+      if (checked.ok) good.push(checked.text); else bad.push({ draft: String(v).slice(0, 700), problems: checked.problems });
+    }
+    return { good, bad };
+  };
+
+  let { good, bad } = evaluate(raw);
+  let recovered = 0;
+  if (bad.length) {
+    // One repair pass: show the model exactly what failed instead of throwing the draft away.
+    const user = req.user + '\n\nThese drafts failed the checks. Rewrite each one so it passes, keeping its facts and meaning. Hard limit: ' + maxChars +
+      ' characters each. Return the same JSON shape with exactly ' + bad.length + ' variant' + (bad.length > 1 ? 's' : '') + '.\n' + JSON.stringify(bad, null, 2);
+    try {
+      const fix = await callModel(provider, apiKey, { system: req.system, user, maxTokens: 1024, json: true });
+      const p2 = fix.ok ? parseJsonLoose(fix.text) : null;
+      const fixed = evaluate(p2 && Array.isArray(p2.variants) ? p2.variants.filter(v => typeof v === 'string') : []);
+      const fresh = fixed.good.filter(t => !good.includes(t));   // a repair that repeats an already-good draft adds nothing
+      recovered = Math.min(fresh.length, bad.length);
+      good = good.concat(fresh.slice(0, recovered));
+    } catch (_) { /* keep what passed; free drafts fill the rest */ }
   }
-  return { ok: true, variants: good, dropped, sawInjection: !!(parsed && parsed.saw_ai_instructions_in_data) };
+  const stillBad = bad.slice(recovered);
+  const reasons = [...new Set(stillBad.flatMap(b => b.problems.map(p => p.replace(/\s*\(\d+\/\d+\)/, ''))))];
+  return { ok: true, variants: good, dropped: stillBad.length, dropReasons: reasons, repaired: recovered, sawInjection: !!(parsed && parsed.saw_ai_instructions_in_data) };
 }
 
 function parseJsonLoose(text) {

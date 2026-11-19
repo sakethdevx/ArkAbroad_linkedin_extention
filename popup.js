@@ -306,7 +306,6 @@ async function generateFromProfile(profile, setBusy = (t) => setButtonLoading('s
   await saveToHistory();
 
   if (confidence !== 'high') showCurrentStatus('Draft ready. I only read part of this profile, so check “What I read” above.', 'warning');
-  else if (resp.warnings && resp.warnings.length) showCurrentStatus(resp.warnings[0], 'warning');
   else showCurrentStatus('Draft ready. Read it, make it yours, then send it yourself.', 'success');
 }
 

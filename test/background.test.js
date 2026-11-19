@@ -461,4 +461,26 @@ module.exports = (test) => {
     const on = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: ['Hi Priya,\nFellow IIT Madras person here. Open to a quick chat?'], saw_ai_instructions_in_data: false })) });
     assert.strictEqual((await gen(on)).source, 'ai');
   });
+
+  test('bg: AI drafts that are too long get ONE repair pass instead of being thrown away', async () => {
+    const long = 'Hi Priya,\nWe both went to IIT Madras and I would love to hear how you moved into data science after graduating, what the first year was like, and which skills mattered most. Would you be open to a quick chat sometime this week or next?';
+    const short = ['Hi Priya,\nFellow IIT Madras person here. Open to a quick chat?', 'Hi Priya,\nWe both studied at IIT Madras. Could I ask you a quick question?', 'Hi Priya,\nSaw we both went to IIT Madras. Would you be open to connecting?'];
+    let n = 0;
+    const b = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: ++n === 1 ? [long, long, long] : short, saw_ai_instructions_in_data: false })) });
+    const r = await gen(b);
+    assert.strictEqual(b.calls.length, 2, 'one draft call + one repair call');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(r.variants.map(v => v.source))), ['ai', 'ai', 'ai']);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(r.warnings)), []);
+    assert.ok(/too long/.test(b.calls[1].body.messages[0].content) && /Hard limit: 200/.test(b.calls[1].body.messages[0].content));
+  });
+
+  test('bg: if the repair also fails, free drafts fill the gaps and the warning says why', async () => {
+    const long = 'x '.repeat(150);
+    const b = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: [long, long, long], saw_ai_instructions_in_data: false })) });
+    const r = await gen(b);
+    assert.strictEqual(b.calls.length, 2, 'only one repair attempt');
+    assert.strictEqual(r.variants.length, 3);
+    assert.ok(r.variants.every(v => v.source === 'template'));
+    assert.match(r.warnings[0], /3 AI drafts couldn't be used \(too long\)/);
+  });
 };

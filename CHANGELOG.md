@@ -210,3 +210,8 @@ UI text, prompts, README, changelog and tests. The one exception is a heading de
 
 ### Fix: harmless pdf.js warning in chrome://extensions "Errors"
 **What** `UnknownErrorException: Ensure that the standardFontDataUrl API parameter is provided` is a pdf.js *warning* for PDFs whose fonts are not embedded. It only matters for drawing glyphs; we only read text, so extraction was never affected. **Fix** pdf.js is told to log errors only (`verbosity: 0`), so real failures still surface and this one no longer clutters the Errors page.
+
+### Fix: "3 AI drafts didn't pass the length/safety checks" (real Groq run)
+**Problem** Llama wrote all three drafts over the 200-character note limit, our checker rejected them, and the student silently got free drafts; the same warning also showed twice on screen.
+**Fix** (1) The prompt now says to count characters and aim for ~85% of the limit. (2) Drafts that fail get **one repair pass**: the model is shown each failed draft and exactly why it failed (e.g. "too long (240/200)") and rewrites it. (3) If something still can't be used, free drafts fill only those spots and the warning names the reason, e.g. "(too long)". (4) The warning is shown once, in the draft card, not also in the top status line.
+**Tests** Repair succeeds (2 calls, 3 AI drafts, no warning); repair fails (only 1 retry, free fill, reason shown); 128 total.
