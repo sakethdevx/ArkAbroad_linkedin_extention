@@ -22,7 +22,7 @@ module.exports = (test) => {
   });
 
   test('network: the only remote origins in extension code are api.anthropic.com and linkedin.com', () => {
-    const code = ['background.js', 'popup.js', 'content_script.js', 'utils/compose.js', 'utils/overlap.js', 'utils/resume.js', 'utils/safety.js', 'utils/profile_parse.js', 'popup.html']
+    const code = ['background.js', 'popup.js', 'content_script.js', 'utils/compose.js', 'utils/overlap.js', 'utils/resume.js', 'utils/safety.js', 'utils/profile_parse.js', 'utils/page_scroll.js', 'popup.html']
       .map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
     const origins = [...new Set((code.match(/https?:\/\/[a-z0-9.-]+/gi) || []).map(x => x.toLowerCase()))];
     const allowed = ['https://api.anthropic.com', 'https://www.linkedin.com'];

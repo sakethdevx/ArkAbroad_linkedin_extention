@@ -19,6 +19,7 @@ module.exports = (test) => {
     w.scrollTo = () => {};
     w.chrome = { runtime: { onMessage: { addListener: (fn) => { listener = fn; } } } };
     w.eval(read('utils/profile_parse.js'));
+    w.eval(read('utils/page_scroll.js'));
     w.eval(read('content_script.js'));
     w.eval(read('content_script.js'));                    // double injection must be harmless
     return new Promise((resolve) => listener({ action: 'scrapeProfile' }, {}, resolve));

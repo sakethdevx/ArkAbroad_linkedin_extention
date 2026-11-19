@@ -40,12 +40,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ─── Scrape profile from active tab ───────────────────────────────────────────
 // The content script is NOT declared in the manifest: nothing runs on LinkedIn until
 // the user clicks Generate. We inject it on demand (guarded against double-injection).
-const CONTENT_FILES = ['utils/profile_parse.js', 'content_script.js'];
+const CONTENT_VERSION = 'scroll-2';   // keep in sync with content_script.js
+const CONTENT_FILES = ['utils/profile_parse.js', 'utils/page_scroll.js', 'content_script.js'];
 
 async function ensureContentScript(tabId) {
   try {
     const pong = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
-    if (pong?.ok) return;
+    if (pong?.ok && pong.version === CONTENT_VERSION) return;   // stale script from before an update → inject the new one
   } catch (_) { /* no receiver yet → inject below */ }
   await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_FILES });
 }

@@ -115,3 +115,14 @@ _Slices land below as they ship._
 **Tradeoff** In that case the draft is now generic ("I came across your profile…") rather than wrong. With a résumé overlap, a recent post, or a clean role it's still specific. A headline-based opener is the obvious next improvement.
 
 **Tests** Regression tests reproduce the exact text, plus abbreviation false-positives (my first version wrongly rejected "Dr. Smith Dental Clinic"; the new test caught it).
+
+### Fix: lower sections not loading before the read (reported on a signed-in profile)
+**What happened** The profile was read before LinkedIn had rendered Experience / Education / Skills, so the "What I read" card was thin and the draft generic. The base logic (kept in my first pass) jumped to fixed offsets (800 / 1600 / 2400 px) with fixed 450 ms waits and only scrolled `window`; LinkedIn renders sections as they approach the viewport, and a long profile is taller than 2400 px.
+
+**Fix** `utils/page_scroll.js`: finds the element that actually scrolls (document, else the tallest scrollable container), steps down one viewport at a time, waits for the page to grow, stops as soon as Experience + Education (+ Skills) exist, or when the bottom is stable, or after a 9 s cap, then **always restores the reader's scroll position**. Scrolling only; it never clicks "see more".
+- The reader now reports how it went (`load.steps / reachedBottom / container`).
+- The injected script is **version-checked**, so after an extension update an open tab gets the new code instead of silently running the old one.
+
+**Verified** 7 simulated-page tests (lazy sections, window vs container, early stop, growing page, no-scroll page, time cap) **and a run in real headless Chrome** on a lazy-loading page in both layouts: all 6 sections rendered in 9 steps (~3 s) and the position was restored.
+
+**Tradeoff** Reading now takes a few seconds on long profiles (it's scrolling the page for you). Not yet confirmed against LinkedIn's live markup.

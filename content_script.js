@@ -5,13 +5,16 @@
 // Depends on utils/profile_parse.js (injected first).
 
 (function () {
-  if (window.__outreachAiLoaded) return;   // guard: injecting twice must not double-register
-  window.__outreachAiLoaded = true;
+  // Guard against double-registering, but keyed by version so new code replaces stale code after an update.
+  const VERSION = 'scroll-2';
+  if (window.__outreachAiLoaded === VERSION) return;
+  window.__outreachAiLoaded = VERSION;
 
   const PP = window.ProfileParse;
+  const PS = window.PageScroll;
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg && msg.action === 'ping') { sendResponse({ ok: true }); return; }
+    if (msg && msg.action === 'ping') { sendResponse({ ok: true, version: VERSION }); return; }
     if (msg && msg.action === 'scrapeProfile') {
       scrapeWithScroll()
         .then(profile => sendResponse({ success: true, data: profile }))
@@ -20,18 +23,23 @@
     }
   });
 
-  const wait = (ms) => new Promise(r => setTimeout(r, ms));
-  const jump = (y) => window.scrollTo({ top: y, behavior: 'instant' });
-
-  // LinkedIn lazy-renders lower sections; nudge the page, then put the user back where they were.
+  // LinkedIn lazy-renders lower sections as they near the viewport. Scroll through the page the way a reader
+  // would (adaptive steps, stops once the sections exist), then put the user back where they were.
   async function scrapeWithScroll() {
-    const startY = window.scrollY;
+    let info = null;
     try {
-      for (const y of [800, 1600, 2400]) { jump(y); await wait(450); }
-    } finally {
-      jump(startY);
-    }
-    return scrapeProfile();
+      info = await PS.loadAll({
+        isReady: () => hasContent('experience') && hasContent('education') && (hasContent('skills') || !!findSection('skills'))
+      });
+    } catch (_) { /* scrolling is best-effort; we still read whatever is on the page */ }
+    const profile = scrapeProfile();
+    if (info) profile.load = info;
+    return profile;
+  }
+
+  function hasContent(key) {
+    const sec = findSection(key);
+    return !!(sec && sec.querySelector('li, p, span') && (sec.innerText || sec.textContent || '').trim().length > 20);
   }
 
   // ── DOM helpers (all defensive) ─────────────────────────────────────────────

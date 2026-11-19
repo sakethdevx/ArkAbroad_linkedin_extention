@@ -142,7 +142,7 @@ module.exports = (test) => {
       get: async (id) => ({ id, url: id === 7 ? 'https://www.linkedin.com/in/priya/overlay/contact-info/' : id === 8 ? 'https://www.linkedin.com/feed/' : undefined }),
       query: async () => { throw new Error('must not fall back to query when a tab id is given'); },
       sendMessage: async (id, msg) => {
-        if (msg.action === 'ping') { if (ponged) return { ok: true }; throw new Error('Could not establish connection'); }
+        if (msg.action === 'ping') { if (ponged) return { ok: true, version: 'scroll-2' }; throw new Error('Could not establish connection'); }
         if (msg.action === 'scrapeProfile') return { success: true, data: { name: 'Priya Rao' } };
       }
     };
@@ -152,7 +152,7 @@ module.exports = (test) => {
     const r1 = await b.send({ action: 'scrapeProfile', tabId: 7 });
     assert.ok(r1.success);
     assert.strictEqual(r1.data.name, 'Priya Rao');
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(injected)), ['utils/profile_parse.js,content_script.js']);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(injected)), ['utils/profile_parse.js,utils/page_scroll.js,content_script.js']);
 
     await b.send({ action: 'scrapeProfile', tabId: 7 });          // already injected → no second injection
     assert.strictEqual(injected.length, 1);
