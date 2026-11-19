@@ -75,7 +75,7 @@
   }
 
   function postHook(p, n, short) {
-    const post = (p.recentPosts || [])[0];
+    const post = (p.recentPosts || []).find(x => typeof x === 'string' && x.trim() && (x.match(/\s\|\s/g) || []).length < 2);
     if (!post) return null;
     const snip = wordClip(post, short ? 40 : 60);
     const dot = /[….!?]$/.test(snip) ? '' : '.';   // no "…”." pile-up when the quote was truncated

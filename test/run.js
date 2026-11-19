@@ -161,6 +161,18 @@ test('regression: undated entries survive only if they still look like Title / C
   assert.strictEqual(PP.parseExperienceBlocks([{ lines: ['Barista'], children: [] }]).length, 0);
 });
 
+// ── Regression: the quoted "post" was the author's headline (reported with screenshots) ──
+test('regression: post text excludes author header, headline, time, counts and "…more"', () => {
+  const ctx = { name: 'Saketh Jangala', headline: 'Amazon ML Summer School ’26 Mentee | AI/ML Intern | Google Cloud Arcade Facilitator' };
+  const card = (body) => ['Saketh Jangala', '• You', 'Amazon ML Summer School ’26 …', '4mo • Edited •', body, '39', '4', '1,383 impressions', 'View analytics'];
+  assert.strictEqual(PP.extractPostText(card('🚀 Selected for Amazon ML Summer School 2026!… more'), ctx), 'Selected for Amazon ML Summer School 2026!');
+  assert.strictEqual(PP.extractPostText(card('Proud to have contributed as a Volunteer at Microsoft... more'), ctx), 'Proud to have contributed as a Volunteer at Microsoft');
+  assert.strictEqual(PP.extractPostText(['Saketh Jangala', 'Amazon ML Summer School ’26 Mentee | AI/ML Intern | Google…'], ctx), '');
+  assert.strictEqual(PP.extractPostText(['Saketh Jangala', '2,291 followers', 'Posts', 'Create a post'], ctx), '');
+  assert.strictEqual(PP.extractPostText(null, ctx), '');
+  assert.strictEqual(PP.extractPostText(card('A | B | C | D headline-like line that must not count'), ctx), '');
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 // Later slices append test modules; dom.test.js needs jsdom and skips itself without it.
 ['dom', 'overlap', 'compose', 'safety', 'resume', 'background', 'manifest', 'html', 'popup', 'scroll'].forEach(n => {

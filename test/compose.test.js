@@ -87,6 +87,11 @@ module.exports = (test, load) => {
     assert.match(C.compose(base({ overlaps: [], profile: { firstName: 'Justin', currentTitle: junk, currentCompany: '' } })).variants[0].text, /came across your profile/);
   });
 
+  test('compose: a headline-looking "post" is never quoted', () => {
+    const v = C.compose(base({ overlaps: [], profile: { firstName: 'Saketh', currentTitle: '', currentCompany: '', recentPosts: ['Amazon ML Summer School ’26 Mentee | AI/ML Intern | Google…'] } })).variants[0].text;
+    assert.ok(!/recent post|Mentee/.test(v), v);
+  });
+
   test('compose: survives empty / hostile profile fields', () => {
     assert.doesNotThrow(() => C.compose({ profile: {}, overlaps: [], messageType: 'Nope', tone: 'Nope', format: 'zzz' }));
     assert.doesNotThrow(() => C.compose({ profile: { firstName: '東京', currentTitle: '<script>', recentPosts: [null, 5] }, sender: null, overlaps: null, messageType: 'Job', tone: 'Casual', format: 'note' }));

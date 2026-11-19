@@ -57,6 +57,27 @@
     return PP.cleanLines(lines);
   }
 
+  // Text of an element as LINES. Chrome's innerText already does this from the layout; if it is unavailable or flat,
+  // walk the tree and break lines at block-level elements (inline pieces such as links stay on the same line).
+  const BLOCK = new Set(['DIV', 'P', 'LI', 'UL', 'OL', 'SECTION', 'ARTICLE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BR', 'TR', 'HEADER', 'FOOTER']);
+  function textLines(el) {
+    if (!el) return [];
+    const viaLayout = typeof el.innerText === 'string' ? el.innerText : '';
+    if (viaLayout.includes('\n')) return viaLayout.split(/\n+/);
+    const lines = []; let cur = '';
+    const flush = () => { if (cur.trim()) lines.push(cur); cur = ''; };
+    (function walk(n) {
+      if (n.nodeType === 3) { cur += n.nodeValue + ' '; return; }
+      if (n.nodeType !== 1 || SKIP_TAGS.has(n.tagName.toUpperCase())) return;
+      const block = BLOCK.has(n.tagName.toUpperCase());
+      if (block) flush();
+      n.childNodes.forEach(walk);
+      if (block) flush();
+    })(el);
+    flush();
+    return lines.map(l => l.replace(/\s+([,.;:!?…])/g, '$1').replace(/\s+/g, ' ').trim());
+  }
+
   // Language-independent first: LinkedIn puts <div id="experience"> anchors inside each card.
   // Fallback: match the section's heading text in several languages.
   function findSection(key) {
@@ -156,13 +177,18 @@
 
     const recentPosts = safe('Activity', () => {
       const sec = findSection('activity');
+      if (!sec) return [];
+      // Each post is a card (usually an <li>). Read it as text LINES (innerText keeps inline links like "Amazon ML Summer School"
+      // on the same line instead of splitting them into fragments) and let extractPostText drop the card chrome.
+      const cards = Array.from(sec.querySelectorAll('li')).filter(li => !(li.parentElement && li.parentElement.closest('li') && sec.contains(li.parentElement.closest('li'))));
+      const groups = cards.length ? cards.map(c => textLines(c)) : [textLines(sec)];
       const out = [];
-      leafLines(sec).forEach(t => {
-        if (t.length > 40 && t.length < 500 &&
-            !/dialog|window|escape|cancel|close|beginning|notifications|premium|people you may|you might/i.test(t) &&
-            !out.includes(t)) out.push(t);
-      });
-      return out.slice(0, 3);
+      for (const lines of groups) {
+        const post = PP.extractPostText(lines, { name, headline });
+        if (post && !out.includes(post)) out.push(post);
+        if (out.length >= 3) break;
+      }
+      return out;
     }, [], warnings);
 
     const profile = PP.buildProfile({ name, headline, location, about, experience, education, skills, recentPosts, profileUrl: url, warnings });

@@ -225,6 +225,36 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
     return out;
   }
 
+  // ── Recent posts ────────────────────────────────────────────────────────────
+  // A post card's text is mostly chrome: author name, "• You", the author's HEADLINE, "4mo • Edited", then the body,
+  // then reaction counts, impressions, "View analytics". Taking "any long line" picks up the headline (it did).
+  const POST_CHROME = /^(?:you|•\s*you|·\s*you|following|follow|connect|\+\s*follow|edited|promoted|\d+(?:[.,]\d+)?[kKmM]?|\d+\s*(?:comments?|reposts?|likes?|shares?|reactions?|impressions?|views?)|[\d,.]+\s*(?:impressions?|views?|followers?)|view analytics|view (?:post )?(?:analytics|insights)|show all|see more|…\s*more|\.\.\.\s*more|more|like|comment|repost|send|share|posts?|comments?|images?|documents?|videos?|articles?|create a post|activity|\d+\s*\/\s*\d+)$/i;
+  const POST_TIME = /^(?:\d+\s*(?:s|m|min|h|hr|d|w|wk|mo|mos|y|yr|yrs)\b|just now|edited|[•·]|\d+\s*(?:s|m|h|d|w|mo|y)\s*[•·])/i;
+
+  function stripPostTail(t) {
+    return clean(t.replace(/\s*(?:…|\.{3})\s*(?:more|see more)\s*$/i, '').replace(/\s*(?:…|\.{3})\s*$/, '…'));
+  }
+
+  // lines: the text lines of ONE post card. ctx: { name, headline } of the profile owner (to drop the author header).
+  // Returns the post body (without leading emoji / trailing "…more"), or '' if nothing usable.
+  function extractPostText(rawLines, ctx = {}) {
+    const lines = cleanLines(rawLines);
+    const name = clean(ctx.name).toLowerCase();
+    const head = clean(ctx.headline).toLowerCase().replace(/[….]+$/, '');
+    const headKey = head.slice(0, 24);
+    for (const l of lines) {
+      const low = l.toLowerCase();
+      if (name && (low === name || low.startsWith(name + ' ') && l.length <= name.length + 40)) continue;   // author name (+ badges)
+      if (POST_CHROME.test(l) || POST_TIME.test(l)) continue;
+      if (headKey.length >= 12 && (low.startsWith(headKey) || head.startsWith(low.replace(/[….]+$/, '').slice(0, 30)) && low.length >= 12 && head.includes(low.replace(/[….]+$/, '').slice(0, 24)))) continue;   // the author's headline, often truncated
+      if ((l.match(/\s\|\s/g) || []).length >= 2) continue;                      // looks like a headline ("A | B | C")
+      if (/^[\d\s,.·•]+(?:reactions?|likes?|comments?|reposts?)?$/i.test(l)) continue;
+      const body = stripPostTail(l.replace(/^[^\p{L}\p{N}"“'‘(]+/u, ''));              // drop leading emoji/bullets
+      if (body.length >= 25 && !/^(?:https?:\/\/|www\.)/i.test(body)) return body;
+    }
+    return '';
+  }
+
   // ── Headline helpers ────────────────────────────────────────────────────────
   // Only an explicit "<title> at/@ <company>" counts. Base version also treated
   // "Python | SQL | ML" as title=Python, company=SQL, which produced nonsense hooks.
@@ -364,6 +394,6 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
     parseRoleLines, parseExperienceBlocks, parseExperienceLines,
     parseEducationBlocks, parseEducationLines, parseSkills,
     titleCompanyFromHeadline, nameFromPageTitle, nameFromUrl,
-    buildProfile, assessQuality, parseProfileText, headingKey, plausibleLabel
+    buildProfile, assessQuality, parseProfileText, headingKey, plausibleLabel, extractPostText
   };
 });

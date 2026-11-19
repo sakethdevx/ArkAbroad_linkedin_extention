@@ -44,6 +44,17 @@ module.exports = (test) => {
     assert.strictEqual(p.quality.confidence, 'high');
   });
 
+  test('DOM: Activity reads the post body (inline links joined), not the author header or headline', async () => {
+    const card = (body) => `<li><div><span>Saketh Jangala</span> <span>• You</span></div><div><span>Amazon ML Summer School ’26 …</span></div><div><span>4mo • Edited •</span></div>
+      <div><span>${body}</span></div><div><span>39</span><span>1,383 impressions</span><a>View analytics</a></div></li>`;
+    const html = `<html><body><section><h1>Saketh Jangala</h1><div class="text-body-medium">Amazon ML Summer School ’26 Mentee | AI/ML Intern | Google Cloud</div></section>
+      <section><div id="activity"></div><h2>Activity</h2><div>2,291 followers</div><ul>
+      ${card('🚀 Selected for <a>Amazon ML Summer School</a> 2026!… <span>more</span>')}${card('🚀 Proud to have contributed behind the scenes as a Volunteer at Microsoft… more')}</ul></section></body></html>`;
+    const res = await scrapeFixture(html, 'https://www.linkedin.com/in/saketh/');
+    const p = JSON.parse(JSON.stringify(res.data));
+    assert.deepStrictEqual(p.recentPosts, ['Selected for Amazon ML Summer School 2026!', 'Proud to have contributed behind the scenes as a Volunteer at Microsoft']);
+  });
+
   test('DOM: empty / non-profile page does not crash and reports "none"', async () => {
     const res = await scrapeFixture('<html><head><title>LinkedIn</title></head><body><div>hi</div></body></html>', 'https://www.linkedin.com/feed/');
     assert.ok(res.success);

@@ -126,3 +126,9 @@ _Slices land below as they ship._
 **Verified** 7 simulated-page tests (lazy sections, window vs container, early stop, growing page, no-scroll page, time cap) **and a run in real headless Chrome** on a lazy-loading page in both layouts: all 6 sections rendered in 9 steps (~3 s) and the position was restored.
 
 **Tradeoff** Reading now takes a few seconds on long profiles (it's scrolling the page for you). Not yet confirmed against LinkedIn's live markup.
+
+### Fix: a profile's headline quoted as "your recent post" (reported with screenshots)
+**What happened** Draft C said *I enjoyed your recent post: "Amazon ML Summer School ’26 Mentee | AI/ML Intern | Google…"*. That is the author's **headline** printed at the top of every post card, not the post. The Activity reader took any long text fragment, and LinkedIn splits a post's inline link ("Selected for **Amazon ML Summer School** 2026!") into separate fragments.
+**Fix** Each post card is now read as *lines* (Chrome `innerText`, with a block-level fallback) and `extractPostText` drops the card chrome: author name, "• You", the author's headline (also when truncated), "4mo • Edited", reaction/impression counts, "View analytics", "…more", leading emoji. A headline-looking line ("A | B | C") is never used, and the composer refuses to quote one even if it arrives. Result for the screenshots: *"Selected for Amazon ML Summer School 2026!"* and *"Proud to have contributed behind the scenes as a Volunteer while learning and growing as a Participant at Microsoft"*.
+**Tests** The exact strings from the screenshots, a DOM fixture with an inline link, and negative cases (header only, counts only, pipe-headline).
+**Tradeoff** If a post card has only an image/document and no text, there is no quote and the draft falls back to the role/generic opener (better than quoting something wrong). Reposts are still ambiguous, hence the existing "check it's their own post" note.
