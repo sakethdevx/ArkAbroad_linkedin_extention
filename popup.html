@@ -261,7 +261,7 @@
         <!-- Optional: user's own API key -->
         <div class="api-key-section">
           <label class="api-key-label" for="api-key">Your AI key (optional)</label>
-          <div class="api-key-desc" id="api-key-desc">Leave empty to use Free Mode: no key needed. Add your own key and an AI writes the drafts instead. You’ll see exactly what is sent first.</div>
+          <div class="api-key-desc" id="api-key-desc">Leave empty to use Free Mode: no key needed. Add your own key and an AI writes the drafts instead. “What’s sent?” at the top always shows exactly what goes out.</div>
           <div class="provider-row" role="radiogroup" aria-label="AI provider">
             <button type="button" class="provider-btn active" role="radio" aria-checked="true" data-provider="anthropic">Anthropic <span class="provider-sub">Claude</span></button>
             <button type="button" class="provider-btn" role="radio" aria-checked="false" data-provider="groq">Groq <span class="provider-sub">Llama · free plan</span></button>
@@ -294,11 +294,11 @@
             <span id="file-label">Click to upload or drag PDF here</span>
             <input id="resume-upload" type="file" accept=".pdf,application/pdf" class="file-input" />
           </div>
-          <p class="field-hint">Read on this device only. The PDF itself is never saved or sent; emails and phone numbers are dropped from the text.</p>
+          <p class="field-hint">The PDF itself is never saved or sent. Emails and phone numbers are removed from its text. In Free Mode the text is read on this device; in AI Mode that text goes to your AI provider.</p>
           <div class="resume-status hidden" id="resume-status" role="status" aria-live="polite"></div>
 
           <details class="paste-card" id="resume-paste-card">
-            <summary>No text found, or prefer to paste?</summary>
+            <summary>Prefer to paste your resume text?</summary>
             <div class="paste-body">
               <label class="field-label" for="resume-paste">Resume text</label>
               <textarea id="resume-paste" class="field-textarea" rows="4" spellcheck="false" placeholder="Paste the text of your resume here"></textarea>
@@ -315,15 +315,15 @@
           </div>
           <div class="field-group full">
             <label class="field-label" for="me-schools">Schools</label>
-            <input id="me-schools" type="text" class="field-input" autocomplete="off" aria-describedby="me-list-hint" />
+            <textarea id="me-schools" class="field-textarea" rows="2" spellcheck="false" aria-describedby="me-list-hint"></textarea>
           </div>
           <div class="field-group full">
             <label class="field-label" for="me-employers">Employers</label>
-            <input id="me-employers" type="text" class="field-input" autocomplete="off" aria-describedby="me-list-hint" />
+            <textarea id="me-employers" class="field-textarea" rows="2" spellcheck="false" aria-describedby="me-list-hint"></textarea>
           </div>
           <div class="field-group full">
             <label class="field-label" for="me-skills">Skills</label>
-            <input id="me-skills" type="text" class="field-input" autocomplete="off" aria-describedby="me-list-hint" />
+            <textarea id="me-skills" class="field-textarea" rows="2" spellcheck="false" aria-describedby="me-list-hint"></textarea>
           </div>
           <div class="field-group full">
             <label class="field-label" for="me-city">City</label>

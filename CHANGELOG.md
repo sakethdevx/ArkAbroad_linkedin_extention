@@ -201,3 +201,9 @@ _Slices land below as they ship._
 
 ### Copy: "résumé" is now "resume" everywhere users read it
 UI text, prompts, README, changelog and tests. The one exception is a heading detector in `utils/resume.js` that still recognises a résumé headed "Résumé", since real documents use the accent.
+
+### UI: spacing and truncation polish (from real screenshots)
+- The resume status box no longer touches the paste card; the "Read profile & write draft" button no longer touches the paste fallback (a `:last-of-type` rule had zeroed its margin); more air above "What I found about you".
+- Schools, Employers and Skills are now small auto-wrapping boxes instead of single lines that cut the text off.
+- The upload hint used to say "read on this device only", which is wrong in AI Mode; it now says what happens in each mode. The paste fallback is labelled "Prefer to paste your resume text?".
+- Settings intro no longer says you "see exactly what is sent first" (that now happens once, when AI is turned on; "What's sent?" is always available).
