@@ -11,7 +11,7 @@ module.exports = (test) => {
   const root = path.join(__dirname, '..');
   const PP = require(path.join(root, 'utils/profile_parse.js'));
   const tick = (n = 40) => new Promise(r => setTimeout(r, n));
-  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/compose.js', 'utils/resume.js', 'utils/person.js', 'utils/cache.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'popup.js'];
+  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/approach.js', 'utils/compose.js', 'utils/resume.js', 'utils/person.js', 'utils/cache.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'popup.js'];
 
   const PRIYA = () => PP.buildProfile({
     name: 'Priya Rao', headline: 'Data Scientist at Globex', location: 'Chennai, India',
@@ -149,6 +149,17 @@ module.exports = (test) => {
     t2.store.recentContacts[0].profileUrl = 'https://www.linkedin.com/in/priya/?trk=a';
     await t2.click('copy-btn', 60);
     assert.strictEqual(t2.store.recentContacts.length, 1);
+  });
+
+  test('popup: ONE "Best next move" line sits with the drafts and follows the person (connected → message; recent post → warm up)', async () => {
+    const t = await boot({ senderProfile: SENDER });
+    await t.click('scrape-btn');
+    const moves = () => [...t.w.document.querySelectorAll('#draft-notes .draft-note.move')].map(n => n.textContent);
+    assert.strictEqual(moves().length, 1);
+    assert.match(moves()[0], /^Best next move: (like or comment|open with)/);
+    const c = await boot({ senderProfile: SENDER }); c.setDegree('1st');
+    await c.click('scrape-btn');
+    assert.match([...c.w.document.querySelectorAll('#draft-notes .draft-note.move')].map(n => n.textContent).join(' '), /already connected/);
   });
 
   test('popup: switching Free ⇄ AI: AI asks once (names provider, host, model), the choice is remembered, and nothing asks per draft', async () => {
@@ -607,7 +618,7 @@ module.exports = (test) => {
     await t.click('scrape-btn');
     assert.strictEqual(t.calls.at(-1).sender.goal, 'AI/ML internships');
     const notes = [...t.w.document.querySelectorAll('#draft-notes .draft-note')].map(n => n.textContent);
-    assert.ok(notes.some(n => /^Suggestion: you have no shared ground/.test(n)), notes.join(' | '));
+    assert.ok(notes.some(n => /^Best next move: ask for advice first/.test(n)), notes.join(' | '));
     const nogoal = await boot({ senderProfile: { ...WORKER, schools: [], skills: [] } });
     nogoal.$('message-type').value = 'Job';
     await nogoal.click('scrape-btn');

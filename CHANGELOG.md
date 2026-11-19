@@ -5,6 +5,10 @@ Base: tag `base-v3.1.0`. Each entry: **what / why / tradeoff / how to demo**. Th
 ## Unreleased
 _Slices land below as they ship._
 
+### Feature 2 — one "Best next move" per person (`utils/approach.js`)
+
+**What** The tips under the drafts were scattered and sometimes stacked. One rule-based line now says the best move for THIS person: already connected → "a short message is enough"; a Referral with no shared ground → "ask for advice first, keep the referral request for your second message"; a recent post → "like or comment first" (labelled directional, from one vendor dataset); shared ground → "open with what you share". First rule that applies wins, so there is never a pile. **Why** it answers "should I even send this now?" without any AI. **Tradeoff** advice, not prediction; nothing leaves the device. The Referral hint moved out of `Spotlight.adviceFor` (which now only covers your own profile hints). **Demo** Current tab under the drafts. Tests: `approach:` (3) and `popup: ONE "Best next move" line…`.
+
 ### Feature 1 — Recent remembers the person and opens their profile
 
 **What** Each Recent entry now stores the person's LinkedIn **handle** (the `/in/<handle>` part of the address, new `utils/person.js`), not just a name. Clicking the name opens their profile in a new tab (`chrome.tabs.create`, no new permission). The same person saved twice (different query string, trailing slash, language prefix or country subdomain) is one entry. Entries saved earlier are upgraded when read. Entries made from pasted text have no profile, so they say so instead of showing a dead link. **Safety** a link is built only from a handle that passes a strict check, always on `www.linkedin.com/in/`; a stored value that is not a clean handle never becomes a link. **Demo** Recent tab, click a name. Tests: `person:` (3) and `popup: Recent remembers the person…`.

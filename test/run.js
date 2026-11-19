@@ -218,7 +218,7 @@ test('regression: post text excludes author header, headline, time, counts and "
 
 // ── Runner ───────────────────────────────────────────────────────────────────
 // Later slices append test modules; dom.test.js needs jsdom and skips itself without it.
-['dom', 'overlap', 'spotlight', 'compose', 'safety', 'draftcheck', 'rules', 'person', 'ondevice', 'translate', 'resume', 'background', 'manifest', 'html', 'popup', 'scroll'].forEach(n => {
+['dom', 'overlap', 'spotlight', 'compose', 'safety', 'draftcheck', 'rules', 'person', 'approach', 'ondevice', 'translate', 'resume', 'background', 'manifest', 'html', 'popup', 'scroll'].forEach(n => {
   try { require(`./${n}.test.js`)(test, load); } catch (e) { if (e.code !== 'MODULE_NOT_FOUND' || !String(e.message).includes(`${n}.test.js`)) throw e; }
 });
 

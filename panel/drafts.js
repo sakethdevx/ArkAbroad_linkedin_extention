@@ -246,15 +246,19 @@ function renderDraftNotes(resp) {
   if ((resp.injection && resp.injection.length) || resp.aiSawInjection) {
     add('This profile contains text that looks like instructions to an AI. I ignored it and only used the facts.', 'warn');
   }
+  if (typeof Approach !== 'undefined' && currentProfile) {
+    const move = Approach.approach({
+      isConnection: currentProfile.isConnection, overlaps: selectedOverlaps(), recentPosts: currentProfile.recentPosts,
+      purpose: document.getElementById('message-type').value
+    });
+    if (move) add(move, 'tip move');
+  }
   if (Spotlight.adviceFor) {
     const pt = document.getElementById('message-type').value;
     Spotlight.adviceFor(pt, { overlaps: selectedOverlaps(), spotlight: keptSpotlight(), sender: senderProfile }).forEach(t => add(t, 'tip'));
   }
   const hasIntro = (senderProfile && senderProfile.intro) || document.getElementById('user-bio').value.trim();
   if (!hasIntro) add('Tip: add a one-line intro in Settings (e.g. “final-year CS student at …”) so your draft can say who you are.', 'tip');
-  if (currentProfile && (currentProfile.recentPosts || []).length) {
-    add('Tip: like or comment on one of their posts first. In one vendor dataset, warm messages got about 4× the replies (directional, not a guarantee).', 'tip');
-  }
 }
 
 function hideMessage() {

@@ -102,15 +102,9 @@
     return best ? best.out : null;
   }
 
-  // Plain-language, rule-based hints for Job / Referral messages. Always a suggestion, never a prediction.
-  function adviceFor(purpose, { overlaps = [], spotlight: spot = null, sender = null } = {}) {
+  // Hints about the user's own profile for Job / Referral messages (the "best next move" about the other person lives in approach.js).
+  function adviceFor(purpose, { spotlight: spot = null, sender = null } = {}) {
     const out = [];
-    const shared = arr(overlaps).length;
-    if (purpose === 'Referral') {
-      out.push(shared
-        ? 'Suggestion: lead with what you share and ask for advice first; keep the referral request for your second message.'
-        : 'Suggestion: you have no shared ground with them yet. Consider a Networking note first, and ask for a referral once there is a conversation.');
-    }
     if ((purpose === 'Job' || purpose === 'Referral') && !(sender && String(sender.goal || '').trim())) {
       out.push('Suggestion: add what you are looking for in Settings → Your profile, so the ask can be specific.');
     }
