@@ -142,3 +142,21 @@ _Slices land below as they ship._
 - A scroll listener resets the shell to 0 as a last safety net; header, privacy strip and tabs never shrink.
 
 **Verified in real Chrome** at 420 / 650 / 900 px panel heights: after a draft, header y = 0 and tab bar visible. I also forced the old `scrollIntoView` call as a stress test, and the header still doesn't move. Settings still scrolls to the bottom. A test now fails if `.scrollIntoView(` is reintroduced or the body is unpinned.
+
+### Feature: Groq as a second AI provider (bring your own key)
+**Why** Most students don't have an Anthropic key. Groq offers a free plan (with usage limits) and an OpenAI-style API, so it's the easiest way for a student to get AI-written drafts without paying.
+
+**What**
+- **Settings → provider switch (Anthropic / Groq)** with the right placeholder and a link to get a key. Pasting a key auto-selects its provider (`gsk_…` → Groq, `sk-ant-…` → Anthropic).
+- **One provider layer, not a copy-paste**: both providers go through the same `callModel()`, so everything from the earlier slices applies unchanged: sanitising, the untrusted-data system prompt, field dropping on injection, output validation (length / links / emails / phones / leaks), the free-draft fallback, and the "exact payload" preview. Groq uses `llama-3.3-70b-versatile` (falls back to `llama-3.1-8b-instant` if that model is unavailable) in JSON mode with the JSON shape described in the instructions (JSON mode only guarantees valid JSON, not a schema), and retries as plain text if a model rejects JSON mode.
+- **Minimum permissions**: `api.groq.com` is an **optional** host permission. Chrome asks for it when the user presses Save/Test with Groq selected (it must come from a click); people who never use Groq never grant it. If they decline, the key is **not saved** and they're told what to do; if it's ever missing, nothing is sent and a clear message appears.
+- **Consent is per provider**: the dialog names the provider, host and model; an existing Anthropic user isn't re-asked, but switching to Groq asks once.
+- Labels and messages are provider-aware ("AI Mode · Groq", "Written by Llama via Groq", provider-specific errors: bad key, rate limit, busy, offline).
+
+**Tradeoffs / honesty**
+- Groq's free plan has low rate limits; hitting one gives a friendly message and free drafts, never an error. I did not confirm the exact free-tier limits or whether a card is required; the UI only says "free plan with usage limits".
+- Llama models follow the "one specific hook, one ask" instructions less reliably than Claude, which is why every Groq draft still passes the same validation and the checklist re-checks your edits.
+- **Not tested against the live Groq API** (no key in my environment): the request shape comes from Groq's API reference and is covered by sandbox tests with a stubbed `fetch`. Please run one real draft with a Groq key.
+- What leaves the device in Groq mode is the same short profile summary, sent to `api.groq.com`; I did not review Groq's data-retention terms, so Settings says what we send, not how Groq handles it.
+
+**Tests** 15 new (109 total): Groq request shape (Bearer only, key never in the body), prefix detection vs explicit choice, validation and malformed-JSON fallback, every error class, model fallback / JSON-mode retry / no retry on auth errors, missing-permission behavior, preview parity, permission request and denial in the popup, per-provider consent. A new guard also asserts that only the background worker can make network calls.

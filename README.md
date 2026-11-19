@@ -2,7 +2,7 @@
 
 Draft a short, specific LinkedIn message for the person whose profile you're looking at. **You read it, edit it and send it yourself.** Nothing is ever sent or clicked for you.
 
-Works **free, on your device**, with no account and no API key. Optionally add your own Anthropic key and Claude writes the drafts instead.
+Works **free, on your device**, with no account and no API key. Optionally add your own key and an AI writes the drafts instead: **Anthropic (Claude)** or **Groq (Llama, which has a free plan with usage limits)**.
 
 ## Install (unpacked, no build step)
 1. `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → choose this folder.
@@ -21,12 +21,12 @@ Needs Chrome 116 or newer (side panel).
 | Mode | What is sent | Where |
 |---|---|---|
 | **Free** (no key) | Nothing | n/a |
-| **AI** (your own Anthropic key) | A short, cleaned-up summary of the profile + the résumé info you approved, **shown to you first** | `api.anthropic.com` only |
+| **AI** (your own key) | A short, cleaned-up summary of the profile + the résumé info you approved, **shown to you first** | only the provider you chose: `api.anthropic.com` **or** `api.groq.com` |
 | Always | Never: your résumé PDF, emails, phone numbers, your key (header only), or anything else on the page | n/a |
 
 - Stored locally (`chrome.storage.local`): your key (if you add one), name/bio, résumé **text** (contact details removed; the PDF is not kept), your edited "about you" info, recent drafts.
 - Profile, pasted and résumé text are treated as **untrusted input**: invisible characters are stripped, fields are length-capped and whitelisted, text that tries to instruct an AI is flagged and dropped, and model output is checked before you see it.
-- Permissions: `storage`, `scripting`, `sidePanel`; hosts `linkedin.com` and `api.anthropic.com`. The page script is injected only when you click; nothing runs on LinkedIn otherwise.
+- Permissions: `storage`, `scripting`, `sidePanel`; hosts `linkedin.com` and `api.anthropic.com`. `api.groq.com` is an **optional** permission that Chrome asks for only if you choose Groq. The page script is injected only when you click; nothing runs on LinkedIn otherwise.
 
 ## About LinkedIn's rules
 LinkedIn's help centre says it does not permit browser extensions that scrape or automate activity on its site. This tool only reads the page you are looking at, on your click, never navigates, clicks, types or sends, and offers a **paste-text mode that needs no page access at all**. Using any extension on LinkedIn is your call and your account's risk; please read LinkedIn's terms.

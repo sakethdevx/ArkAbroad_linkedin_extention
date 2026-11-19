@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireReadCard();
   document.getElementById('paste-btn').addEventListener('click', handlePasteProfile);
   document.getElementById('privacy-details-btn').addEventListener('click', showPrivacyDetails);
+  wireProviderUi();
   document.getElementById('resume-tip-go').addEventListener('click', () => { switchTab('settings'); document.getElementById('file-upload-area').focus(); });
   document.getElementById('resume-tip-dismiss').addEventListener('click', async () => { await storageSet({ resumeTipDismissed: true }); refreshResumeTip(); });
   wireConsentDialog();
@@ -33,15 +34,68 @@ document.addEventListener('DOMContentLoaded', async () => {
   watchTabs();
 });
 
+// ─── AI providers (bring your own key) ───────────────────────────────────────
+// Keep in sync with PROVIDERS in background.js. Groq's host is an OPTIONAL permission, requested only when it's chosen.
+const AI_PROVIDERS = {
+  anthropic: { id: 'anthropic', name: 'Anthropic', host: 'api.anthropic.com', origin: null, placeholder: 'sk-ant-…', prefix: /^sk-ant-/, badge: 'Written by Claude · using your key',
+    help: 'Get a key at console.anthropic.com. Pay as you go.', link: 'https://console.anthropic.com/settings/keys', linkText: 'Open Anthropic Console' },
+  groq:      { id: 'groq', name: 'Groq', host: 'api.groq.com', origin: 'https://api.groq.com/*', placeholder: 'gsk_…', prefix: /^gsk_/, badge: 'Written by Llama via Groq · using your key',
+    help: 'Groq has a free plan with usage limits. Saving asks Chrome to allow access to api.groq.com.', link: 'https://console.groq.com/keys', linkText: 'Get a Groq key' }
+};
+let selectedProvider = 'anthropic';
+
+// explicit choice → key prefix → Anthropic (the original behaviour)
+function resolveProvider(chosen, key) {
+  if (AI_PROVIDERS[chosen]) return AI_PROVIDERS[chosen];
+  const k = String(key || '').trim();
+  return Object.values(AI_PROVIDERS).find(p => p.prefix.test(k)) || AI_PROVIDERS.anthropic;
+}
+
+function setProvider(id) {
+  selectedProvider = AI_PROVIDERS[id] ? id : 'anthropic';
+  const p = AI_PROVIDERS[selectedProvider];
+  document.querySelectorAll('.provider-btn').forEach(b => {
+    const on = b.dataset.provider === p.id;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', String(on));
+  });
+  document.getElementById('api-key').placeholder = p.placeholder;
+  const help = document.getElementById('provider-help');
+  help.textContent = p.help + ' ';
+  const a = document.createElement('a');
+  a.href = p.link; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = p.linkText;
+  help.appendChild(a);
+}
+
+// Optional host permissions can only be requested from a user gesture, so call this FIRST in a click handler.
+async function ensureProviderAccess(p) {
+  if (!p.origin) return true;
+  try {
+    if (await chrome.permissions.contains({ origins: [p.origin] })) return true;
+    return await chrome.permissions.request({ origins: [p.origin] });
+  } catch (_) { return false; }
+}
+
+function wireProviderUi() {
+  document.querySelectorAll('.provider-btn').forEach(b => b.addEventListener('click', () => setProvider(b.dataset.provider)));
+  // pasting a key picks the matching provider for you (gsk_… → Groq, sk-ant-… → Anthropic)
+  document.getElementById('api-key').addEventListener('input', (e) => {
+    const hit = Object.values(AI_PROVIDERS).find(p => p.prefix.test(e.target.value.trim()));
+    if (hit && hit.id !== selectedProvider) setProvider(hit.id);
+  });
+  setProvider(selectedProvider);
+}
+
 // ─── Mode badge in header (Free vs AI) ───────────────────────────────────────
 async function refreshModeBadge() {
   const s   = await loadStoredSettings();
   const key = (s.userApiKey || '').trim();
+  const p   = resolveProvider(s.aiProvider, key);
   const el  = document.getElementById('key-status');
-  el.textContent = key ? '● AI Mode' : '● Free Mode';
+  el.textContent = key ? `● AI Mode · ${p.name}` : '● Free Mode';
   el.className   = 'key-status active';
   document.getElementById('privacy-text').textContent = key
-    ? 'AI Mode: a short profile summary goes to Anthropic (your key).'
+    ? `AI Mode: a short profile summary goes to ${p.name} (your key).`
     : 'Free Mode: everything stays on this device.';
 }
 
@@ -438,6 +492,7 @@ async function handleDeepGenerate() {
 async function loadSettings() {
   let s = await loadStoredSettings();
   if (s.userApiKey) document.getElementById('api-key').value = s.userApiKey;
+  setProvider(resolveProvider(s.aiProvider, s.userApiKey).id);
   if (s.userName)   document.getElementById('user-name').value   = s.userName;
   if (s.userBio)    document.getElementById('user-bio').value    = s.userBio;
 
@@ -464,13 +519,28 @@ async function loadSettings() {
 }
 
 async function handleSaveSettings() {
+  // Ask for any needed host permission FIRST: Chrome only allows the prompt directly from this click.
   const userApiKey = document.getElementById('api-key').value.trim();
   const userName   = document.getElementById('user-name').value.trim();
   const userBio    = document.getElementById('user-bio').value.trim();
+  const provider   = userApiKey ? resolveProvider(AI_PROVIDERS[selectedProvider].prefix.test(userApiKey) ? selectedProvider : undefined, userApiKey) : AI_PROVIDERS[selectedProvider];
 
-  await new Promise(resolve => chrome.storage.local.set({ userApiKey, userName, userBio }, resolve));
+  const toSave = { userName, userBio };
+  let keyDenied = false;
+  if (!userApiKey) {
+    toSave.userApiKey = '';                                  // empty = Free Mode
+  } else if (await ensureProviderAccess(provider)) {
+    toSave.userApiKey = userApiKey;
+    toSave.aiProvider = provider.id;
+    if (provider.id !== selectedProvider) setProvider(provider.id);
+  } else {
+    keyDenied = true;                                        // never keep a key we can't use
+  }
+
+  await new Promise(resolve => chrome.storage.local.set(toSave, resolve));
   await saveSenderFromCard({ quiet: true });
-  showSettingsStatus('Settings saved!', 'success');
+  if (keyDenied) showSettingsStatus(`Your key wasn't saved: ${provider.name} needs permission to contact ${provider.host}. Press Save again and choose Allow.`, 'error', 6000);
+  else showSettingsStatus('Settings saved!', 'success');
   await refreshModeBadge();
 }
 
@@ -478,12 +548,22 @@ async function handleValidateKey() {
   const apiKey = document.getElementById('api-key').value.trim();
   if (!apiKey) return;
 
+  const provider = resolveProvider(AI_PROVIDERS[selectedProvider].prefix.test(apiKey) ? selectedProvider : undefined, apiKey);
+  if (provider.id !== selectedProvider) setProvider(provider.id);
+  const el0 = document.getElementById('key-validation-status');
+  if (!(await ensureProviderAccess(provider))) {
+    el0.classList.remove('hidden');
+    el0.textContent = `✗ Allow access to ${provider.host} to test this key.`;
+    el0.className = 'key-validation-status invalid';
+    return;
+  }
+
   const btn = document.getElementById('validate-btn');
   btn.textContent = '…';
   btn.disabled = true;
 
   const result = await new Promise(resolve => {
-    chrome.runtime.sendMessage({ type: 'TEST_API_KEY', payload: { apiKey } }, resolve);
+    chrome.runtime.sendMessage({ type: 'TEST_API_KEY', payload: { apiKey, provider: provider.id } }, resolve);
   });
 
   btn.textContent = 'Test';
@@ -494,7 +574,7 @@ async function handleValidateKey() {
 
   if (result && result.valid) {
     // "Test" only tests. Saving stays an explicit action (it used to silently save the key).
-    el.textContent = '✓ Key works. Click Save Settings to turn AI Mode on.';
+    el.textContent = `✓ ${provider.name} key works. Click Save Settings to turn AI Mode on.`;
     el.className   = 'key-validation-status valid';
   } else {
     el.textContent = `✗ ${result?.reason || 'Key did not work'}`;
@@ -552,7 +632,7 @@ const FORMAT_TIP = {
   note:    'LinkedIn limits connection notes to 200 characters, and free accounts get only a few per month. Over 200? Use “Message” after they accept.',
   message: 'For people you’re already connected with. Shorter still gets more replies: aim for under 400 characters.'
 };
-const SOURCE_LABEL = { template: 'Free draft · made on your device', ai: 'Written by Claude · using your key' };
+const sourceLabel = (d) => !d ? '' : d.source === 'ai' ? (AI_PROVIDERS[d.provider] || AI_PROVIDERS.anthropic).badge : 'Free draft · made on your device';
 
 const currentDraftText = () => document.getElementById('generated-message').value;
 
@@ -564,7 +644,7 @@ function draftCtx() {
 function renderDrafts(resp) {
   const wasHidden = document.getElementById('message-section').classList.contains('hidden');
   const list = resp.variants && resp.variants.length ? resp.variants : [{ text: resp.generatedMessage || '', source: 'template' }];
-  drafts = list.map(v => ({ text: v.text, source: v.source, hookKind: v.hookKind }));
+  drafts = list.map(v => ({ text: v.text, source: v.source, hookKind: v.hookKind, provider: v.provider || resp.provider }));
   document.getElementById('message-section').classList.remove('hidden');
   buildDraftTabs();
   selectDraft(0);
@@ -644,7 +724,7 @@ function updateDraftMeta() {
   document.getElementById('post-note').classList.toggle('hidden', !(drafts[activeDraft] && drafts[activeDraft].hookKind === 'post' && /[“"]/.test(text)));
 
   const badge = document.getElementById('source-badge');
-  badge.textContent = (drafts[activeDraft] && SOURCE_LABEL[drafts[activeDraft].source]) || '';
+  badge.textContent = sourceLabel(drafts[activeDraft]);
 
   const ul = document.getElementById('draft-checklist');
   ul.innerHTML = '';
@@ -757,12 +837,12 @@ function clearCurrentStatus() {
   el.textContent = '';
 }
 
-function showSettingsStatus(msg, type = '') {
+function showSettingsStatus(msg, type = '', ms = 2500) {
   const el = document.getElementById('settings-status');
   el.textContent = msg;
   el.className = `status-bar${type ? ' status-' + type : ''}`;
   el.classList.remove('hidden');
-  setTimeout(() => el.classList.add('hidden'), 2500);
+  setTimeout(() => el.classList.add('hidden'), ms);
 }
 
 function setButtonLoading(btnId, labelId, spinnerId, loading, labelText) {
@@ -856,7 +936,8 @@ function wireConsentDialog() {
     if (r) r(choice);
   };
   document.getElementById('consent-send').addEventListener('click', async () => {
-    await storageSet({ aiConsent: { ackAt: Date.now(), version: CONSENT_VERSION } });
+    const { userApiKey, aiProvider } = await loadStoredSettings();
+    await storageSet({ aiConsent: { ackAt: Date.now(), version: CONSENT_VERSION, provider: resolveProvider(aiProvider, userApiKey).id } });
     done('send');
   });
   document.getElementById('consent-free').addEventListener('click', () => done('free'));
@@ -868,16 +949,21 @@ function wireConsentDialog() {
 async function ensureAiConsent(data) {
   const s = await loadStoredSettings();
   if (!(s.userApiKey || '').trim()) return 'send';
-  if (s.aiConsent && s.aiConsent.version === CONSENT_VERSION) return 'send';
+  const provider = resolveProvider(s.aiProvider, s.userApiKey);
+  // consent is per provider: a legacy record (no provider) was given for Anthropic; switching providers asks again
+  if (s.aiConsent && s.aiConsent.version === CONSENT_VERSION && (s.aiConsent.provider || 'anthropic') === provider.id) return 'send';
   return showConsentDialog(data, false);
 }
 
 async function showConsentDialog(data, viewOnly) {
   const prev = await previewPayload(data);
   const dlg = document.getElementById('consent-dialog');
+  const pname = (prev && prev.providerName) || 'your AI provider';
+  document.getElementById('consent-title').textContent = viewOnly ? `What AI Mode sends to ${pname}` : `Send this to ${pname}?`;
   document.getElementById('consent-desc').textContent = viewOnly
     ? 'This is what AI Mode sends for the current profile. In Free Mode nothing is sent.'
-    : 'You added your own Anthropic key, so Claude writes the draft. Please check what it will receive. You’ll only be asked once.';
+    : `You added your own ${pname} key, so ${pname} writes the draft. Please check what it will receive. You’ll be asked once per provider.`;
+  document.getElementById('consent-host').textContent = (prev && prev.host) || '';
   document.getElementById('consent-model').textContent = (prev && prev.model) || '';
   document.getElementById('consent-payload').textContent = (prev && prev.success) ? prev.user : (prev && prev.error) || 'Could not build a preview.';
   document.getElementById('consent-system').textContent = (prev && prev.system) || '';
@@ -1118,7 +1204,7 @@ async function onChipToggle(id, btn) {
 
 function loadStoredSettings() {
   return new Promise(resolve => {
-    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile','prefs','aiConsent','resumeTipDismissed'], resolve);
+    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile','prefs','aiConsent','resumeTipDismissed','aiProvider'], resolve);
   });
 }
 

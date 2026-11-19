@@ -256,13 +256,18 @@
 
         <!-- Optional: user's own API key -->
         <div class="api-key-section">
-          <label class="api-key-label" for="api-key">Your Anthropic API key (optional)</label>
-          <div class="api-key-desc" id="api-key-desc">Leave empty to use Free Mode: no key needed. Add your own key and Claude writes the drafts instead. You’ll see exactly what is sent first.</div>
+          <label class="api-key-label" for="api-key">Your AI key (optional)</label>
+          <div class="api-key-desc" id="api-key-desc">Leave empty to use Free Mode: no key needed. Add your own key and an AI writes the drafts instead. You’ll see exactly what is sent first.</div>
+          <div class="provider-row" role="radiogroup" aria-label="AI provider">
+            <button type="button" class="provider-btn active" role="radio" aria-checked="true" data-provider="anthropic">Anthropic <span class="provider-sub">Claude</span></button>
+            <button type="button" class="provider-btn" role="radio" aria-checked="false" data-provider="groq">Groq <span class="provider-sub">Llama · free plan</span></button>
+          </div>
           <div class="api-key-input-wrap">
             <input id="api-key" type="password" class="api-key-input"
-              placeholder="sk-ant-…" autocomplete="off" spellcheck="false" aria-describedby="api-key-desc" />
+              placeholder="sk-ant-…" autocomplete="off" spellcheck="false" aria-describedby="api-key-desc provider-help" />
             <button class="validate-btn" id="validate-btn" type="button" aria-label="Test API key">Test</button>
           </div>
+          <p class="provider-help" id="provider-help"></p>
           <div class="key-validation-status hidden" id="key-validation-status" role="status" aria-live="polite"></div>
         </div>
 
@@ -330,7 +335,7 @@
           <strong>What leaves your device</strong>
           <ul>
             <li><b>Free Mode</b> (no key): nothing. Profiles are read, matched and drafted on this device.</li>
-            <li><b>AI Mode</b> (your own Anthropic key): a short, cleaned-up summary of the profile and your résumé info goes to <b>api.anthropic.com</b> to write the draft. You see exactly what first, and your key is sent only to Anthropic.</li>
+            <li><b>AI Mode</b> (your own key): a short, cleaned-up summary of the profile and your résumé info goes to the provider you chose, <b>api.anthropic.com</b> (Claude) or <b>api.groq.com</b> (Llama), to write the draft. You see exactly what first. Your key is sent only to that provider.</li>
             <li><b>Never sent</b>: your résumé PDF, emails and phone numbers, or anything else on the page.</li>
             <li><b>Never automatic</b>: this tool doesn’t click, type or send on LinkedIn. You read and send every message yourself.</li>
           </ul>
@@ -343,15 +348,15 @@
 
   <dialog id="consent-dialog" aria-labelledby="consent-title" aria-describedby="consent-desc">
     <form method="dialog" class="consent-form" id="consent-form">
-      <h2 id="consent-title">Send this to Claude?</h2>
+      <h2 id="consent-title">Send this to your AI provider?</h2>
       <p id="consent-desc" class="consent-desc"></p>
-      <p class="consent-sub">Sent to <b>api.anthropic.com</b> (model <span id="consent-model"></span>) for this draft:</p>
+      <p class="consent-sub">Sent to <b id="consent-host">api.anthropic.com</b> (model <span id="consent-model"></span>) for this draft:</p>
       <pre class="consent-payload" id="consent-payload" tabindex="0" aria-label="Exact data that will be sent"></pre>
       <details class="consent-instr"><summary>Instructions sent with it</summary><pre id="consent-system" tabindex="0"></pre></details>
       <p class="consent-sub">Not sent: your résumé PDF, emails, phone numbers, or your API key (it only goes in the request header).</p>
       <div class="consent-actions">
         <button type="button" class="btn btn-secondary" id="consent-free">Use a free draft</button>
-        <button type="button" class="btn btn-primary" id="consent-send">Send to Claude</button>
+        <button type="button" class="btn btn-primary" id="consent-send">Send</button>
       </div>
       <button type="button" class="btn-link consent-cancel" id="consent-cancel">Cancel</button>
     </form>

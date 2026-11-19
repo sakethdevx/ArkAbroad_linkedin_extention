@@ -11,6 +11,7 @@ module.exports = (test) => {
   test('manifest: minimum permissions, no static content scripts, only two hosts', () => {
     assert.deepStrictEqual([...m.permissions].sort(), ['scripting', 'sidePanel', 'storage']);
     assert.deepStrictEqual([...m.host_permissions].sort(), ['https://api.anthropic.com/*', 'https://www.linkedin.com/*']);
+    assert.deepStrictEqual(m.optional_host_permissions, ['https://api.groq.com/*'], 'Groq is optional: requested only when the user picks it');
     assert.strictEqual(m.content_scripts, undefined, 'content script must be injected on demand');
     assert.ok(!m.permissions.includes('tabs') && !m.permissions.includes('activeTab'));
     assert.ok(!('web_accessible_resources' in m) && !('externally_connectable' in m));
@@ -25,9 +26,13 @@ module.exports = (test) => {
     const code = ['background.js', 'popup.js', 'content_script.js', 'utils/compose.js', 'utils/overlap.js', 'utils/resume.js', 'utils/safety.js', 'utils/profile_parse.js', 'utils/page_scroll.js', 'popup.html']
       .map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
     const origins = [...new Set((code.match(/https?:\/\/[a-z0-9.-]+/gi) || []).map(x => x.toLowerCase()))];
-    const allowed = ['https://api.anthropic.com', 'https://www.linkedin.com'];
+    // API hosts we talk to, plus two documentation links shown in Settings (never fetched)
+    const allowed = ['https://api.anthropic.com', 'https://api.groq.com', 'https://www.linkedin.com', 'https://console.anthropic.com', 'https://console.groq.com'];
     const extra = origins.filter(o => !allowed.some(a => o.startsWith(a)));
     assert.deepStrictEqual(extra, [], 'unexpected origins: ' + extra.join(', '));
+    // only the background worker may make network requests
+    ['popup.js', 'content_script.js', 'utils/compose.js', 'utils/overlap.js', 'utils/resume.js', 'utils/safety.js', 'utils/profile_parse.js', 'utils/page_scroll.js']
+      .forEach(f => assert.ok(!/\bfetch\(|XMLHttpRequest|sendBeacon|WebSocket/.test(fs.readFileSync(path.join(root, f), 'utf8')), f + ' must not make network calls'));
   });
 
   test('secrets: nothing key-like is committed', () => {

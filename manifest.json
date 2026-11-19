@@ -13,6 +13,9 @@
     "https://www.linkedin.com/*",
     "https://api.anthropic.com/*"
   ],
+  "optional_host_permissions": [
+    "https://api.groq.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },

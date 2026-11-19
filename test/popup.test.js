@@ -24,7 +24,7 @@ module.exports = (test) => {
     const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8').replace(/<script[^>]*src[^>]*><\/script>/g, '');
     const w = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://x/popup.html' }).window;
     const errors = []; w.addEventListener('error', e => errors.push(e.message));
-    const calls = [], scrapes = [], listeners = [];
+    const calls = [], scrapes = [], listeners = [], permCalls = []; let granted = new Set(); let allowRequests = true;
     let tabUrl = url;
     w.chrome = {
       tabs: { query: async () => [{ id: 42, url: tabUrl, active: true }], onActivated: { addListener: f => listeners.push(f) }, onUpdated: { addListener: f => listeners.push(f) } },
@@ -32,13 +32,20 @@ module.exports = (test) => {
         get: (k, cb) => cb({ ...store }),
         set: (o, cb) => { Object.assign(store, o); cb && cb(); },
         remove: (k, cb) => { [].concat(k).forEach(x => delete store[x]); cb && cb(); } } },
+      permissions: {
+        contains: async (q) => q.origins.every(o => granted.has(o)),
+        request: async (q) => { permCalls.push(q.origins[0]); if (allowRequests) q.origins.forEach(o => granted.add(o)); return allowRequests; } },
       runtime: { lastError: null, getURL: x => x, sendMessage: (m, cb) => {
+        if (m.type === 'TEST_API_KEY') { return cb({ valid: true, provider: m.payload.provider }); }
         if (m.action === 'scrapeProfile') { scrapes.push(m); return cb({ success: true, data: PRIYA() }); }
-        if (m.type === 'PREVIEW_PAYLOAD') return cb({ success: true, model: 'claude-haiku-5-5', system: 'SYS', user: '{"recipient_profile":{"name":"Priya Rao"}}' });
+        if (m.type === 'PREVIEW_PAYLOAD') {
+          const g = (store.aiProvider === 'groq') || /^gsk_/.test(store.userApiKey || '');
+          return cb({ success: true, model: g ? 'llama-3.3-70b-versatile' : 'claude-haiku-5-5', providerName: g ? 'Groq' : 'Anthropic', host: g ? 'api.groq.com' : 'api.anthropic.com', system: 'SYS', user: '{"recipient_profile":{"name":"Priya Rao"}}' });
+        }
         if (m.action === 'generateMessage') {
           calls.push(m.data); const n = calls.length;
           return cb({ success: true, generatedMessage: 'x', warnings: [], injection: [], variants: [
-            { text: `Hi Priya, we both went to IIT Madras (${m.data.format} #${n}). Open to a chat?`, source: m.data.forceFree ? 'template' : (store.userApiKey ? 'ai' : 'template') },
+            { text: `Hi Priya, we both went to IIT Madras (${m.data.format} #${n}). Open to a chat?`, source: m.data.forceFree ? 'template' : (store.userApiKey ? 'ai' : 'template'), provider: store.userApiKey ? ((store.aiProvider === 'groq' || /^gsk_/.test(store.userApiKey)) ? 'groq' : 'anthropic') : undefined },
             { text: `Draft B #${n}`, source: 'template' }, { text: `Draft C #${n}`, source: 'template' }] });
         }
         cb({});
@@ -49,7 +56,7 @@ module.exports = (test) => {
     w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
     await tick();
     const $ = id => w.document.getElementById(id);
-    return { w, $, errors, calls, scrapes, store, listeners, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
+    return { w, $, errors, calls, scrapes, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
   }
 
   const SENDER = { schools: ['IIT Madras'], skills: ['Python'], intro: 'CS student' };
@@ -209,5 +216,100 @@ module.exports = (test) => {
     assert.match(t.$('status-message').textContent, /couldn't read anything useful/);
     assert.ok(t.$('paste-card').open);
     assert.ok(t.$('message-section').classList.contains('hidden'));
+  });
+
+  // ── Groq as a second provider ──────────────────────────────────────────────
+  test('provider: switching updates placeholder/help; pasting a key auto-selects the provider', async () => {
+    const t = await boot({});
+    assert.strictEqual(t.$('api-key').placeholder, 'sk-ant-…');
+    t.w.document.querySelector('.provider-btn[data-provider="groq"]').click();
+    assert.strictEqual(t.$('api-key').placeholder, 'gsk_…');
+    assert.strictEqual(t.w.document.querySelector('.provider-btn[data-provider="groq"]').getAttribute('aria-checked'), 'true');
+    assert.strictEqual(t.w.document.querySelector('.provider-btn[data-provider="anthropic"]').getAttribute('aria-checked'), 'false');
+    assert.match(t.$('provider-help').textContent, /free plan/i);
+    assert.match(t.$('provider-help').querySelector('a').href, /console\.groq\.com/);
+    t.$('api-key').value = 'sk-ant-abc'; t.$('api-key').dispatchEvent(new t.w.Event('input'));
+    assert.strictEqual(t.w.document.querySelector('.provider-btn[data-provider="anthropic"]').getAttribute('aria-checked'), 'true');
+    t.$('api-key').value = 'gsk_abc'; t.$('api-key').dispatchEvent(new t.w.Event('input'));
+    assert.strictEqual(t.w.document.querySelector('.provider-btn[data-provider="groq"]').getAttribute('aria-checked'), 'true');
+  });
+
+  test('provider: saving a Groq key asks Chrome for api.groq.com first; Anthropic asks for nothing; the key saves with its provider', async () => {
+    const g = await boot({});
+    g.$('api-key').value = 'gsk_abc123'; g.$('api-key').dispatchEvent(new g.w.Event('input'));
+    await g.click('save-settings-btn', 80);
+    assert.deepStrictEqual(g.permCalls, ['https://api.groq.com/*']);
+    assert.strictEqual(g.store.userApiKey, 'gsk_abc123');
+    assert.strictEqual(g.store.aiProvider, 'groq');
+    assert.match(g.$('key-status').textContent, /AI Mode · Groq/);
+    assert.match(g.$('privacy-text').textContent, /Groq/);
+
+    const a = await boot({});
+    a.$('api-key').value = 'sk-ant-abc'; a.$('api-key').dispatchEvent(new a.w.Event('input'));
+    await a.click('save-settings-btn', 80);
+    assert.deepStrictEqual(a.permCalls, []);
+    assert.strictEqual(a.store.aiProvider, 'anthropic');
+    assert.match(a.$('key-status').textContent, /AI Mode · Anthropic/);
+  });
+
+  test('provider: if the user denies the permission, the Groq key is NOT saved and they are told what to do', async () => {
+    const t = await boot({});
+    t.deny();
+    t.$('api-key').value = 'gsk_abc123'; t.$('api-key').dispatchEvent(new t.w.Event('input'));
+    t.$('user-name').value = 'Saketh';
+    await t.click('save-settings-btn', 80);
+    assert.ok(!t.store.userApiKey, 'key must not be kept when we cannot use it');
+    assert.strictEqual(t.store.userName, 'Saketh', 'other settings still save');
+    assert.match(t.$('settings-status').textContent, /needs permission to contact api\.groq\.com/);
+    assert.match(t.$('key-status').textContent, /Free Mode/);
+  });
+
+  test('provider: a key that clearly belongs to the other provider overrides a wrong selection on save', async () => {
+    const t = await boot({});
+    t.w.document.querySelector('.provider-btn[data-provider="anthropic"]').click();
+    t.$('api-key').value = 'gsk_zzz';            // typed/pasted, then the radio is flipped back by mistake
+    t.w.document.querySelector('.provider-btn[data-provider="anthropic"]').click();
+    await t.click('save-settings-btn', 80);
+    assert.strictEqual(t.store.aiProvider, 'groq');
+  });
+
+  test('provider: Test asks for the permission, then tests with the right provider; denied → clear message, no test', async () => {
+    const t = await boot({});
+    t.$('api-key').value = 'gsk_abc'; t.$('api-key').dispatchEvent(new t.w.Event('input'));
+    await t.click('validate-btn', 80);
+    assert.deepStrictEqual(t.permCalls, ['https://api.groq.com/*']);
+    assert.match(t.$('key-validation-status').textContent, /Groq key works/);
+    const d = await boot({}); d.deny();
+    d.$('api-key').value = 'gsk_abc'; d.$('api-key').dispatchEvent(new d.w.Event('input'));
+    await d.click('validate-btn', 80);
+    assert.match(d.$('key-validation-status').textContent, /Allow access to api\.groq\.com/);
+  });
+
+  test('provider: consent is per provider (legacy Anthropic consent does not cover Groq); dialog names the provider and host', async () => {
+    const t = await boot({ userApiKey: 'gsk_k', aiProvider: 'groq', aiConsent: { version: 1, ackAt: 1 } });   // legacy record = Anthropic
+    await t.click('scrape-btn');
+    assert.ok(t.$('consent-dialog').hasAttribute('open'), 'asked again for a new provider');
+    assert.match(t.$('consent-title').textContent, /Send this to Groq\?/);
+    assert.strictEqual(t.$('consent-host').textContent, 'api.groq.com');
+    assert.strictEqual(t.$('consent-model').textContent, 'llama-3.3-70b-versatile');
+    assert.strictEqual(t.calls.length, 0);
+    await t.click('consent-send');
+    assert.strictEqual(t.store.aiConsent.provider, 'groq');
+    assert.match(t.$('source-badge').textContent, /Written by Llama via Groq/);
+    await t.click('scrape-btn');
+    assert.ok(!t.$('consent-dialog').hasAttribute('open'), 'then remembered');
+
+    const legacy = await boot({ userApiKey: 'sk-ant-k', aiConsent: { version: 1, ackAt: 1 }, senderProfile: SENDER });
+    await legacy.click('scrape-btn');
+    assert.ok(!legacy.$('consent-dialog').hasAttribute('open'), 'existing Anthropic users are not re-asked');
+    assert.match(legacy.$('source-badge').textContent, /Written by Claude/);
+  });
+
+  test('provider: saved settings restore the provider selection', async () => {
+    const t = await boot({ userApiKey: 'gsk_k', aiProvider: 'groq' });
+    assert.strictEqual(t.w.document.querySelector('.provider-btn[data-provider="groq"]').getAttribute('aria-checked'), 'true');
+    assert.match(t.$('key-status').textContent, /Groq/);
+    const bare = await boot({ userApiKey: 'gsk_k' });   // no explicit provider stored → detected from the key
+    assert.match(bare.$('key-status').textContent, /Groq/);
   });
 };

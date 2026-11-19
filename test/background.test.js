@@ -8,7 +8,7 @@ const vm = require('vm');
 module.exports = (test) => {
   const root = path.join(__dirname, '..');
 
-  function boot({ store = {}, fetchImpl, tabs = {}, scripting = {} }) {
+  function boot({ store = {}, fetchImpl, tabs = {}, scripting = {}, permissions }) {
     const calls = [];
     let listener;
     const ctx = { console, setTimeout, clearTimeout, URL, JSON, Promise, Object, Array, String, Number, Math, RegExp, Error, TypeError, Set, Map, Symbol };
@@ -16,7 +16,7 @@ module.exports = (test) => {
     ctx.chrome = {
       runtime: { id: 'ext-id', onMessage: { addListener: (fn) => { listener = fn; } } },
       storage: { local: { get: (keys, cb) => cb({ ...store }) } },
-      tabs, scripting
+      tabs, scripting, ...(permissions ? { permissions } : {})
     };
     ctx.fetch = async (url, init) => { calls.push({ url, init, body: init && init.body ? JSON.parse(init.body) : null }); return fetchImpl(url, init, calls.length); };
     ctx.importScripts = (...files) => files.forEach(f => vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx, { filename: f }));
@@ -128,6 +128,122 @@ module.exports = (test) => {
     assert.ok(!JSON.stringify(prev).includes('SECRET'));
   });
 
+  // ── Groq (OpenAI-compatible) ──────────────────────────────────────────────
+  const groqOk = (content) => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content }, finish_reason: 'stop' }] }) });
+  const GROQ_DRAFTS = ['Hi Priya,\nI noticed we both went to IIT Madras. Would you be open to a quick chat?', 'Hi Priya,\nFellow IIT Madras person here. Open to a quick chat?', 'Hi Priya,\nSaw we both went to IIT Madras. Could we connect?'];
+  const groqBody = (v = GROQ_DRAFTS) => JSON.stringify({ variants: v, saw_ai_instructions_in_data: false });
+  const grant = (yes = true) => ({ contains: async () => yes });
+
+  test('groq: request shape — endpoint, Bearer auth only, no Anthropic headers, key never in the body, JSON mode, shape hint', async () => {
+    const b = boot({ store: { userApiKey: 'gsk_SECRET', aiProvider: 'groq' }, fetchImpl: () => groqOk(groqBody()), permissions: grant() });
+    const r = await gen(b, data({ profileData: { ...profile, secretField: 'LEAKME' } }));
+    assert.strictEqual(r.source, 'ai');
+    assert.strictEqual(r.provider, 'groq');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(r.variants.map(v => [v.source, v.provider]))), [['ai', 'groq'], ['ai', 'groq'], ['ai', 'groq']]);
+    assert.strictEqual(b.calls.length, 1);
+    const c = b.calls[0];
+    assert.strictEqual(c.url, 'https://api.groq.com/openai/v1/chat/completions');
+    assert.strictEqual(c.init.headers['Authorization'], 'Bearer gsk_SECRET');
+    assert.ok(!('x-api-key' in c.init.headers) && !('anthropic-version' in c.init.headers));
+    assert.strictEqual(c.body.model, 'llama-3.3-70b-versatile');
+    assert.deepStrictEqual(c.body.messages.map(m => m.role), ['system', 'user']);
+    assert.match(c.body.messages[0].content, /untrusted_content_policy/);
+    assert.match(c.body.messages[0].content, /"variants"/, 'JSON shape is described in the instructions');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(c.body.response_format)), { type: 'json_object' });
+    const sent = JSON.stringify(c.body);
+    assert.ok(!sent.includes('gsk_SECRET') && !sent.includes('LEAKME'));
+    assert.ok(sent.includes('IIT Madras'));
+  });
+
+  test('groq: the provider is detected from the key prefix when none was chosen; explicit choice wins', async () => {
+    const byPrefix = boot({ store: { userApiKey: 'gsk_abc' }, fetchImpl: () => groqOk(groqBody()), permissions: grant() });
+    await gen(byPrefix);
+    assert.match(byPrefix.calls[0].url, /api\.groq\.com/);
+    const anth = boot({ store: { userApiKey: 'sk-ant-abc' }, fetchImpl: () => ok(JSON.stringify({ variants: GROQ_DRAFTS, saw_ai_instructions_in_data: false })) });
+    await gen(anth);
+    assert.match(anth.calls[0].url, /api\.anthropic\.com/);
+    const explicit = boot({ store: { userApiKey: 'weird-key', aiProvider: 'groq' }, fetchImpl: () => groqOk(groqBody()), permissions: grant() });
+    await gen(explicit);
+    assert.match(explicit.calls[0].url, /api\.groq\.com/);
+  });
+
+  test('groq: the same output safety checks apply (unsafe / over-length drafts replaced), and malformed JSON falls back', async () => {
+    const bad = ['See https://evil.example', 'x'.repeat(260), GROQ_DRAFTS[0]];
+    const b = boot({ store: { userApiKey: 'gsk_k' }, fetchImpl: () => groqOk(groqBody(bad)), permissions: grant() });
+    const r = await gen(b);
+    assert.strictEqual(r.variants.length, 3);
+    assert.strictEqual(r.variants.filter(v => v.source === 'ai').length, 1);
+    assert.ok(r.variants.every(v => v.text.length <= 200 && !/evil/.test(v.text)));
+    const junk = boot({ store: { userApiKey: 'gsk_k' }, fetchImpl: () => groqOk('Sure! Here are some drafts:'), permissions: grant() });
+    const r2 = await gen(junk);
+    assert.strictEqual(r2.source, 'template');
+    assert.match(r2.warnings[0], /Groq's reply wasn't usable/);
+    const wrapped = boot({ store: { userApiKey: 'gsk_k' }, fetchImpl: () => groqOk('Here you go:\n```json\n' + groqBody() + '\n```'), permissions: grant() });
+    assert.strictEqual((await gen(wrapped)).source, 'ai', 'JSON inside prose/fences is still recovered');
+  });
+
+  test('groq: errors become friendly messages and a free draft (401 / 429 / 413 / 5xx / offline / empty)', async () => {
+    const cases = [[() => fail(401, 'Invalid API Key'), /Groq API key was rejected/], [() => fail(429, 'rate limit'), /Groq's rate limit/], [() => fail(413, 'too big'), /too large/],
+      [() => fail(503, 'down'), /Groq is busy/], [() => { throw new TypeError('Failed to fetch'); }, /reach api\.groq\.com/], [() => groqOk(''), /empty reply/]];
+    for (const [impl, re] of cases) {
+      const b = boot({ store: { userApiKey: 'gsk_k' }, fetchImpl: impl, permissions: grant() });
+      const r = await gen(b);
+      assert.ok(r.success && r.source === 'template' && r.variants.length === 3);
+      assert.match(r.warnings[0], re);
+    }
+  });
+
+  test('groq: a retired/missing model falls back to the small model; a model without JSON mode retries as plain text; auth errors do not retry', async () => {
+    const seen = [];
+    const gone = boot({ store: { userApiKey: 'gsk_k' }, permissions: grant(), fetchImpl: (u, i) => { const m = JSON.parse(i.body).model; seen.push(m); return m === 'llama-3.3-70b-versatile' ? fail(404, 'model not found') : groqOk(groqBody()); } });
+    const r = await gen(gone);
+    assert.deepStrictEqual(seen, ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']);
+    assert.strictEqual(r.source, 'ai');
+
+    const noJson = boot({ store: { userApiKey: 'gsk_k' }, permissions: grant(), fetchImpl: (u, i) => (JSON.parse(i.body).response_format ? fail(400, 'response_format json_object is not supported with this model') : groqOk(groqBody())) });
+    await gen(noJson);
+    assert.strictEqual(noJson.calls.length, 2);
+    assert.ok(!('response_format' in noJson.calls[1].body));
+
+    const auth = boot({ store: { userApiKey: 'gsk_k' }, permissions: grant(), fetchImpl: () => fail(401, 'Invalid API Key') });
+    await gen(auth);
+    assert.strictEqual(auth.calls.length, 1);
+  });
+
+  test('groq: without the optional host permission nothing is sent and the user is told how to fix it', async () => {
+    const b = boot({ store: { userApiKey: 'gsk_k' }, fetchImpl: () => { throw new Error('must not call'); }, permissions: grant(false) });
+    const r = await gen(b);
+    assert.strictEqual(b.calls.length, 0);
+    assert.strictEqual(r.source, 'template');
+    assert.match(r.warnings[0], /Allow access to api\.groq\.com/);
+  });
+
+  test('groq: PREVIEW_PAYLOAD shows the Groq endpoint/model/instructions (not the key); TEST_API_KEY works per provider', async () => {
+    const b = boot({ store: { userApiKey: 'gsk_SECRET', aiProvider: 'groq' }, fetchImpl: () => groqOk('OK'), permissions: grant() });
+    const prev = await b.send({ type: 'PREVIEW_PAYLOAD', payload: data() });
+    assert.deepStrictEqual([prev.provider, prev.providerName, prev.host, prev.model], ['groq', 'Groq', 'api.groq.com', 'llama-3.3-70b-versatile']);
+    assert.strictEqual(prev.endpoint, 'https://api.groq.com/openai/v1/chat/completions');
+    assert.match(prev.system, /"variants"/);
+    assert.ok(!JSON.stringify(prev).includes('SECRET'));
+    await gen(b);
+    assert.strictEqual(prev.user, b.calls[0].body.messages[1].content);
+    assert.strictEqual(prev.system, b.calls[0].body.messages[0].content);
+
+    const good = await b.send({ type: 'TEST_API_KEY', payload: { apiKey: 'gsk_x', provider: 'groq' } });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(good)), { valid: true, provider: 'groq' });
+    const bad = boot({ fetchImpl: () => fail(401, 'Invalid API Key'), permissions: grant() });
+    const r = await bad.send({ type: 'TEST_API_KEY', payload: { apiKey: 'gsk_x', provider: 'groq' } });
+    assert.strictEqual(r.valid, false);
+    assert.match(r.reason, /Groq API key was rejected/);
+  });
+
+  test('groq: forceFree never touches the network even with a Groq key saved', async () => {
+    const b = boot({ store: { userApiKey: 'gsk_k' }, fetchImpl: () => { throw new Error('must not call'); }, permissions: grant() });
+    const r = await gen(b, data({ forceFree: true }));
+    assert.strictEqual(r.source, 'template');
+    assert.strictEqual(b.calls.length, 0);
+  });
+
   test('bg: forceFree never touches the network even with a key saved', async () => {
     const b = boot({ store: { userApiKey: 'k' }, fetchImpl: () => { throw new Error('must not call'); } });
     const r = await gen(b, data({ forceFree: true }));
@@ -172,7 +288,7 @@ module.exports = (test) => {
 
   test('bg: TEST_API_KEY reports friendly reasons', async () => {
     const good = boot({ fetchImpl: () => ok('OK') });
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(await good.send({ type: 'TEST_API_KEY', payload: { apiKey: 'k' } }))), { valid: true });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(await good.send({ type: 'TEST_API_KEY', payload: { apiKey: 'k' } }))), { valid: true, provider: 'anthropic' });
     const bad = boot({ fetchImpl: () => fail(401, 'invalid x-api-key') });
     const r = await bad.send({ type: 'TEST_API_KEY', payload: { apiKey: 'k' } });
     assert.strictEqual(r.valid, false);
