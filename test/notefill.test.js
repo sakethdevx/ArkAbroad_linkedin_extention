@@ -1,0 +1,107 @@
+'use strict';
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+
+module.exports = (test, load) => {
+  // source-level guarantees hold even without jsdom
+  const SRC = fs.readFileSync(path.join(__dirname, '../utils/notefill.js'), 'utf8').replace(/\/\/.*$/gm, '');
+  test('notefill: the helper contains no way to click a page button or touch the network', () => {
+    assert.ok(!/\.click\(/.test(SRC), 'it must never call .click() on anything');
+    assert.ok(!/\.submit\(|requestSubmit|dispatchEvent\(\s*new\s+\w*\.?(Mouse|Pointer|Keyboard)Event/.test(SRC), 'no synthetic clicks, key presses or form submits');
+    assert.ok(!/\bfetch\(|XMLHttpRequest|sendBeacon|WebSocket|sendMessage\(/.test(SRC), 'it never sends anything anywhere');
+  });
+
+  let JSDOM; try { ({ JSDOM } = require('jsdom')); } catch (_) { /* jsdom missing: the behaviour tests are skipped like the popup tests */ }
+  if (!JSDOM) return;
+  const N = load('utils/notefill.js');
+
+  const INVITE = (extra = '', value = '') => `<div role="dialog" id="dlg"><h2>Add a note to your invitation</h2><p>LinkedIn members are more likely to accept invitations that include a personal note.</p>
+    <textarea id="custom-message" maxlength="300" placeholder="Ex: We know each other from...">${value}</textarea><span>0/300</span>
+    <button id="cancel">Cancel</button><button id="send">Send</button><button id="nonote">Send without a note</button>${extra}</div>`;
+  const setup = (html) => {
+    const dom = new JSDOM(`<body><main><h1>Aryan</h1><button id="connect">Connect</button></main>${html}</body>`, { runScripts: 'outside-only' });
+    const w = dom.window, clicks = [], inputs = [];
+    w.document.querySelectorAll('button, a').forEach(b => b.addEventListener('click', () => clicks.push(b.id || b.textContent)));
+    const ctl = N.create(w);
+    const ui = () => w.document.querySelector('[data-outreach-fill]');
+    const btn = () => ui().shadowRoot.getElementById('fill');
+    const hint = () => ui().shadowRoot.getElementById('hint').textContent;
+    return { w, d: w.document, ctl, ui, btn, hint, clicks, inputs };
+  };
+
+  test('notefill: the invitation note box gets ONE button; before a draft exists it says to write one and fills nothing', () => {
+    const s = setup(INVITE()); s.ctl.scan(); s.ctl.scan();
+    assert.strictEqual(s.d.querySelectorAll('[data-outreach-fill]').length, 1, 'scanning twice must not add a second button');
+    assert.match(s.hint(), /Write a draft in the Outreach AI panel first/);
+    s.btn().click();
+    assert.strictEqual(s.d.getElementById('custom-message').value, '');
+  });
+
+  test('notefill: pressing the button types the draft the way a person would (React sees the input event) and stops', () => {
+    const s = setup(INVITE());
+    let seen = null; s.d.getElementById('custom-message').addEventListener('input', e => { seen = e.target.value; });
+    s.ctl.setDraft('Hi Aryan,\nWe both studied at VIT. Open to a quick chat?', 'note');
+    assert.match(s.hint(), /Draft ready \(\d+ characters\)/);
+    s.btn().click();
+    assert.strictEqual(s.d.getElementById('custom-message').value, 'Hi Aryan,\nWe both studied at VIT. Open to a quick chat?');
+    assert.strictEqual(seen, 'Hi Aryan,\nWe both studied at VIT. Open to a quick chat?', 'an input event fired, so LinkedIn enables its Send button');
+    assert.match(s.hint(), /press Send yourself/);
+    assert.deepStrictEqual(s.clicks, [], 'no page button was ever clicked: not Send, not Send without a note, not Cancel, not Connect');
+  });
+
+  test('notefill: a draft longer than the box allows is refused with the exact numbers, never cut', () => {
+    const s = setup(INVITE());
+    s.ctl.setDraft('x'.repeat(230), 'note');
+    s.d.getElementById('custom-message').setAttribute('maxlength', '200');
+    s.btn().click();
+    assert.strictEqual(s.d.getElementById('custom-message').value, '');
+    assert.match(s.hint(), /Your draft is 230 characters; this box allows 200/);
+    const c = setup(INVITE().replace(' maxlength="300"', '').replace('0/300', '0/200'));   // no maxlength: use the counter LinkedIn shows
+    c.ctl.setDraft('y'.repeat(201), 'note'); c.btn().click();
+    assert.match(c.hint(), /this box allows 200/);
+  });
+
+  test('notefill: text you already typed is replaced only after a second, deliberate click', () => {
+    const s = setup(INVITE('', 'my own words'));
+    s.ctl.setDraft('Hi Aryan, quick hello.', 'note');
+    s.btn().click();
+    assert.strictEqual(s.d.getElementById('custom-message').value, 'my own words');
+    assert.match(s.btn().textContent, /Click again to replace/);
+    s.btn().click();
+    assert.strictEqual(s.d.getElementById('custom-message').value, 'Hi Aryan, quick hello.');
+    assert.deepStrictEqual(s.clicks, []);
+  });
+
+  test('notefill: nothing appears where there is no note box (the first dialog, a read-only box, a post composer), and the button goes away with the box', () => {
+    const first = setup('<div role="dialog"><h2>Add a note to your invitation?</h2><button id="addnote">Add a note</button><button id="nonote">Send without a note</button></div>');
+    first.ctl.setDraft('hello', 'note'); first.ctl.scan();
+    assert.strictEqual(first.d.querySelectorAll('[data-outreach-fill]').length, 0);
+    const ro = setup(INVITE().replace('<textarea', '<textarea readonly')); ro.ctl.scan();
+    assert.strictEqual(ro.d.querySelectorAll('[data-outreach-fill]').length, 0);
+    const post = setup('<div class="share-box"><div contenteditable="true" role="textbox">Start a post</div></div>'); post.ctl.scan();
+    assert.strictEqual(post.d.querySelectorAll('[data-outreach-fill]').length, 0);
+    const s = setup(INVITE()); s.ctl.scan(); assert.ok(s.ui());
+    s.d.getElementById('dlg').remove(); s.ctl.scan();
+    assert.strictEqual(s.d.querySelectorAll('[data-outreach-fill]').length, 0);
+  });
+
+  test('notefill: a message box (already connected) is filled too, replacing nothing without a second click', () => {
+    const msg = '<form class="msg-form"><div class="msg-form__contenteditable" contenteditable="true" role="textbox" aria-label="Write a message…"></div><button id="msgsend">Send</button></form>';
+    const s = setup(msg);
+    s.ctl.setDraft('Hi Aryan,\nGreat to be connected.\n\nBest regards,\nSaketh Jangala', 'message'); s.ctl.scan();
+    assert.ok(s.ui(), 'the button appears beside the message box');
+    s.btn().click();
+    assert.match(s.d.querySelector('[role="textbox"]').textContent, /Great to be connected/);
+    assert.deepStrictEqual(s.clicks, [], 'the message was never sent');
+    s.btn().click();   // box now has text → asks first
+    assert.match(s.btn().textContent, /Click again to replace/);
+  });
+
+  test('notefill: the button lives in a shadow root and the draft is never written into the page until you press it', () => {
+    const s = setup(INVITE());
+    s.ctl.setDraft('SECRET-DRAFT-TEXT', 'note');
+    assert.ok(!s.d.documentElement.outerHTML.includes('SECRET-DRAFT-TEXT'), 'the page cannot read the draft before you press the button');
+    assert.ok(s.ui().shadowRoot, 'LinkedIn CSS cannot restyle the button');
+  });
+};
