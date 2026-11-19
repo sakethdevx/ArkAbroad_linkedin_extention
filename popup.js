@@ -1271,14 +1271,15 @@ let autoName = '';   // a name we filled in ourselves (so a better one may repla
 async function ingestResumeText(text, fileName, opts = {}) {
   const parsed = Resume.parseResume(text);
   const prev = (await loadStoredSettings()).senderProfile || {};
-  senderProfile = { intro: prev.intro || '', schools: parsed.schools, employers: parsed.employers, skills: parsed.skills, city: parsed.city || prev.city || '', source: 'device', updatedAt: Date.now() };
+  senderProfile = { intro: prev.intro || '', schools: parsed.schools.map(Safety.normalizeLabel), employers: parsed.employers.map(Safety.normalizeLabel), skills: parsed.skills, city: parsed.city || prev.city || '', source: 'device', updatedAt: Date.now() };
   await storageSet({ resumeText: parsed.redactedText, resumeFileName: fileName, senderProfile });
   await new Promise(r => chrome.storage.local.remove('resumeBase64', r));
 
   fillMeCard(senderProfile);
   setResumeFileUi(fileName);
   const nameEl = document.getElementById('user-name');
-  if (parsed.name && !nameEl.value.trim()) { nameEl.value = parsed.name; autoName = parsed.name; }
+  const nice = Safety.normalizeName(parsed.name);
+  if (nice && !nameEl.value.trim()) { nameEl.value = nice; autoName = nice; }
 
   if (!opts.quiet) {
     const found = [

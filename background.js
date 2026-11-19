@@ -296,7 +296,7 @@ async function prepareContext(data) {
     kind: S(o.kind, 20), label: S(o.label, 80), detail: S(o.detail, 160), line: S(o.line, 200)
   })).filter(o => o.label);
   const safeSender = Safety.sanitizeSenderForPrompt(sender);
-  const senderName = S(settings.userName, 60);
+  const senderName = Safety.normalizeName(settings.userName);   // JANGALA SAKETH → Jangala Saketh
 
   return {
     seed, format, messageType, tone, injection,
@@ -319,7 +319,7 @@ Rules for every draft:
 - Stay strictly within "max_chars_each" characters (models miscount, so leave a few characters spare); aim for about "target_chars".
 - The ask must fit "purpose": Networking = a quick chat or one question about their path; Job = whether they know of openings or how to approach applying; Referral = whether they would be open to referring, only if there is a real connection; Collaboration = a specific small idea to explore together.
 - Describe the sender ONLY with facts in "sender". Use "sender.intro" as written; add at most one project or role and never attach it to a school or employer unless the data pairs them. Never add words like "currently", "recent", "experienced" or any date, role or place that is not written there.
-- Write the way a friendly student would talk: simple words, one natural question (for example "Would you be open to a quick chat?"), no stiff phrases and no vague claims like "recent experience". Format "note" is sent with a connection request to someone new. Format "message" goes to someone the sender is ALREADY connected with, so never ask to connect. Format "note" has no sign-off. Format "message" ends with a short sign-off and the sender's first name if one is given.
+- Write the way a friendly student would talk: simple words, one natural question (for example "Would you be open to a quick chat?"), no stiff phrases and no vague claims like "recent experience". Format "note" is sent with a connection request to someone new. Format "message" goes to someone the sender is ALREADY connected with, so never ask to connect. Format "note" has no sign-off. Format "message" ends with a short sign-off and the sender's FULL name exactly as given in sender_full_name (never just one part of it). Whenever you write the sender's name, use the full name.
 - Tone: Formal = no contractions; Neutral = warm and plain; Casual = relaxed and friendly.
 - Write 3 drafts that differ in wording and structure.
 
@@ -348,7 +348,7 @@ const recipientFirst = (ctx) => { const f = ctx.profile && ctx.profile.firstName
 function buildAiRequest(ctx, provider = PROVIDERS.anthropic) {
   const limit = Compose.LIMITS[ctx.format];
   const payload = {
-    task: { purpose: ctx.messageType, tone: ctx.tone, format: ctx.format, max_chars_each: Math.round(limit * 0.88), sender_first_name: (ctx.senderName || '').split(/\s+/)[0] || null, recipient_first_name: recipientFirst(ctx), target_chars: Math.round(limit * 0.8) },
+    task: { purpose: ctx.messageType, tone: ctx.tone, format: ctx.format, max_chars_each: Math.round(limit * 0.88), sender_full_name: ctx.senderName || null, recipient_first_name: recipientFirst(ctx), target_chars: Math.round(limit * 0.8) },
     sender: ctx.sender,
     recipient_profile: Safety.sanitizeProfileForPrompt(ctx.profile),
     verified_shared_background: ctx.overlaps.map(o => o.line || o.detail)   // sentences already in the sender's voice ("I noticed we both…")
@@ -406,7 +406,16 @@ async function aiDrafts(provider, apiKey, ctx) {
   };
   // "you both" is ambiguous in a message written by the sender (who is "both"?). Say "we both".
   const fixVoice = (t) => t.replace(/\bI (?:see|notice|noticed) (?:that )?you both\b/gi, 'I noticed we both').replace(/\byou both\b/gi, 'we both');
-  raw = raw.map(stripSignoff).map(fixVoice).map(greet).map(trimToFit);
+  // a message signs off with the FULL name; if the model used only one part of it (e.g. just the surname), complete it
+  const fixSignoff = (t) => {
+    if (ctx.format !== 'message' || !nameWords.length) return t;
+    const lines = t.split('\n');
+    const last = lines[lines.length - 1].trim();
+    const words = last.toLowerCase().replace(/[^\p{L}\s'-]/gu, ' ').split(/\s+/).filter(Boolean);
+    if (lines.length > 1 && words.length && words.length <= 3 && words.every(w => nameWords.includes(w)) && last !== ctx.senderName) lines[lines.length - 1] = ctx.senderName;
+    return lines.join('\n');
+  };
+  raw = raw.map(stripSignoff).map(fixSignoff).map(fixVoice).map(greet).map(trimToFit);
 
   let { good, bad } = evaluate(raw);
   let recovered = 0;

@@ -95,6 +95,30 @@
     return out;
   }
 
+  // ── Case clean-up: resumes often shout (JANGALA SAKETH) ──────────────────────
+  const SMALL = new Set(['of', 'and', 'the', 'for', 'in', 'at', 'de', 'la', 'van', 'von', 'der', 'da', 'di', 'du', 'bin', 'al', 'el']);
+  const lettersOf = (s) => String(s).replace(/[^\p{L}]/gu, '');
+  const isShouty = (s) => { const l = lettersOf(s); return l.length >= 3 && l === l.toUpperCase() && l !== l.toLowerCase(); };
+  const isLowerOnly = (s) => { const l = lettersOf(s); return l.length >= 3 && l === l.toLowerCase() && l !== l.toUpperCase(); };
+  const titleWord = (w) => w.split(/([-'’.])/).map(p => (/^\p{L}/u.test(p) ? p.charAt(0).toUpperCase() + p.slice(1).toLowerCase() : p)).join('');
+
+  // A person's name: ALL CAPS or all lower-case becomes Title Case; a name already in mixed case is left exactly as written.
+  function normalizeName(name) {
+    const t = sanitizeText(name, 80);
+    if (!t || !(isShouty(t) || isLowerOnly(t))) return t;
+    return t.split(/\s+/).map(titleWord).join(' ');
+  }
+
+  // A school / employer / job title: only fixed when the whole thing is shouting AND every real word is long enough that it
+  // cannot be an acronym (so "VELLORE INSTITUTE OF TECHNOLOGY" is fixed but "IIT MADRAS" or "SRI CHAITANYA COLLEGE" are left alone).
+  function normalizeLabel(label) {
+    const t = sanitizeText(label, 160);
+    const words = t.split(/\s+/);
+    if (words.length < 2 || !isShouty(t)) return t;
+    if (words.some(w => !SMALL.has(w.toLowerCase()) && lettersOf(w).length < 5)) return t;
+    return words.map((w, i) => (i > 0 && SMALL.has(w.toLowerCase()) ? w.toLowerCase() : titleWord(w))).join(' ');
+  }
+
   // ── Resume → structured sender profile (model output is untrusted too) ───────
   // Keeps line breaks (a resume is line-structured) but strips invisible characters and caps total size.
   function sanitizeMultiline(s, max = 12000) {
@@ -138,8 +162,12 @@
     const projects   = objs(r.projects, 4, { name: 80, summary: 160 }, 'name', true);
     const skills     = list(r.skills, 20, 40, true);
 
+    const L = normalizeLabel;
+    education.forEach(e => { e.school = L(e.school); });
+    experience.forEach(e => { e.company = L(e.company); e.title = L(e.title); });
+    projects.forEach(e => { e.name = L(e.name); });
     return {
-      name: clean(r.name, 80),
+      name: normalizeName(clean(r.name, 80)),
       intro: clean(r.intro, 120),
       summary: clean(r.summary, 300),
       city: clean(r.city, 60),
@@ -174,5 +202,5 @@
     return { ok: problems.length === 0, text: t, problems };
   }
 
-  return { sanitizeText, sanitizeMultiline, sanitizeSenderProfile, groundedIn, sanitizeProfileForPrompt, sanitizeSenderForPrompt, detectInjection, validateOutput, hadInvisible, INVISIBLE };
+  return { normalizeName, normalizeLabel, sanitizeText, sanitizeMultiline, sanitizeSenderProfile, groundedIn, sanitizeProfileForPrompt, sanitizeSenderForPrompt, detectInjection, validateOutput, hadInvisible, INVISIBLE };
 });

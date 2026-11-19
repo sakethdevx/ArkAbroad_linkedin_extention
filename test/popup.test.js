@@ -11,7 +11,7 @@ module.exports = (test) => {
   const root = path.join(__dirname, '..');
   const PP = require(path.join(root, 'utils/profile_parse.js'));
   const tick = (n = 40) => new Promise(r => setTimeout(r, n));
-  const SCRIPTS = ['utils/profile_parse.js', 'utils/overlap.js', 'utils/compose.js', 'utils/resume.js', 'utils/cache.js', 'popup.js'];
+  const SCRIPTS = ['utils/safety.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/compose.js', 'utils/resume.js', 'utils/cache.js', 'popup.js'];
 
   const PRIYA = () => PP.buildProfile({
     name: 'Priya Rao', headline: 'Data Scientist at Globex', location: 'Chennai, India',
@@ -527,5 +527,15 @@ module.exports = (test) => {
     t.setUrl('https://www.linkedin.com/in/other/'); t.listeners[0](); await tick(400);
     assert.strictEqual(t.w.document.querySelector('.format-btn[data-format="note"]').getAttribute('aria-checked'), 'true');
     assert.ok(!/so I chose/.test(t.$('format-tip').textContent));
+  });
+
+  test('popup: a resume name written in capitals is filled in properly cased (device read and AI read)', async () => {
+    const shouty = 'JANGALA SAKETH\nChennai, India\n\nEDUCATION\nVELLORE INSTITUTE OF TECHNOLOGY CHENNAI\nB.Tech Computer Science 2022 - 2026\n\nEXPERIENCE\nSoftware Intern, Globex, Jun 2024 - Aug 2024\n\nSKILLS\nPython, SQL, Docker, Git';
+    const t = await boot({});
+    t.$('resume-paste').value = shouty;
+    await t.click('resume-paste-btn', 150);
+    assert.strictEqual(t.$('user-name').value, 'Jangala Saketh');
+    assert.ok(!/VELLORE INSTITUTE/.test(t.$('me-schools').value) || /Vellore Institute/.test(t.$('me-schools').value));
+    assert.deepStrictEqual(t.errors, []);
   });
 };

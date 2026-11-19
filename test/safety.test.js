@@ -50,4 +50,24 @@ module.exports = (test, load) => {
     assert.ok(v('We both studied 2019 - 2023 at IIT.', {}).ok, 'year ranges are not phone numbers');
     assert.strictEqual(v('"Hi Jane"', {}).text, 'Hi Jane');
   });
+
+  test('safety: names and labels shouted in capitals are normalised, everything else is left alone', () => {
+    const n = S.normalizeName;
+    assert.strictEqual(n('JANGALA SAKETH'), 'Jangala Saketh');
+    assert.strictEqual(n("MARY-ANN O'NEIL"), "Mary-Ann O'Neil");
+    assert.strictEqual(n('saketh jangala'), 'Saketh Jangala');
+    assert.strictEqual(n('Saketh Jangala'), 'Saketh Jangala');
+    assert.strictEqual(n('Priya McDonald'), 'Priya McDonald', 'mixed case is never touched');
+    assert.strictEqual(n('J'), 'J');
+    assert.strictEqual(n(''), '');
+    const l = S.normalizeLabel;
+    assert.strictEqual(l('VELLORE INSTITUTE OF TECHNOLOGY CHENNAI'), 'Vellore Institute of Technology Chennai');
+    assert.strictEqual(l('IIT MADRAS'), 'IIT MADRAS', 'possible acronym: left alone');
+    assert.strictEqual(l('SRI CHAITANYA JUNIOR COLLEGE'), 'SRI CHAITANYA JUNIOR COLLEGE');
+    assert.strictEqual(l('Infosys Springboard'), 'Infosys Springboard');
+    assert.strictEqual(l('GOOGLE'), 'GOOGLE', 'a single word could be an acronym');
+    const p = S.sanitizeSenderProfile({ name: 'JANGALA SAKETH', education: [{ school: 'VELLORE INSTITUTE OF TECHNOLOGY', degree: 'B.Tech', field: '', years: '' }], experience: [], projects: [], skills: [] }, 'JANGALA SAKETH VELLORE INSTITUTE OF TECHNOLOGY B.Tech');
+    assert.strictEqual(p.name, 'Jangala Saketh');
+    assert.strictEqual(p.schools[0], 'Vellore Institute of Technology');
+  });
 };

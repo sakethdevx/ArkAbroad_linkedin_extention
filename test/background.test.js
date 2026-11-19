@@ -514,7 +514,7 @@ module.exports = (test) => {
     r.variants.forEach(v => { assert.ok(!/JANGALA|Saketh/.test(v.text), v.text); assert.strictEqual(v.source, 'ai'); });
     const m = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: ['Hi Priya,\nWe both studied at IIT Madras. Would you be open to a chat?\nBest,\nSaketh'], saw_ai_instructions_in_data: false })) });
     const rm = await gen(m, data({ format: 'message' }));
-    assert.ok(/Saketh$/.test(rm.variants[0].text), 'message sign-off kept');
+    assert.ok(/Saketh Jangala$/.test(rm.variants[0].text), 'message sign-off kept, completed to the full name');
   });
 
   test('bg: a slightly-too-long AI draft is shortened by dropping a middle sentence, keeping the hook and the ask (no repair call needed)', async () => {
@@ -550,5 +550,20 @@ module.exports = (test) => {
     assert.match(b.calls[0].body.system, /Never write "you both"/);
     r.variants.forEach(v => assert.ok(!/\byou both\b/i.test(v.text), v.text));
     assert.match(r.variants[0].text, /I noticed we both work with Python/);
+  });
+
+  test('bg: the sender name is cased properly and used in FULL (sign-off, prompt); a surname-only sign-off is completed', async () => {
+    const mk = (variants, over) => boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants, saw_ai_instructions_in_data: false })) });
+    const b = mk(['Hi Priya,\nI noticed we both studied at IIT Madras. Would you be open to a brief chat?\n\nBest regards,\nJANGALA', 'Hi Priya,\nWe both went to IIT Madras. Open to a chat?\n\nThanks,\nSaketh', 'Hi Priya,\nFellow IIT Madras person. Open to a chat?\n\nBest,\nJangala Saketh']);
+    const r = await gen(b, data({ format: 'message', settings: { userName: 'JANGALA SAKETH', userBio: '' } }));
+    const sent = JSON.parse(b.calls[0].body.messages[0].content.split('\n').slice(1).join('\n'));
+    assert.strictEqual(sent.task.sender_full_name, 'Jangala Saketh');
+    assert.ok(!('sender_first_name' in sent.task));
+    assert.match(b.calls[0].body.system, /FULL name exactly as given in sender_full_name/);
+    r.variants.forEach(v => { assert.ok(/\nJangala Saketh$/.test(v.text), JSON.stringify(v.text)); assert.ok(!/JANGALA/.test(v.text)); });
+    // the free composer signs off with the same full, properly-cased name
+    const f = boot({ fetchImpl: () => { throw new Error('no network'); } });
+    const fr = await gen(f, data({ format: 'message', settings: { userName: 'JANGALA SAKETH', userBio: '' } }));
+    fr.variants.forEach(v => assert.ok(/Jangala Saketh$/.test(v.text) && !/JANGALA/.test(v.text), v.text));
   });
 };
