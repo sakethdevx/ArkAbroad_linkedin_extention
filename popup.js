@@ -628,16 +628,20 @@ async function handleValidateKey() {
     chrome.runtime.sendMessage({ type: 'TEST_API_KEY', payload: { apiKey, provider: provider.id } }, resolve);
   });
 
-  btn.textContent = 'Test';
+  btn.textContent = 'Connect';
   btn.disabled = false;
 
   const el = document.getElementById('key-validation-status');
   el.classList.remove('hidden');
 
   if (result && result.valid) {
-    // "Test" only tests. Saving stays an explicit action (it used to silently save the key).
-    el.textContent = `✓ ${provider.name} key works. Click Save Settings to turn AI Mode on.`;
+    // A working key is all the setup there is: save it and go straight to the one-time yes. No second "Save" step.
+    await storageSet({ userApiKey: apiKey, aiProvider: provider.id });
+    const on = await ensureAiEnabled();
+    await setAiMode(on ? 'ai' : 'free');
+    el.textContent = on ? `✓ Connected. AI is on (${provider.name}).` : `✓ ${provider.name} key works and is saved. AI is off: tap AI in the top bar when you want it.`;
     el.className   = 'key-validation-status valid';
+    if (on) await autoReadResumeWithAi();
   } else {
     el.textContent = `✗ ${result?.reason || 'Key did not work'}`;
     el.className   = 'key-validation-status invalid';

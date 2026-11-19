@@ -194,3 +194,7 @@ _Slices land below as they ship._
 
 ### Fix: the "Turn on AI" dialog opened in the top-left corner
 **Cause** The stylesheet's global `* { margin: 0 }` reset removed the `margin: auto` that centres a modal `<dialog>`. **Fix** The dialog sets `margin: auto; inset: 0` itself (checked in real Chrome), and a test guards it. Also tidied the enable dialog: no empty "Instructions" section, no duplicated "Not sent" line, and the sentence now reads "Sent to … when you use AI:".
+
+### UX: "Test" became "Connect": test, save and turn on AI in one step
+**Problem** After pasting a key and pressing Test, the page said the key worked, but AI was not actually on: the student still had to scroll down, press Save, and then meet a dialog. It looked finished and wasn't.
+**Change** The button is now **Connect**. A working key is saved on the spot and the one-time "Turn on AI?" dialog opens right away; saying yes turns AI on and shows "✓ Connected. AI is on (Groq)." (and reads an already-uploaded résumé). "Not now" keeps the key and says how to turn AI on later. A bad key or a denied host permission saves nothing. Save Settings still works for the other fields.

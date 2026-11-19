@@ -309,13 +309,29 @@ module.exports = (test) => {
   test('provider: Test asks for the permission, then tests with the right provider; denied → clear message, no test', async () => {
     const t = await boot({});
     t.$('api-key').value = 'gsk_abc'; t.$('api-key').dispatchEvent(new t.w.Event('input'));
-    await t.click('validate-btn', 80);
+    await t.click('validate-btn', 150);
     assert.deepStrictEqual(t.permCalls, ['https://api.groq.com/*']);
-    assert.match(t.$('key-validation-status').textContent, /Groq key works/);
+    // a working key goes straight to the one-time yes: no separate Save step
+    assert.ok(t.$('consent-dialog').hasAttribute('open'));
+    assert.match(t.$('consent-title').textContent, /Turn on AI with Groq/);
+    assert.strictEqual(t.store.userApiKey, 'gsk_abc');
+    await t.click('consent-send', 150);
+    assert.strictEqual(t.store.mode, 'ai');
+    assert.match(t.$('key-validation-status').textContent, /Connected\. AI is on \(Groq\)/);
+    assert.strictEqual(t.$('validate-btn').textContent, 'Connect');
+    assert.match(t.$('privacy-text').textContent, /Groq/);
+    // "Not now": key is kept, AI stays off, and the message says how to turn it on
+    const n = await boot({});
+    n.$('api-key').value = 'gsk_abc'; n.$('api-key').dispatchEvent(new n.w.Event('input'));
+    await n.click('validate-btn', 150); await n.click('consent-cancel', 150);
+    assert.strictEqual(n.store.userApiKey, 'gsk_abc');
+    assert.notStrictEqual(n.store.mode, 'ai');
+    assert.match(n.$('key-validation-status').textContent, /saved\. AI is off: tap AI/);
     const d = await boot({}); d.deny();
     d.$('api-key').value = 'gsk_abc'; d.$('api-key').dispatchEvent(new d.w.Event('input'));
     await d.click('validate-btn', 80);
     assert.match(d.$('key-validation-status').textContent, /Allow access to api\.groq\.com/);
+    assert.ok(!d.store.userApiKey, 'nothing is saved when access is denied');
   });
 
   test('provider: consent is per provider (legacy Anthropic consent does not cover Groq); dialog names provider, host, model', async () => {
