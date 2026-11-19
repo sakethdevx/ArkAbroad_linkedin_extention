@@ -63,6 +63,25 @@
   const looksLikeLocation = (s) => !!s && !isDateLine(s) && !isDurationOnly(s) && !looksLikeSentence(s) &&
     (/,/.test(s) || /\b(?:remote|hybrid|on-?site)\b/i.test(s));
 
+  // A job title or company name is a short label, not a sentence. Descriptions, "see more" text and posts
+  // sometimes sit in the same list items as real entries; never let them become a title or company.
+const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gmbh|vs|no|dept|univ|assoc|eng|mgr|vp|svp|evp)$/i;
+  // true when the text contains a real sentence break ("… here. The keys …"), not an abbreviation ("Dr. Smith", "Acme Inc. Group", "U.S. Bank")
+  function hasSentenceBreak(t) {
+    const re = /(\p{L}+)[.!?]\s+\p{Lu}/gu;
+    let m;
+    while ((m = re.exec(t))) { if (m[1].length > 1 && !ABBREV.test(m[1])) return true; }
+    return false;
+  }
+  function plausibleLabel(s, max = 80) {
+    const t = clean(s);
+    if (!t || t.length > max) return false;
+    if (/[….]$/.test(t) || /…/.test(t)) return false;             // truncated text or a sentence end
+    if (hasSentenceBreak(t)) return false;                         // two sentences
+    if (t.split(' ').length > 12) return false;
+    return true;
+  }
+
   // ── One experience role from its text lines ─────────────────────────────────
   function parseRoleLines(rawLines) {
     const lines = cleanLines(rawLines);
@@ -86,8 +105,9 @@
     const parts = companyLine.split(/[·•]/).map(clean);
     if (!employmentType && parts[1]) employmentType = parts[1];
     return {
-      title: clean(title),
-      company: parts[0] || '',
+      title: plausibleLabel(title) ? clean(title) : '',
+      company: plausibleLabel(parts[0], 80) ? parts[0] : '',
+      undated: k === -1,
       employmentType,
       dates,
       duration: dates,
@@ -113,6 +133,8 @@
         }
       } else {
         const r = parseRoleLines(b.lines);
+        // No date line: only trust it if it still reads like "Title / Company" (both short labels).
+        if (r.undated && !(r.title && r.company)) continue;
         if (r.title || r.company) out.push(r);
       }
     }
@@ -232,19 +254,21 @@
   function buildProfile(parts = {}) {
     const experience = Array.isArray(parts.experience) ? parts.experience : [];
     const fromHeadline = titleCompanyFromHeadline(parts.headline);
-    const explicitCurrent = experience.find(e => e.isCurrent);
+    const explicitCurrent = experience.find(e => e.isCurrent && (e.title || e.company));
     const cur = explicitCurrent || null;
 
     let currentTitle = '', currentCompany = '';
     if (cur) { currentTitle = cur.title; currentCompany = cur.company; }
     else if (fromHeadline) { currentTitle = fromHeadline.title; currentCompany = fromHeadline.company; }
-    else if (experience[0]) { currentTitle = experience[0].title; currentCompany = experience[0].company; }
+    else { const first = experience.find(e => e.title || e.company); if (first) { currentTitle = first.title; currentCompany = first.company; } }
 
+    if (!plausibleLabel(currentTitle)) currentTitle = '';
+    if (!plausibleLabel(currentCompany)) currentCompany = '';
     const seen = new Set([currentCompany.toLowerCase()]);
     const pastCompanies = [];
     for (const e of experience) {
       const c = clean(e.company);
-      if (!c || seen.has(c.toLowerCase())) continue;
+      if (!c || !plausibleLabel(c) || seen.has(c.toLowerCase())) continue;
       seen.add(c.toLowerCase());
       pastCompanies.push(c);
     }
@@ -264,7 +288,7 @@
       profileUrl:        parts.profileUrl || '',
       source:            parts.source || 'page'
     };
-    profile.quality = assessQuality(profile, { currentInferred: !cur && !fromHeadline && !!experience[0], extraWarnings: parts.warnings });
+    profile.quality = assessQuality(profile, { currentInferred: !cur && !fromHeadline && !!(currentTitle || currentCompany), extraWarnings: parts.warnings });
     return profile;
   }
 
@@ -340,6 +364,6 @@
     parseRoleLines, parseExperienceBlocks, parseExperienceLines,
     parseEducationBlocks, parseEducationLines, parseSkills,
     titleCompanyFromHeadline, nameFromPageTitle, nameFromUrl,
-    buildProfile, assessQuality, parseProfileText, headingKey
+    buildProfile, assessQuality, parseProfileText, headingKey, plausibleLabel
   };
 });

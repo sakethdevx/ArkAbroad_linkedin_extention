@@ -138,6 +138,29 @@ test('pasted text → profile (Spanish headings, no crash on junk)', () => {
   assert.strictEqual(PP.parseProfileText('').quality.confidence, 'none');
 });
 
+// ── Regression: description text must never become a job title (reported on a real profile) ──
+const JUNK = 'This essay was originally published here. The keys my employee had just thrown at me ricocheted off of my left shoulder…';
+
+test('regression: a description block in Experience is not a role, title or company', () => {
+  const only = PP.buildProfile({ name: 'Justin Welsh', headline: 'Building a profitable one-person business', experience: PP.parseExperienceBlocks([{ lines: [JUNK], children: [] }]) });
+  assert.strictEqual(only.currentTitle, '');
+  assert.strictEqual(only.currentCompany, '');
+  const mixed = PP.buildProfile({ name: 'J', experience: PP.parseExperienceBlocks([
+    { lines: [JUNK], children: [] }, { lines: ['Founder', 'Acme · Self-employed', 'Jan 2019 - Present · 5 yrs'], children: [] }] ) });
+  assert.deepStrictEqual([mixed.currentTitle, mixed.currentCompany], ['Founder', 'Acme']);
+});
+
+test('regression: plausibleLabel accepts real titles/companies, rejects sentences and truncated text', () => {
+  ['Marketing Intern', 'Senior Software Engineer', 'Tata Consultancy Services', 'Founder & CEO', 'Dr. Smith Dental Clinic', 'Acme Inc. Group', 'U.S. Bank', 'Sr. Engineer'].forEach(t => assert.ok(PP.plausibleLabel(t), t));
+  [JUNK, 'Led a team of five. We shipped the thing', 'x'.repeat(90), 'Something that was cut off…', ''].forEach(t => assert.ok(!PP.plausibleLabel(t), t));
+});
+
+test('regression: undated entries survive only if they still look like Title / Company', () => {
+  const ok = PP.parseExperienceBlocks([{ lines: ['Barista', 'Local Cafe'], children: [] }]);
+  assert.deepStrictEqual(ok.map(e => [e.title, e.company]), [['Barista', 'Local Cafe']]);
+  assert.strictEqual(PP.parseExperienceBlocks([{ lines: ['Barista'], children: [] }]).length, 0);
+});
+
 // ── Runner ───────────────────────────────────────────────────────────────────
 // Later slices append test modules; dom.test.js needs jsdom and skips itself without it.
 ['dom', 'overlap', 'compose', 'safety', 'resume', 'background', 'manifest', 'html', 'popup'].forEach(n => {

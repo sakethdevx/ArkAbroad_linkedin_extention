@@ -103,3 +103,15 @@ _Slices land below as they ship._
 **As a first-time student with no API key:** is it clear within a minute? → Found and fixed: the draft was below the fold (now scrolls into view); the résumé was never suggested on first run (one-time tip, dismissible); no nudge to write a one-line intro (draft note); "Not now" was styled like a destructive action; **"Scrape & Generate" is developer jargon → "Read profile & write draft"**; textarea too tall for a 200-char note.
 
 **Real defects the review surfaced:** scraping targeted `currentWindow` rather than the panel's tab (wrong with several windows) → the panel now passes its tab id; opening LinkedIn's *Contact info* overlay changed the URL and would have wiped the draft → page identity is now the profile slug; quoting a post from *Activity* can attribute a repost to the wrong person → explicit "check it's theirs" notice; `…”.` punctuation pile-up in quoted hooks; contrast on warning text.
+
+### Fix: description text used as a job title (found on a real profile)
+**What happened** On a real creator profile, the draft read *"Your work as This essay was originally published here. The keys my employee had just thrown at me ricocheted off of my left shoulder… stood out to me."* A description / "see more" block inside the Experience list had no date line, and the parser accepted *any* undated block as a role, using its first line as the title; with no job marked current, it won.
+
+**Fix (three layers)**
+- **Parser:** an undated block only counts as a role if it still reads like *Title / Company* (two short labels); titles/companies must pass `plausibleLabel` (short, no truncation "…", no sentence break; abbreviations like *Dr.*, *Inc.*, *U.S.* are fine).
+- **Profile builder:** the chosen current title/company and past companies are validated the same way; entries with neither are skipped.
+- **Composer:** even if bad text reaches it, a paragraph is never spliced into "Your work as …"; it falls back to the generic opener.
+
+**Tradeoff** In that case the draft is now generic ("I came across your profile…") rather than wrong. With a résumé overlap, a recent post, or a clean role it's still specific. A headline-based opener is the obvious next improvement.
+
+**Tests** Regression tests reproduce the exact text, plus abbreviation false-positives (my first version wrongly rejected "Dr. Smith Dental Clinic"; the new test caught it).

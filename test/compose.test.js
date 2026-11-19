@@ -77,6 +77,16 @@ module.exports = (test, load) => {
     assert.ok(C.compose(base({ messageType: 'Referral', format: 'message' })).variants.some(v => /referral/i.test(v.text)));
   });
 
+  test('compose: a paragraph in title/company is never spliced into a sentence', () => {
+    const junk = 'This essay was originally published here. The keys my employee had just thrown at me ricocheted off of my left shoulder…';
+    for (const type of ['Networking', 'Job', 'Referral', 'Collaboration']) for (const format of ['note', 'message']) {
+      const v = C.compose(base({ overlaps: [], messageType: type, format, profile: { firstName: 'Justin', currentTitle: junk, currentCompany: junk, recentPosts: [] } })).variants;
+      v.forEach(x => assert.ok(!/essay|ricocheted|originally published/.test(x.text), x.text));
+      assert.ok(v.every(x => x.text.length <= C.LIMITS[format]));
+    }
+    assert.match(C.compose(base({ overlaps: [], profile: { firstName: 'Justin', currentTitle: junk, currentCompany: '' } })).variants[0].text, /came across your profile/);
+  });
+
   test('compose: survives empty / hostile profile fields', () => {
     assert.doesNotThrow(() => C.compose({ profile: {}, overlaps: [], messageType: 'Nope', tone: 'Nope', format: 'zzz' }));
     assert.doesNotThrow(() => C.compose({ profile: { firstName: '東京', currentTitle: '<script>', recentPosts: [null, 5] }, sender: null, overlaps: null, messageType: 'Job', tone: 'Casual', format: 'note' }));

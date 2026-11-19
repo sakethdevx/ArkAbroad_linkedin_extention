@@ -82,8 +82,15 @@
     return { text: pick([`I enjoyed your recent post: “${snip}”${dot}`, `Your recent post “${snip}” caught my eye.`], n), kind: 'post' };
   }
 
+  // Titles/companies are spliced into a sentence, so they must look like short labels. If the scrape ever hands us a
+  // paragraph (descriptions, posts), skip the role line rather than quote it back at the reader.
+  const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gmbh|vs|no|dept|univ|assoc|eng|mgr|vp|svp|evp)$/i;
+  const hasSentenceBreak = (t) => { const re = /(\p{L}+)[.!?]\s+\p{Lu}/gu; let m; while ((m = re.exec(t))) { if (m[1].length > 1 && !ABBREV.test(m[1])) return true; } return false; };
+  const isLabel = (s, max) => { const t = clean(s); return !!t && t.length <= max && !/…/.test(t) && !hasSentenceBreak(t) && t.split(' ').length <= 12; };
+
   function roleHook(p, n) {
-    const title = clean(p.currentTitle), co = clean(p.currentCompany);
+    const title = isLabel(p.currentTitle, 70) ? clean(p.currentTitle) : '';
+    const co = isLabel(p.currentCompany, 60) ? clean(p.currentCompany) : '';
     // Never claim things the sender may not be able to stand behind ("I've been following…"): only describe what's on the profile.
     if (/^(?:student|undergraduate|graduate student|intern)$/i.test(title) && co) {
       return pick([`Saw you're ${/intern/i.test(title) ? 'interning' : 'studying'} at ${co}.`, `I noticed you're ${/intern/i.test(title) ? 'an intern' : 'a student'} at ${co}.`], n);
@@ -109,7 +116,7 @@
 
   // ── Asks (ONE per message) ──────────────────────────────────────────────────
   function askFor(type, p, overlaps, n, short) {
-    const co = clean(p.currentCompany);
+    const co = isLabel(p.currentCompany, 60) ? clean(p.currentCompany) : '';
     const atCo = co ? ` at ${co}` : '';
     const skills = (overlaps || []).find(o => o.kind === 'skills');
     const A = {
