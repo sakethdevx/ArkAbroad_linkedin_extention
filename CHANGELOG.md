@@ -232,3 +232,11 @@ A real Groq draft was exactly 200/200 and claimed the sender was "currently inte
 **Change** A single line says "Step 1 of 2: Read this profile and see what you have in common" with one button, **Read this profile**. When it finishes, the button becomes **Write my draft** and the line says "Step 2 of 2: check what I found, then write your draft", with a small "Read the page again" link. The hooks box is titled "What I found you can mention", and a scraped "Skills (23)" heading is no longer shown as a skill.
 
 **Also** My Free/AI header buttons reused the `.mode-btn` class of the Quick/Review buttons, so one restyled the other; the header buttons now have their own class (`aiswitch-btn`) and Quick/Review go back to their intended look.
+
+### UI: Settings redesigned from one long form into three calm cards
+**Problem** Settings had grown into a profile page: key, name, bio, upload, then a dozen resume fields and a long privacy note, all open at once.
+**Change**
+1. **AI writing (optional)**: provider, key and Connect. Open until a key is saved, then it folds to one line ("On · Groq").
+2. **About you**: name, short bio, resume upload (with paste as a fallback).
+3. **Your profile**: folded to one summary line ("2 schools · 2 employers · 20 skills · Chennai"). Opening it shows only the essentials (intro, city, skills, education, experience, projects); schools/employers lists, certifications and languages sit in a second fold, "Matching lists and extras". It opens by itself right after a resume is read so you can check it.
+- "What leaves your device" is a fold-away card (and opens when you tap "What's sent?" with no profile). **Save settings** stays pinned at the bottom while you scroll. Copy is shorter throughout. All field ids are unchanged.

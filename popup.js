@@ -106,6 +106,9 @@ async function refreshModeBadge() {
   document.getElementById('privacy-text').textContent = m.ai
     ? `AI Mode: a short profile summary goes to ${m.provider.name} (your key).`
     : `Free Mode: everything stays on this device.${m.hasKey ? ' AI is ready. Tap AI to use it.' : ''}`;
+  const chip = document.getElementById('ai-setup-status');
+  chip.textContent = m.hasKey ? `${m.ai ? 'On' : 'Saved'} · ${m.provider.name}` : 'Not set up';
+  chip.classList.toggle('ok', m.ai);
   refreshAiResumeBtn();
 }
 
@@ -544,6 +547,7 @@ async function loadSettings() {
     s = await loadStoredSettings();
   }
 
+  document.getElementById('ai-setup').open = !(s.userApiKey || '').trim();   // folds to one line once a key is saved
   senderProfile = s.senderProfile || null;
   if (senderProfile || s.resumeFileName) {
     fillMeCard(senderProfile || {});
@@ -1049,6 +1053,7 @@ async function showPrivacyDetails() {
     if ((await getModeState()).ai) { await showConsentDialog(await requestData(currentProfile), true); return; }
   }
   switchTab('settings');
+  document.getElementById('privacy-note').open = true;
   scrollIntoViewSoft(document.querySelector('.settings-note'));
 }
 
@@ -1148,6 +1153,7 @@ function fillMeCard(sp) {
   document.getElementById('me-projects').value   = rowsToText(sp.projects, ROW_FIELDS.projects);
   document.getElementById('me-certs').value      = (sp.certifications || []).join(', ');
   document.getElementById('me-languages').value  = (sp.languages || []).join(', ');
+  renderMeSummary(sp);
   refreshAiResumeBtn();
 }
 
@@ -1170,6 +1176,17 @@ function readMeCard() {
   };
 }
 
+function renderMeSummary(sp) {
+  const n = (a) => (Array.isArray(a) ? a.filter(Boolean).length : 0);
+  const bits = [
+    n(sp.schools) && `${n(sp.schools)} school${n(sp.schools) > 1 ? 's' : ''}`,
+    n(sp.employers) && `${n(sp.employers)} employer${n(sp.employers) > 1 ? 's' : ''}`,
+    n(sp.skills) && `${n(sp.skills)} skills`,
+    sp.city
+  ].filter(Boolean);
+  document.getElementById('me-summary').textContent = bits.length ? bits.join(' · ') : 'tap to add details';
+}
+
 async function refreshAiResumeBtn() {
   const s = await storageGet(['resumeText']);
   document.getElementById('resume-ai-btn').classList.toggle('hidden', !((await getModeState()).ai && s.resumeText));
@@ -1177,6 +1194,7 @@ async function refreshAiResumeBtn() {
 
 async function saveSenderFromCard() {
   senderProfile = readMeCard();
+  renderMeSummary(senderProfile);
   await storageSet({ senderProfile });
   renderOverlaps(true);
 }
@@ -1203,6 +1221,7 @@ async function ingestResumeText(text, fileName, opts = {}) {
     if (found.length) setResumeStatus(`Read on this device ✓ Found ${found.join(', ')}. Check them below.`, 'success');
     else setResumeStatus("I read your resume but couldn't pick out schools, employers or skills. Add them below and I'll use those.", 'pending');
   }
+  if (!opts.quiet) document.getElementById('me-card').open = true;
   renderOverlaps(true);
   refreshResumeTip();
   if (!opts.quiet) await tryAiResume(parsed.redactedText, { afterDevice: true });
@@ -1243,6 +1262,7 @@ async function tryAiResume(text, opts = {}) {
     ai.skills.length     && `${ai.skills.length} skills`
   ].filter(Boolean);
   setResumeStatus(`${prev.providerName} read your resume ✓ Filled in ${bits.join(', ') || 'your profile'}. Check it below.${res.sawInjection ? ' Note: the resume contained text aimed at an AI; it was ignored.' : ''}`, 'success');
+  document.getElementById('me-card').open = true;
   renderOverlaps(true);
   refreshResumeTip();
   return true;

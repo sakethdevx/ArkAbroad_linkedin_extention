@@ -227,118 +227,130 @@
     <section class="tab-content" id="tab-settings" role="tabpanel" aria-labelledby="tabbtn-settings">
       <div class="settings-form">
 
-        <!-- Optional: user's own API key -->
-        <div class="api-key-section">
-          <label class="api-key-label" for="api-key">Your AI key (optional)</label>
-          <div class="api-key-desc" id="api-key-desc">Leave empty to use Free Mode: no key needed. Add your own key and an AI writes the drafts instead. “What’s sent?” at the top always shows exactly what goes out.</div>
-          <div class="provider-row" role="radiogroup" aria-label="AI provider">
-            <button type="button" class="provider-btn active" role="radio" aria-checked="true" data-provider="anthropic">Anthropic <span class="provider-sub">Claude</span></button>
-            <button type="button" class="provider-btn" role="radio" aria-checked="false" data-provider="groq">Groq <span class="provider-sub">Llama · free plan</span></button>
-          </div>
-          <div class="api-key-input-wrap">
-            <input id="api-key" type="password" class="api-key-input"
-              placeholder="sk-ant-…" autocomplete="off" spellcheck="false" aria-describedby="api-key-desc provider-help" />
-            <button class="validate-btn" id="validate-btn" type="button" aria-label="Test the key and turn AI on">Connect</button>
-          </div>
-          <p class="provider-help" id="provider-help"></p>
-          <div class="key-validation-status hidden" id="key-validation-status" role="status" aria-live="polite"></div>
-          <p class="field-hint">Press Connect: it tests the key, saves it and turns AI on after one quick yes. Switch between Free and AI any time from the top bar; your key stays saved.</p>
-        </div>
-
-        <div class="field-group full">
-          <label class="field-label" for="user-name">Your Name</label>
-          <input id="user-name" type="text" class="field-input" placeholder="Jane Smith" autocomplete="off" />
-        </div>
-
-        <div class="field-group full">
-          <label class="field-label" for="user-bio">Your Bio</label>
-          <textarea id="user-bio" class="field-textarea" rows="3"
-            placeholder="One or two sentences about you. Used when you haven’t written a one-line intro below."></textarea>
-        </div>
-
-        <div class="field-group full">
-          <label class="field-label" for="resume-upload">Your resume (PDF)</label>
-          <div class="file-upload-area" id="file-upload-area" role="button" tabindex="0" aria-label="Upload your resume PDF">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M14 2v6h6M12 18v-6M9 15l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span id="file-label">Click to upload or drag PDF here</span>
-            <input id="resume-upload" type="file" accept=".pdf,application/pdf" class="file-input" />
-          </div>
-          <p class="field-hint">The PDF itself is never saved or sent. Emails and phone numbers are removed from its text. In Free Mode the text is read on this device; in AI Mode that text goes to your AI provider.</p>
-          <div class="resume-status hidden" id="resume-status" role="status" aria-live="polite"></div>
-
-          <details class="paste-card" id="resume-paste-card">
-            <summary>Prefer to paste your resume text?</summary>
-            <div class="paste-body">
-              <label class="field-label" for="resume-paste">Resume text</label>
-              <textarea id="resume-paste" class="field-textarea" rows="4" spellcheck="false" placeholder="Paste the text of your resume here"></textarea>
-              <button id="resume-paste-btn" class="btn btn-secondary btn-full" type="button">Read pasted resume</button>
+        <!-- 1 · AI (optional). Open until a key is saved, then it folds to one line. -->
+        <details class="set-card api-key-section" id="ai-setup" open>
+          <summary><span class="set-title">AI writing <span class="set-opt">optional</span></span><span class="set-chip" id="ai-setup-status">Not set up</span></summary>
+          <div class="set-body">
+            <p class="api-key-desc" id="api-key-desc">Free Mode needs nothing. Add your own key and an AI writes the drafts instead.</p>
+            <div class="provider-row" role="radiogroup" aria-label="AI provider">
+              <button type="button" class="provider-btn active" role="radio" aria-checked="true" data-provider="anthropic">Anthropic <span class="provider-sub">Claude</span></button>
+              <button type="button" class="provider-btn" role="radio" aria-checked="false" data-provider="groq">Groq <span class="provider-sub">Llama · free plan</span></button>
             </div>
-          </details>
-        </div>
-
-        <fieldset class="me-card hidden" id="me-card">
-          <legend>What I found about you <span class="me-sub">edit anything that’s off</span></legend>
-          <div class="field-group full">
-            <label class="field-label" for="me-intro">One-line intro</label>
-            <input id="me-intro" type="text" class="field-input" maxlength="120" autocomplete="off" placeholder="e.g. final-year CS student at IIT Madras" />
-          </div>
-          <div class="field-group full">
-            <label class="field-label" for="me-schools">Schools</label>
-            <textarea id="me-schools" class="field-textarea" rows="2" spellcheck="false" aria-describedby="me-list-hint"></textarea>
-          </div>
-          <div class="field-group full">
-            <label class="field-label" for="me-employers">Employers</label>
-            <textarea id="me-employers" class="field-textarea" rows="2" spellcheck="false" aria-describedby="me-list-hint"></textarea>
-          </div>
-          <div class="field-group full">
-            <label class="field-label" for="me-skills">Skills</label>
-            <textarea id="me-skills" class="field-textarea" rows="2" spellcheck="false" aria-describedby="me-list-hint"></textarea>
-          </div>
-          <div class="field-group full">
-            <label class="field-label" for="me-city">City</label>
-            <input id="me-city" type="text" class="field-input" autocomplete="off" placeholder="e.g. Chennai, India" />
-          </div>
-          <p class="field-hint" id="me-list-hint">Separate items with commas. These are compared with each profile to find what you have in common.</p>
-          <details class="paste-card" id="me-more" open>
-            <summary>More detail from your resume</summary>
-            <div class="paste-body">
-              <div class="field-group full">
-                <label class="field-label" for="me-education">Education <span class="me-sub">School | Degree | Field | Years</span></label>
-                <textarea id="me-education" class="field-textarea" rows="2" spellcheck="false"></textarea>
-              </div>
-              <div class="field-group full">
-                <label class="field-label" for="me-experience">Experience <span class="me-sub">Title | Company | Years | Highlight</span></label>
-                <textarea id="me-experience" class="field-textarea" rows="3" spellcheck="false"></textarea>
-              </div>
-              <div class="field-group full">
-                <label class="field-label" for="me-projects">Projects <span class="me-sub">Name | What it does</span></label>
-                <textarea id="me-projects" class="field-textarea" rows="2" spellcheck="false"></textarea>
-              </div>
-              <div class="field-group full">
-                <label class="field-label" for="me-certs">Certifications</label>
-                <input id="me-certs" type="text" class="field-input" autocomplete="off" />
-              </div>
-              <div class="field-group full">
-                <label class="field-label" for="me-languages">Languages</label>
-                <input id="me-languages" type="text" class="field-input" autocomplete="off" />
-              </div>
+            <label class="sr-only" for="api-key">API key</label>
+            <div class="api-key-input-wrap">
+              <input id="api-key" type="password" class="api-key-input"
+                placeholder="sk-ant-…" autocomplete="off" spellcheck="false" aria-describedby="api-key-desc provider-help" />
+              <button class="validate-btn" id="validate-btn" type="button" aria-label="Test the key and turn AI on">Connect</button>
             </div>
-          </details>
-          <button id="resume-ai-btn" class="btn btn-secondary btn-full hidden" type="button">Re-read my resume with AI</button>
-          <button id="resume-remove-btn" class="btn-ghost" type="button">Remove resume &amp; this info</button>
-        </fieldset>
+            <p class="provider-help" id="provider-help"></p>
+            <div class="key-validation-status hidden" id="key-validation-status" role="status" aria-live="polite"></div>
+            <p class="field-hint">Connect tests the key, saves it and turns AI on. Switch back to Free any time from the top bar.</p>
+          </div>
+        </details>
 
-        <button id="save-settings-btn" class="btn btn-primary btn-full">Save Settings</button>
-        <div class="status-bar hidden" id="settings-status"></div>
+        <!-- 2 · About you -->
+        <section class="set-card set-static" aria-labelledby="about-title">
+          <h2 class="set-title" id="about-title">About you</h2>
+          <div class="field-group full">
+            <label class="field-label" for="user-name">Name</label>
+            <input id="user-name" type="text" class="field-input" placeholder="Jane Smith" autocomplete="off" />
+          </div>
+          <div class="field-group full">
+            <label class="field-label" for="user-bio">Short bio</label>
+            <textarea id="user-bio" class="field-textarea" rows="2"
+              placeholder="One or two sentences about you."></textarea>
+          </div>
+          <div class="field-group full">
+            <label class="field-label" for="resume-upload">Resume (PDF)</label>
+            <div class="file-upload-area" id="file-upload-area" role="button" tabindex="0" aria-label="Upload your resume PDF">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M14 2v6h6M12 18v-6M9 15l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span id="file-label">Click to upload or drag PDF here</span>
+              <input id="resume-upload" type="file" accept=".pdf,application/pdf" class="file-input" />
+            </div>
+            <p class="field-hint">The PDF is never saved or sent; emails and phone numbers are removed. Free Mode reads it on this device; AI Mode sends its text to your provider.</p>
+            <div class="resume-status hidden" id="resume-status" role="status" aria-live="polite"></div>
+            <details class="paste-card" id="resume-paste-card">
+              <summary>Prefer to paste your resume text?</summary>
+              <div class="paste-body">
+                <label class="field-label" for="resume-paste">Resume text</label>
+                <textarea id="resume-paste" class="field-textarea" rows="4" spellcheck="false" placeholder="Paste the text of your resume here"></textarea>
+                <button id="resume-paste-btn" class="btn btn-secondary btn-full" type="button">Read pasted resume</button>
+              </div>
+            </details>
+          </div>
+        </section>
 
-        <div class="settings-note">
-          <strong>What leaves your device</strong>
-          <ul>
-            <li><b>Free Mode</b> (no key): nothing. Profiles are read, matched and drafted on this device.</li>
-            <li><b>AI Mode</b> (your own key): a short, cleaned-up summary of the profile and your resume info goes to the provider you chose, <b>api.anthropic.com</b> (Claude) or <b>api.groq.com</b> (Llama), to write the draft. You see exactly what first. When you upload a resume in AI Mode, its text (contact details removed) goes to the same provider to fill in your profile. You say yes once when you turn AI on. Your key is sent only to that provider.</li>
-            <li><b>Never sent</b>: your resume PDF, emails and phone numbers, or anything else on the page.</li>
-            <li><b>Never automatic</b>: this tool doesn’t click, type or send on LinkedIn. You read and send every message yourself.</li>
-          </ul>
+        <!-- 3 · What I found (folded: one summary line, details on demand) -->
+        <details class="set-card hidden" id="me-card">
+          <summary><span class="set-title">Your profile</span><span class="set-chip" id="me-summary"></span></summary>
+          <div class="set-body">
+            <p class="field-hint">Taken from your resume. Edit anything that is off; this is what gets compared with each profile.</p>
+            <div class="field-group full">
+              <label class="field-label" for="me-intro">One-line intro</label>
+              <input id="me-intro" type="text" class="field-input" maxlength="120" autocomplete="off" placeholder="e.g. final-year CS student at IIT Madras" />
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="me-city">City</label>
+              <input id="me-city" type="text" class="field-input" autocomplete="off" placeholder="e.g. Chennai, India" />
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="me-skills">Skills <span class="me-sub">comma separated</span></label>
+              <textarea id="me-skills" class="field-textarea" rows="2" spellcheck="false" aria-describedby="me-list-hint"></textarea>
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="me-education">Education <span class="me-sub">School | Degree | Field | Years</span></label>
+              <textarea id="me-education" class="field-textarea" rows="2" spellcheck="false"></textarea>
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="me-experience">Experience <span class="me-sub">Title | Company | Years | Highlight</span></label>
+              <textarea id="me-experience" class="field-textarea" rows="3" spellcheck="false"></textarea>
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="me-projects">Projects <span class="me-sub">Name | What it does</span></label>
+              <textarea id="me-projects" class="field-textarea" rows="2" spellcheck="false"></textarea>
+            </div>
+            <details class="paste-card" id="me-more">
+              <summary>Matching lists and extras</summary>
+              <div class="paste-body">
+                <p class="field-hint" id="me-list-hint">Separate items with commas. Schools and employers are what the “in common” chips compare.</p>
+                <div class="field-group full">
+                  <label class="field-label" for="me-schools">Schools</label>
+                  <textarea id="me-schools" class="field-textarea" rows="2" spellcheck="false" aria-describedby="me-list-hint"></textarea>
+                </div>
+                <div class="field-group full">
+                  <label class="field-label" for="me-employers">Employers</label>
+                  <textarea id="me-employers" class="field-textarea" rows="2" spellcheck="false" aria-describedby="me-list-hint"></textarea>
+                </div>
+                <div class="field-group full">
+                  <label class="field-label" for="me-certs">Certifications</label>
+                  <input id="me-certs" type="text" class="field-input" autocomplete="off" />
+                </div>
+                <div class="field-group full">
+                  <label class="field-label" for="me-languages">Languages</label>
+                  <input id="me-languages" type="text" class="field-input" autocomplete="off" />
+                </div>
+              </div>
+            </details>
+            <button id="resume-ai-btn" class="btn btn-secondary btn-full hidden" type="button">Re-read my resume with AI</button>
+            <button id="resume-remove-btn" class="btn-ghost" type="button">Remove resume &amp; this info</button>
+          </div>
+        </details>
+
+        <details class="set-card settings-note" id="privacy-note">
+          <summary><span class="set-title">What leaves your device</span></summary>
+          <div class="set-body">
+            <ul>
+              <li><b>Free Mode</b>: nothing. Profiles are read, matched and drafted on this device.</li>
+              <li><b>AI Mode</b> (your own key): a short, cleaned-up summary of the profile and your details, and your resume text when you upload one, go to the provider you chose (<b>api.anthropic.com</b> or <b>api.groq.com</b>). You say yes once when you turn AI on, and “What’s sent?” always shows the exact data. Your key goes only to that provider.</li>
+              <li><b>Never sent</b>: your resume PDF, emails, phone numbers, or anything else on the page.</li>
+              <li><b>Never automatic</b>: nothing is clicked, typed or sent on LinkedIn for you.</li>
+            </ul>
+          </div>
+        </details>
+
+        <div class="settings-save">
+          <button id="save-settings-btn" class="btn btn-primary btn-full">Save settings</button>
+          <div class="status-bar hidden" id="settings-status"></div>
         </div>
 
       </div>
