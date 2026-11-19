@@ -122,4 +122,43 @@ module.exports = (test, load) => {
       }
     }
   });
+
+  const SPOT = { type: 'project', title: 'Safety Monitor', text: 'I built Safety Monitor, real-time object detection for construction sites.', matches: ['PyTorch', 'YOLO'] };
+  const base2 = { profile: { firstName: 'Priya', currentCompany: 'Globex', currentTitle: 'ML Engineer', headline: 'ML Engineer at Globex', recentPosts: [] },
+    sender: { intro: 'final-year CS student at IIT Madras', goal: 'AI/ML internships' }, overlaps: [], tone: 'Neutral', senderName: 'Asha Menon' };
+
+  test('compose: the spotlight becomes the credential, in a note and in a message; `because` explains the draft', () => {
+    const note = C.compose({ ...base2, messageType: 'Networking', format: 'note', spotlight: SPOT }, { seed: 0 }).variants[0];
+    assert.ok(note.text.includes('I built Safety Monitor'), note.text);
+    assert.ok(note.text.length <= 200);
+    assert.strictEqual(note.because.credential.kind, 'spotlight');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(note.because.credential.matches)), ['PyTorch', 'YOLO']);
+    const msg = C.compose({ ...base2, messageType: 'Networking', format: 'message', spotlight: SPOT }, { seed: 0 }).variants[0];
+    assert.ok(msg.text.includes('final-year CS student') && msg.text.includes('I built Safety Monitor'), 'message keeps the intro AND the spotlight');
+    // without a spotlight the plain intro is the credential
+    const plain = C.compose({ ...base2, messageType: 'Networking', format: 'note' }, { seed: 0 }).variants[0];
+    assert.strictEqual(plain.because.credential.kind, 'intro');
+    assert.ok(!plain.text.includes('Safety Monitor'));
+  });
+
+  test('compose: FUZZ with a spotlight and a goal: budgets always hold, no banned words, no "connect" ask in messages', () => {
+    const types = ['Networking', 'Job', 'Referral', 'Collaboration'], tones = ['Formal', 'Neutral', 'Casual'];
+    for (const messageType of types) for (const tone of tones) for (const format of ['note', 'message']) for (let seed = 0; seed < 6; seed++) {
+      const r = C.compose({ ...base2, messageType, tone, format, spotlight: SPOT, overlaps: seed % 2 ? [{ kind: 'employer', label: 'Globex', detail: 'x', line: 'I noticed we both worked at Globex.' }] : [] }, { seed });
+      r.variants.forEach(v => {
+        assert.ok(v.text.length <= (format === 'note' ? 200 : 500), `${messageType}/${tone}/${format}: ${v.text.length}`);
+        assert.ok(!/\b(currently|recent(ly)?)\b/i.test(v.text.replace(/their recent post/i, '')), v.text);
+        if (format === 'message') assert.ok(!/\bconnect/i.test(v.text), v.text);
+      });
+    }
+  });
+
+  test('compose: a career goal shapes Job asks (and is skipped when it reads like a paragraph)', () => {
+    const job = (goal) => C.compose({ ...base2, sender: { ...base2.sender, goal }, messageType: 'Job', format: 'note' }, { seed: 0 }).variants.map(v => v.text).join(' | ');
+    assert.match(job('AI/ML internships'), /looking for AI\/ML internships/);
+    assert.match(job("I'm looking for AI/ML internships."), /looking for AI\/ML internships\./);
+    assert.ok(!/looking for I'm/.test(job("I'm looking for AI/ML internships.")), 'leading phrase is not doubled');
+    assert.ok(!/long paragraph/.test(job('A long paragraph. It has several sentences. Nobody should paste this.')), 'paragraph goal ignored');
+    assert.match(job(''), /exploring roles/);
+  });
 };

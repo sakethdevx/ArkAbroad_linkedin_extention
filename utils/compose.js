@@ -115,7 +115,13 @@
   }
 
   // ── Asks (ONE per message) ──────────────────────────────────────────────────
-  function askFor(type, p, overlaps, n, short, already) {
+  // "looking for AI/ML internships" → "AI/ML internships" (user-typed; skipped when it reads like a paragraph)
+  function goalPhrase(goal) {
+    const g = stripEndPunct(clean(goal).replace(/^(?:i['’]?m\s+|i am\s+)?(?:currently\s+)?(?:looking for|seeking|hoping to find|interested in)\s+/i, ''));
+    return g && g.length <= 70 && !hasSentenceBreak(g) ? g : '';
+  }
+
+  function askFor(type, p, overlaps, n, short, already, goal) {
     const co = isLabel(p.currentCompany, 60) ? clean(p.currentCompany) : '';
     const atCo = co ? ` at ${co}` : '';
     const skills = (overlaps || []).find(o => o.kind === 'skills');
@@ -124,7 +130,10 @@
         long:  ['Would you be open to a quick 15-minute chat about how you got to where you are?', "I'd love to hear how you got started, if you have 15 minutes sometime.", "Would you be up for a short call? I'd really value your perspective."],
         short: ['Would you be open to a quick chat?', "I'd love to connect and learn from your path.", 'Would you be up for connecting?']
       },
-      Job: {
+      Job: goal ? {
+        long:  [`I'm looking for ${goal}${atCo ? ' and would value 10 minutes of your advice on getting in' + atCo : ' and would value 10 minutes of your advice'}.`, `I'm looking for ${goal}. Could I ask you a couple of quick questions about the team${atCo}?`],
+        short: [`I'm looking for ${goal}. Could I ask you two quick questions?`, `I'm looking for ${goal} and would value your advice.`]
+      } : {
         long:  [`I'm exploring roles${atCo} and would value 10 minutes of your advice on what teams look for.`, `I'm looking for opportunities${atCo}. Could I ask you a couple of quick questions about the team?`],
         short: [`I'm exploring roles${atCo}. Could I ask you two quick questions?`, `I'm exploring roles${atCo} and would value your advice.`]
       },
@@ -148,6 +157,7 @@
     {},                                                                    // everything
     { out: false },                                                        // easy-out goes first
     { out: false, hook2: false },                                          // then a second shared point
+    { out: false, hook2: false, spot: false },                             // then the spotlight falls back to the plain intro
     { out: false, hook2: false, cred: false },                             // then "who I am"
     { out: false, hook2: false, cred: false, short: true },                // then short-form hook + ask
     { out: false, hook2: false, cred: false, short: true, bare: true }     // last resort: greeting + hook + ask only
@@ -181,10 +191,20 @@
       }
     }
 
+    // credential: the spotlight (the ONE most relevant project/role, chosen from the user's own profile) beats a generic intro
+    const because = { hook: { kind: hookKind, label: kept.length ? kept[0].label : (hookKind === 'post' ? 'their recent post' : hookKind === 'role' ? 'their role' : '') }, credential: null };
     const cred = flags.cred === false ? null : credLine(sender, ctx.bio, kept[0] && kept[0].kind === 'school' ? kept[0].label : '');
-    if (cred) parts.push(cred);
+    const spot = ctx.spotlight && ctx.spotlight.text && flags.cred !== false && flags.spot !== false ? ctx.spotlight : null;
+    if (spot) {
+      if (cred && !isNote && !flags.short) parts.push(cred);
+      parts.push(spot.text);
+      because.credential = { kind: 'spotlight', label: spot.title, matches: Array.isArray(spot.matches) ? spot.matches.slice(0, 4) : [] };
+    } else if (cred) {
+      parts.push(cred);
+      because.credential = { kind: 'intro', label: cred, matches: [] };
+    }
 
-    const ask = askFor(messageType, p, kept, n, short, !isNote);
+    const ask = askFor(messageType, p, kept, n, short, !isNote, goalPhrase(sender && sender.goal));
     const outLine = !isNote && flags.out !== false ? pick(OUT[tone] || OUT.Neutral, n) : null;
     const name = clean(ctx.senderName);
     const greet = (GREET[tone] || GREET.Neutral)(first);
@@ -198,7 +218,7 @@
       const sign = name ? `\n\n${SIGNOFF[tone] || 'Best,'}\n${name}` : '';
       text = `${greet}\n\n${body1}\n\n${body2}${sign}`;
     }
-    return { text: tonalize(text, tone), specific, hookKind };
+    return { text: tonalize(text, tone), specific, hookKind, because };
   }
 
   function hardFit(text, limit) {
