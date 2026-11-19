@@ -5,6 +5,10 @@ Base: tag `base-v3.1.0`. Each entry: **what / why / tradeoff / how to demo**. Th
 ## Unreleased
 _Slices land below as they ship._
 
+### Structure 2 — `popup.js` split into `panel/*.js`
+
+**What** The 1631-line `popup.js` is now `popup.js` (boot, tabs, page check, read card, recent contacts, tab following; 443 lines) plus seven files in `panel/`: `providers`, `ondevice_ui`, `overlap_ui`, `settings`, `resume_ui`, `consent`, `drafts`. It is a pure move along the existing section banners: no logic changed, still plain `<script>` tags and no build step. **Why** a reviewer can find things; each file has one job. **Tradeoff** the files still share one page scope (as `utils/*.js` do), so names must stay unique: a check found no duplicate top-level names. **Demo** `popup.html` script list; `node test/run.js` loads the same files in the same order as the page.
+
 ### Structure 1 — one list of draft rules (`utils/rules.js`)
 
 **What** The cloud prompt and the on-device prompt were two hand-written texts and had already drifted (the referral ask was in one, sign-off wording had to be fixed twice). Both are now built from one rule list: `Rules.systemPrompt('cloud' | 'ondevice')`, and `Rules.ask(purpose, goal)` gives the closing-question instruction. **Why** one place to change a rule; drift is caught by a test. **Tradeoff** the cloud prompt text is unchanged; the on-device prompt is the same short wording as before. **Demo** `node test/run.js`: the four `rules:` tests check sign-offs, the ask, and that protective rules (facts, voice, plain text, untrusted data) can never be cloud-only.

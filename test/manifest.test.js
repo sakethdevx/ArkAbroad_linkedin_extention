@@ -23,7 +23,7 @@ module.exports = (test) => {
   });
 
   test('network: the only remote origins in extension code are api.anthropic.com and linkedin.com', () => {
-    const code = ['background.js', 'popup.js', 'content_script.js', 'utils/compose.js', 'utils/overlap.js', 'utils/resume.js', 'utils/safety.js', 'utils/profile_parse.js', 'utils/page_scroll.js', 'utils/spotlight.js', 'utils/draftcheck.js', 'utils/ondevice.js', 'utils/translate.js', 'popup.html']
+    const code = ['background.js', 'popup.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'utils/rules.js', 'content_script.js', 'utils/compose.js', 'utils/overlap.js', 'utils/resume.js', 'utils/safety.js', 'utils/profile_parse.js', 'utils/page_scroll.js', 'utils/spotlight.js', 'utils/draftcheck.js', 'utils/ondevice.js', 'utils/translate.js', 'popup.html']
       .map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
     const origins = [...new Set((code.match(/https?:\/\/[a-z0-9.-]+/gi) || []).map(x => x.toLowerCase()))];
     // API hosts we talk to, plus two documentation links shown in Settings (never fetched)
@@ -31,7 +31,7 @@ module.exports = (test) => {
     const extra = origins.filter(o => !allowed.some(a => o.startsWith(a)));
     assert.deepStrictEqual(extra, [], 'unexpected origins: ' + extra.join(', '));
     // only the background worker may make network requests
-    ['popup.js', 'content_script.js', 'utils/compose.js', 'utils/overlap.js', 'utils/resume.js', 'utils/safety.js', 'utils/profile_parse.js', 'utils/page_scroll.js', 'utils/spotlight.js', 'utils/draftcheck.js', 'utils/ondevice.js', 'utils/translate.js']
+    ['popup.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'utils/rules.js', 'content_script.js', 'utils/compose.js', 'utils/overlap.js', 'utils/resume.js', 'utils/safety.js', 'utils/profile_parse.js', 'utils/page_scroll.js', 'utils/spotlight.js', 'utils/draftcheck.js', 'utils/ondevice.js', 'utils/translate.js']
       .forEach(f => assert.ok(!/\bfetch\(|XMLHttpRequest|sendBeacon|WebSocket/.test(fs.readFileSync(path.join(root, f), 'utf8')), f + ' must not make network calls'));
   });
 
