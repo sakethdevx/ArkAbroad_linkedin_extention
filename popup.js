@@ -242,6 +242,7 @@ function wireCurrentEvents() {
   document.getElementById('deep-generate-btn').addEventListener('click', handleDeepGenerate);
   document.getElementById('reread-btn').addEventListener('click', handleEnrich);
   document.getElementById('regenerate-btn').addEventListener('click', () => regenerate(true));
+  document.getElementById('spot-chip').addEventListener('click', onSpotlightToggle);
   document.getElementById('copy-btn').addEventListener('click', handleCopy);
   document.getElementById('generated-message').addEventListener('input', onDraftInput);
   document.querySelectorAll('.format-btn').forEach(b => b.addEventListener('click', () => { formatByUser = true; formatAutoNote = ''; setFormat(b.dataset.format); }));
@@ -285,7 +286,7 @@ function wireSettingsEvents() {
     if (!resumeText) { setResumeStatus('Upload or paste your resume first.', 'error'); return; }
     await tryAiResume(resumeText);
   });
-  ['me-intro', 'me-schools', 'me-employers', 'me-skills', 'me-city', 'me-education', 'me-experience', 'me-projects', 'me-certs', 'me-languages'].forEach(id =>
+  ['me-intro', 'me-goal', 'me-schools', 'me-employers', 'me-skills', 'me-city', 'me-education', 'me-experience', 'me-projects', 'me-certs', 'me-languages'].forEach(id =>
     document.getElementById(id).addEventListener('change', () => saveSenderFromCard()));
 }
 
@@ -752,7 +753,7 @@ function draftCtx() {
 function renderDrafts(resp) {
   const wasHidden = document.getElementById('message-section').classList.contains('hidden');
   const list = resp.variants && resp.variants.length ? resp.variants : [{ text: resp.generatedMessage || '', source: 'template' }];
-  drafts = list.map(v => ({ text: v.text, source: v.source, hookKind: v.hookKind, provider: v.provider || resp.provider }));
+  drafts = list.map(v => ({ text: v.text, source: v.source, hookKind: v.hookKind, provider: v.provider || resp.provider, because: v.because || null, given: givenSummary() }));
   document.getElementById('message-section').classList.remove('hidden');
   buildDraftTabs();
   selectDraft(0);
@@ -808,6 +809,7 @@ function selectDraft(i) {
   });
   wasOver = false;
   updateDraftMeta();
+  renderBecause(drafts[i]);
 }
 
 function onDraftInput() {
@@ -854,6 +856,30 @@ async function refreshResumeTip() {
   document.getElementById('resume-tip').classList.toggle('hidden', !!resumeTipDismissed || hasResumeInfo(senderProfile));
 }
 
+// "Built on: …": every draft says what it is made of, so nothing about it is a mystery.
+const HOOK_WORD = { school: 'shared school', employer: 'shared employer', skills: 'shared skills', city: 'shared city', post: 'their recent post', role: 'their role' };
+function describeBecause(b) {
+  const bits = [];
+  if (b && b.hook && b.hook.kind && HOOK_WORD[b.hook.kind]) bits.push(b.hook.kind === 'post' || b.hook.kind === 'role' ? HOOK_WORD[b.hook.kind] : `${HOOK_WORD[b.hook.kind]} ${b.hook.label}`);
+  const c = b && b.credential;
+  if (c && c.kind === 'spotlight') bits.push(`your work “${c.label}”${c.matches && c.matches.length ? ' (' + c.matches.join(', ') + ')' : ''}`);
+  else if (c && c.kind === 'intro') bits.push('your intro');
+  return bits.join(' · ');
+}
+// For AI drafts we cannot see inside the model, so we state what we GAVE it.
+function givenSummary() {
+  const bits = selectedOverlaps().slice(0, 2).map(o => `${HOOK_WORD[o.kind] || o.kind} ${o.label}`);
+  const sp = keptSpotlight();
+  if (sp) bits.push(`your work “${sp.title}”`);
+  return bits.join(' · ');
+}
+function renderBecause(d) {
+  const el = document.getElementById('draft-because');
+  const text = d && d.source === 'ai' ? (d.given ? `Given to the AI: ${d.given}` : '') : (d && d.because ? describeBecause(d.because) : '');
+  el.textContent = text && d.source !== 'ai' ? `Built on: ${text}` : text;
+  el.classList.toggle('hidden', !el.textContent);
+}
+
 function renderDraftNotes(resp) {
   const box = document.getElementById('draft-notes');
   box.innerHTML = '';
@@ -861,6 +887,10 @@ function renderDraftNotes(resp) {
   (resp.warnings || []).forEach(w => add(w, 'warn'));
   if ((resp.injection && resp.injection.length) || resp.aiSawInjection) {
     add('This profile contains text that looks like instructions to an AI. I ignored it and only used the facts.', 'warn');
+  }
+  if (Spotlight.adviceFor) {
+    const pt = document.getElementById('message-type').value;
+    Spotlight.adviceFor(pt, { overlaps: selectedOverlaps(), spotlight: keptSpotlight(), sender: senderProfile }).forEach(t => add(t, 'tip'));
   }
   const hasIntro = (senderProfile && senderProfile.intro) || document.getElementById('user-bio').value.trim();
   if (!hasIntro) add('Tip: add a one-line intro in Settings (e.g. “final-year CS student at …”) so your draft can say who you are.', 'tip');
@@ -1156,7 +1186,7 @@ function resetForNewPage() {
   if (!currentProfile && !drafts.length) return;
   currentProfile = null; deepProfileJSON = null; deepEnrichmentJSON = null;
   formatAutoNote = ''; setFormat(currentFormat, { silent: true });
-  overlapAll = []; overlapOff.clear(); seed = 0;
+  overlapAll = []; overlapOff.clear(); spotlightOff = false; currentSpotlight = null; seed = 0;
   ['profile-section', 'read-card', 'overlap-panel'].forEach(id => document.getElementById(id).classList.add('hidden'));
   document.getElementById('hooks-panel').classList.add('hidden');
   document.getElementById('deep-generate-btn').disabled = true;
@@ -1216,6 +1246,7 @@ const textToRows = (text, keys) => String(text || '').split('\n').map(l => l.tri
 function fillMeCard(sp) {
   document.getElementById('me-card').classList.remove('hidden');
   document.getElementById('me-intro').value     = sp.intro || '';
+  document.getElementById('me-goal').value      = sp.goal || '';
   document.getElementById('me-schools').value   = (sp.schools || []).join(', ');
   document.getElementById('me-employers').value = (sp.employers || []).join(', ');
   document.getElementById('me-skills').value    = (sp.skills || []).join(', ');
@@ -1236,6 +1267,7 @@ function readMeCard() {
   return {
     ...(senderProfile || {}),
     intro:     v('me-intro').trim(),
+    goal:      v('me-goal').trim(),
     schools:   toList(v('me-schools')),
     employers: toList(v('me-employers')),
     skills:    toList(v('me-skills')),
@@ -1387,20 +1419,39 @@ let overlapAll    = [];
 const overlapOff  = new Set();
 const KIND_LABEL  = { school: 'School', employer: 'Employer', skills: 'Skills', city: 'City' };
 
-const hasResumeInfo = (sp) => !!sp && ((sp.schools || []).length || (sp.employers || []).length || (sp.skills || []).length || sp.city);
+const hasResumeInfo = (sp) => !!sp && !!((sp.schools || []).length || (sp.employers || []).length || (sp.skills || []).length || (sp.projects || []).length || (sp.experience || []).length || (sp.education || []).length || sp.city || sp.goal);
 const selectedOverlaps = () => overlapAll.filter(o => !overlapOff.has(o.id));
 // What we hand to the drafter: the kept overlaps and a compact, contact-free summary of the sender.
 const sharedContext = () => ({
-  overlaps: selectedOverlaps().map(({ kind, label, detail, line }) => ({ kind, label, detail, line })),
-  sender:   hasResumeInfo(senderProfile) ? Overlap.senderSummary(senderProfile) : null
+  overlaps:  selectedOverlaps().map(({ kind, label, detail, line }) => ({ kind, label, detail, line })),
+  sender:    hasResumeInfo(senderProfile) ? Overlap.senderSummary(senderProfile) : null,
+  spotlight: keptSpotlight()
 });
+
+// The ONE most relevant project/role for this person (see utils/spotlight.js). Recomputed when you toggle a shared point,
+// because dropping a shared employer makes a role at that employer eligible again.
+let currentSpotlight = null;
+let spotlightOff = false;
+const keptSpotlight = () => (currentSpotlight && !spotlightOff ? currentSpotlight : null);
+
+function refreshSpotlight() {
+  const row = document.getElementById('spot-row');
+  const excl = selectedOverlaps().filter(o => o.kind === 'employer').map(o => o.label);
+  currentSpotlight = currentProfile && hasResumeInfo(senderProfile) ? Spotlight.spotlight(senderProfile, currentProfile, { excludeCompanies: excl }) : null;
+  row.classList.toggle('hidden', !currentSpotlight);
+  if (!currentSpotlight) return;
+  document.getElementById('spot-label').textContent = currentSpotlight.title;
+  document.getElementById('spot-evidence').textContent = currentSpotlight.matches.length ? `matches their ${currentSpotlight.matches.join(', ')}` : '';
+  document.getElementById('spot-chip').setAttribute('aria-pressed', String(!spotlightOff));
+  document.getElementById('spot-chip').title = currentSpotlight.text;
+}
 
 function renderOverlaps(keepSelection = false) {
   const panel = document.getElementById('overlap-panel');
   const chips = document.getElementById('overlap-chips');
   const empty = document.getElementById('overlap-empty');
   const hint  = document.getElementById('overlap-hint');
-  if (!keepSelection) overlapOff.clear();
+  if (!keepSelection) { overlapOff.clear(); spotlightOff = false; }
   chips.innerHTML = '';
   hint.textContent = '';
   empty.classList.add('hidden');
@@ -1409,14 +1460,18 @@ function renderOverlaps(keepSelection = false) {
 
   if (!hasResumeInfo(senderProfile)) {
     overlapAll = [];
+    refreshSpotlight();
     empty.textContent = 'Add your resume in Settings and I’ll find shared schools, employers and skills.';
     empty.classList.remove('hidden');
     return;
   }
 
   overlapAll = Overlap.findOverlaps(senderProfile, currentProfile);
+  refreshSpotlight();
   if (!overlapAll.length) {
-    empty.textContent = 'No shared school, employer or skills found. That’s fine: the draft will lead with something from their profile.';
+    empty.textContent = currentSpotlight
+      ? 'No shared school, employer or skills found, but part of your work is relevant to theirs (below).'
+      : 'No shared school, employer or skills found. That’s fine: the draft will lead with something from their profile.';
     empty.classList.remove('hidden');
     return;
   }
@@ -1439,6 +1494,13 @@ function renderOverlaps(keepSelection = false) {
 async function onChipToggle(id, btn) {
   if (overlapOff.has(id)) overlapOff.delete(id); else overlapOff.add(id);
   btn.setAttribute('aria-pressed', String(!overlapOff.has(id)));
+  refreshSpotlight();
+  applyChangeLive();
+}
+
+function onSpotlightToggle() {
+  spotlightOff = !spotlightOff;
+  document.getElementById('spot-chip').setAttribute('aria-pressed', String(!spotlightOff));
   applyChangeLive();
 }
 

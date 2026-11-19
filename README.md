@@ -15,6 +15,7 @@ Needs Chrome 116 or newer (side panel).
 - **Picks the right format** by itself: it notices whether you are already connected (the 1st-degree badge, or a Connect / Pending button) and selects *Already connected* or *New connection*, telling you which and why.
 - **Reads the profile you're on** (the full read only when you click), shows you *what it read* and lets you fix it. If the page can't be read, paste the profile text instead.
 - **Uses your resume** (optional PDF, read on your device) to find what you two have in common: shared school, employer, skills, city. In AI Mode the AI also fills in your whole profile (education, experience, projects, skills) from it, so you don't type anything.
+- **Picks your most relevant work** for each person (the one project or role that matches their field, with the matching words shown) and explains every draft ("Built on: …"). You can leave it out with one tap. Nothing is invented: it only selects something already in your profile, and it says nothing rather than force a weak link.
 - **Writes 3 drafts** that open with that shared ground, say who you are in one line and make one small ask. Pick **Connection note** (≤ 200 characters, LinkedIn's limit) or **Message**.
 - **Checks the draft** as you edit: specific? one ask? fits? no stock phrases?
 
@@ -22,7 +23,7 @@ Needs Chrome 116 or newer (side panel).
 | Mode | What is sent | Where |
 |---|---|---|
 | **Free** (no key) | Nothing | n/a |
-| **AI** (your own key, switch on) | A short, cleaned-up summary of the profile + your profile details. You say yes **once** when you turn AI on, and "What's sent?" always shows the exact data | only the provider you chose: `api.anthropic.com` **or** `api.groq.com` |
+| **AI** (your own key, switch on) | A short, cleaned-up summary of the profile + a short summary of you (intro, skills, schools, employers, goal) + the **one** project or role picked for this person. Your other projects and roles stay on your device. You say yes **once** when you turn AI on, and "What's sent?" always shows the exact data | only the provider you chose: `api.anthropic.com` **or** `api.groq.com` |
 | **AI**, resume upload | The resume **text** (emails/phones already removed) so the AI can fill in your profile | the same provider |
 | Always | Never: your resume PDF, emails, phone numbers, your key (header only), or anything else on the page | n/a |
 

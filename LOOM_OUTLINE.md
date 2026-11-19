@@ -23,3 +23,7 @@ Source of truth for details: `CHANGELOG.md`. Tip: demo on **your own** profile (
 - [ ] `chrome://extensions` details show only: *Read and change your data on www.linkedin.com and api.anthropic.com*.
 - [ ] Reload the extension, open a LinkedIn tab that was already open before install → still reads (on-demand injection).
 - [ ] If `in.linkedin.com` (country subdomain) redirects don't happen for you: the extension only has access to `www.linkedin.com` (documented limit).
+
+
+## Addendum: resume-aware relevance (after the Groq and UX work)
+Show: open an ML profile, then a backend profile, with the same resume. The "Why you two" card picks a different project each time and shows the matched words; tap the "Your work" chip to leave it out and watch the draft change; point at "Built on: …" under the draft. Say plainly: it only selects from your own resume, returns nothing rather than a weak link, and in AI Mode only that one item leaves the device.

@@ -11,7 +11,7 @@ module.exports = (test) => {
   const root = path.join(__dirname, '..');
   const PP = require(path.join(root, 'utils/profile_parse.js'));
   const tick = (n = 40) => new Promise(r => setTimeout(r, n));
-  const SCRIPTS = ['utils/safety.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/compose.js', 'utils/resume.js', 'utils/cache.js', 'popup.js'];
+  const SCRIPTS = ['utils/safety.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/compose.js', 'utils/resume.js', 'utils/cache.js', 'popup.js'];
 
   const PRIYA = () => PP.buildProfile({
     name: 'Priya Rao', headline: 'Data Scientist at Globex', location: 'Chennai, India',
@@ -55,7 +55,8 @@ module.exports = (test) => {
         if (m.action === 'generateMessage') {
           calls.push(m.data); const n = calls.length;
           return cb({ success: true, generatedMessage: 'x', warnings: [], injection: [], variants: [
-            { text: `Hi Priya, we both went to IIT Madras (${m.data.format} #${n}). Open to a chat?`, source: m.data.forceFree ? 'template' : (store.userApiKey ? 'ai' : 'template'), provider: store.userApiKey ? ((store.aiProvider === 'groq' || /^gsk_/.test(store.userApiKey)) ? 'groq' : 'anthropic') : undefined },
+            { text: `Hi Priya, we both went to IIT Madras (${m.data.format} #${n}). Open to a chat?`, source: m.data.forceFree ? 'template' : (store.userApiKey ? 'ai' : 'template'), provider: store.userApiKey ? ((store.aiProvider === 'groq' || /^gsk_/.test(store.userApiKey)) ? 'groq' : 'anthropic') : undefined,
+              because: { hook: { kind: (m.data.overlaps[0] || {}).kind || 'role', label: (m.data.overlaps[0] || {}).label || '' }, credential: m.data.spotlight ? { kind: 'spotlight', label: m.data.spotlight.title, matches: m.data.spotlight.matches } : { kind: 'intro', label: 'x', matches: [] } } },
             { text: `Draft B #${n}`, source: 'template' }, { text: `Draft C #${n}`, source: 'template' }] });
         }
         cb({});
@@ -553,5 +554,53 @@ module.exports = (test) => {
     t.w.renderProfileCard({ name: 'Priya Rao', photoUrl: 'https://evil.example/p.png' });
     assert.ok(!av().querySelector('img'));
     assert.strictEqual(av().textContent, 'P');
+  });
+
+  const WORKER = { ...SENDER, goal: '', projects: [{ name: 'Forecast Studio', summary: 'A Python dashboard for demand forecasting' }, { name: 'CampusMap', summary: 'A route planner for campus' }], experience: [] };
+
+  test('popup: "Why you two" shows the spotlight with evidence; it is sent to the drafter; toggling it removes it; the draft says what it is built on', async () => {
+    const t = await boot({ senderProfile: WORKER });
+    await t.click('scrape-btn');
+    assert.ok(!t.$('spot-row').classList.contains('hidden'), 'spotlight row visible');
+    assert.strictEqual(t.$('spot-label').textContent, 'Forecast Studio');
+    assert.match(t.$('spot-evidence').textContent, /matches their .*Python/i);
+    assert.strictEqual(t.calls.at(-1).spotlight.title, 'Forecast Studio');
+    assert.ok(!JSON.stringify(t.calls.at(-1)).includes('CampusMap'), 'the other project never leaves the panel');
+    assert.deepStrictEqual(Object.keys(t.calls.at(-1).sender).sort(), ['city', 'employers', 'intro', 'schools', 'skills']);
+    assert.match(t.$('draft-because').textContent, /^Built on: shared school IIT Madras · your work “Forecast Studio” \(Python/);
+    // leave it out → next draft is built without it
+    const before = t.calls.length;
+    t.$('spot-chip').click(); await tick(120);
+    assert.strictEqual(t.$('spot-chip').getAttribute('aria-pressed'), 'false');
+    assert.strictEqual(t.calls.length, before + 1);
+    assert.strictEqual(t.calls.at(-1).spotlight, null);
+    assert.match(t.$('draft-because').textContent, /your intro/);
+    assert.deepStrictEqual(t.errors, []);
+  });
+
+  test('popup: no spotlight row when nothing in the resume is relevant; AI drafts say what they were GIVEN', async () => {
+    const t = await boot({ senderProfile: { ...WORKER, projects: [{ name: 'Bake Sale Poster', summary: 'Designed posters' }] } });
+    await t.click('scrape-btn');
+    assert.ok(t.$('spot-row').classList.contains('hidden'));
+    assert.strictEqual(t.calls.at(-1).spotlight, null);
+    const ai = await boot({ userApiKey: 'sk-ant-x', mode: 'ai', aiConsent: { version: 2, ackAt: 1, provider: 'anthropic' }, senderProfile: WORKER });
+    await ai.click('scrape-btn');
+    assert.match(ai.$('draft-because').textContent, /^Given to the AI: shared school IIT Madras.* · your work “Forecast Studio”/);
+  });
+
+  test('popup: the goal field is saved with your profile, sent to the drafter, and Referral/Job hints appear as suggestions', async () => {
+    const t = await boot({ senderProfile: { ...WORKER, schools: [], skills: [] } });
+    t.$('me-card').classList.remove('hidden');
+    t.$('me-goal').value = 'AI/ML internships'; t.$('me-goal').dispatchEvent(new t.w.Event('change')); await tick(60);
+    assert.strictEqual(t.store.senderProfile.goal, 'AI/ML internships');
+    t.$('message-type').value = 'Referral';
+    await t.click('scrape-btn');
+    assert.strictEqual(t.calls.at(-1).sender.goal, 'AI/ML internships');
+    const notes = [...t.w.document.querySelectorAll('#draft-notes .draft-note')].map(n => n.textContent);
+    assert.ok(notes.some(n => /^Suggestion: you have no shared ground/.test(n)), notes.join(' | '));
+    const nogoal = await boot({ senderProfile: { ...WORKER, schools: [], skills: [] } });
+    nogoal.$('message-type').value = 'Job';
+    await nogoal.click('scrape-btn');
+    assert.ok([...nogoal.w.document.querySelectorAll('#draft-notes .draft-note')].some(n => /add what you are looking for/.test(n.textContent)));
   });
 };

@@ -247,7 +247,7 @@ async function handleParseResume({ text }, sendResponse) {
 async function generateDrafts(data) {
   const ctx = await prepareContext(data);
   const composed = Compose.compose(ctx.composeCtx, { seed: ctx.seed }).variants
-    .map(v => ({ text: v.text, source: 'template', hookKind: v.hookKind }));
+    .map(v => ({ text: v.text, source: 'template', hookKind: v.hookKind, because: v.because }));
   const warnings = [];
   const out = { success: true, injection: ctx.injection };
 

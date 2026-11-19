@@ -102,5 +102,23 @@
     return best ? best.out : null;
   }
 
-  return { spotlight };
+  // Plain-language, rule-based hints for Job / Referral messages. Always a suggestion, never a prediction.
+  function adviceFor(purpose, { overlaps = [], spotlight: spot = null, sender = null } = {}) {
+    const out = [];
+    const shared = arr(overlaps).length;
+    if (purpose === 'Referral') {
+      out.push(shared
+        ? 'Suggestion: lead with what you share and ask for advice first; keep the referral request for your second message.'
+        : 'Suggestion: you have no shared ground with them yet. Consider a Networking note first, and ask for a referral once there is a conversation.');
+    }
+    if ((purpose === 'Job' || purpose === 'Referral') && !(sender && String(sender.goal || '').trim())) {
+      out.push('Suggestion: add what you are looking for in Settings → Your profile, so the ask can be specific.');
+    }
+    if ((purpose === 'Job' || purpose === 'Referral') && !spot && sender && (arr(sender.projects).length || arr(sender.experience).length)) {
+      out.push('Suggestion: none of your projects clearly matches their work, so the draft will not name one. That is fine; it avoids a stretch.');
+    }
+    return out.slice(0, 2);
+  }
+
+  return { spotlight, adviceFor };
 });

@@ -1123,3 +1123,9 @@ body { position: fixed; inset: 0; width: 100%; height: 100%; margin: 0; }
 .profile-avatar { overflow: hidden; position: relative; }
 .profile-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
 .profile-avatar.has-photo img { opacity: 1; }
+
+/* Why you two: spotlight row and "built on" line */
+.spot-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.chip-spot { border-color: var(--accent); }
+.spot-evidence { font-size: 12px; color: var(--text-2); min-width: 0; overflow-wrap: anywhere; }
+.draft-because { font-size: 12px; color: var(--text-2); margin: 2px 2px 10px; line-height: 1.45; }

@@ -88,11 +88,15 @@
 
       <section class="overlap-panel hidden" id="overlap-panel" aria-labelledby="overlap-title">
         <div class="overlap-head">
-          <h2 class="overlap-title" id="overlap-title">What you two have in common</h2>
+          <h2 class="overlap-title" id="overlap-title">Why you two</h2>
           <span class="overlap-hint" id="overlap-hint"></span>
         </div>
         <div class="overlap-chips" id="overlap-chips" role="group" aria-label="Shared background to mention"></div>
         <p class="overlap-empty hidden" id="overlap-empty"></p>
+        <div class="spot-row hidden" id="spot-row">
+          <button type="button" class="chip chip-spot" id="spot-chip" aria-pressed="true"><span class="chip-kind">Your work</span><span class="chip-label" id="spot-label"></span></button>
+          <span class="spot-evidence" id="spot-evidence"></span>
+        </div>
       </section>
 
       <div class="controls-row">
@@ -179,6 +183,7 @@
           <span class="sr-only" id="count-live" aria-live="polite"></span>
         </div>
         <ul class="checklist" id="draft-checklist" aria-label="Reply-ready checklist"></ul>
+        <p class="draft-because" id="draft-because"></p>
         <p class="draft-note warn hidden" id="post-note">This draft quotes a post from their Activity. Check it is their own post, and that you really liked it, before sending.</p>
         <div class="draft-notes" id="draft-notes"></div>
         <div class="action-row">
@@ -292,6 +297,10 @@
               <input id="me-intro" type="text" class="field-input" maxlength="120" autocomplete="off" placeholder="e.g. final-year CS student at IIT Madras" />
             </div>
             <div class="field-group full">
+              <label class="field-label" for="me-goal">What I’m looking for <span class="me-sub">optional, in your words</span></label>
+              <input id="me-goal" type="text" class="field-input" maxlength="100" autocomplete="off" placeholder="e.g. AI/ML internships" />
+            </div>
+            <div class="field-group full">
               <label class="field-label" for="me-city">City</label>
               <input id="me-city" type="text" class="field-input" autocomplete="off" placeholder="e.g. Chennai, India" />
             </div>
@@ -379,6 +388,7 @@
   <script src="utils/safety.js"></script>
   <script src="utils/profile_parse.js"></script>
   <script src="utils/overlap.js"></script>
+  <script src="utils/spotlight.js"></script>
   <script src="utils/compose.js"></script>
   <script src="utils/resume.js"></script>
   <script src="utils/cache.js"></script>

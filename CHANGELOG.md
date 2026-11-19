@@ -295,3 +295,14 @@ Idea taken from an LLM brainstorm, scoped to what fits this product: instead of 
 - The prompt: use the spotlight (and only it) as the credential, keep its facts exactly; mention the goal in Job/Referral asks; for Collaboration, at most one clearly-hedged "I wonder if…" idea at the intersection of your skills and theirs.
 - `Safety.sanitizeSpotlight`: type whitelist, caps, and an instruction-injection screen. A spotlight with instruction-like text is dropped and the payload carries `null`.
 **Tests** Payload shape (no lists, no extra keys), injection drop, spotlight reaching the free composer; 118 without jsdom.
+
+## Slice D: "Why you two", "Built on", goal field, suggestions (step 4 of 4)
+- **Why you two** (the old "in common" card): the shared-ground chips plus a **Your work** chip, e.g. *Safety Monitor · matches their PyTorch, YOLO*, computed on your device for the profile you are viewing. Tap it to leave it out; the next draft and the AI payload follow. Toggling a shared employer recomputes it (a role at that employer becomes eligible again). It only appears when there is real evidence.
+- **Built on**: under every draft, one line saying what it is made of ("Built on: shared skills Python and Docker · your work "Safety Monitor" (PyTorch, YOLO)"). For AI drafts, which we cannot see inside, it says **"Given to the AI: …"**, i.e. what we sent.
+- **What I'm looking for**: one optional line in Settings → Your profile, kept separate from the resume (a resume says what you did, not what you want next). It shapes Job asks and is sent to the AI.
+- **Suggestions** (rule-based, always labelled "Suggestion", never a prediction): Referral with no shared ground → start with a networking note; Job/Referral without a goal → add one; no relevant project → the draft won't name one.
+- "Has resume info" now also counts projects, experience, education and a goal, so a profile that only has projects still works.
+**Tests** Popup flow (row, evidence, payload carries the spotlight and not the other projects, toggle, Built on / Given to the AI, goal, suggestions); 162 total. **Unverified live**: relevance on real LinkedIn text (deliberately conservative).
+
+### Ideas from the brainstorm I did not build, and why
+Reply intelligence, relationship memory, follow-up reminders, opportunity radar: they need other pages or background activity (against "reads only on click, never automates" and LinkedIn's terms). A backend holding Groq keys, accounts: against the brief (no backend, user's own key). Percentage compatibility scores: false precision. Job-description compare and an AI "Prepare me" briefing: good next slices.
