@@ -7,7 +7,7 @@ Works **free, on your device**, with no account and no API key. Optionally add y
 ## Install (unpacked, no build step)
 1. `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → choose this folder.
 2. Click the toolbar icon (or press **Alt+Shift+O**) to open the side panel. It stays open while you browse.
-3. Open someone's LinkedIn profile → **Scrape & Generate**.
+3. Open someone's LinkedIn profile → **Read profile & write draft**.
 
 Needs Chrome 116 or newer (side panel).
 

@@ -95,3 +95,11 @@ _Slices land below as they ship._
 **Demo** Click the icon → panel opens → click through LinkedIn while it stays → switch to a new profile and watch the draft clear → add an API key → *What's sent?* shows the exact payload → *Use a free draft*.
 
 **Verify** `node test/run.js` (67 tests incl. manifest/permission/network-origin/secret guards and HTML a11y). Manual: load unpacked; press Alt+Shift+O; Settings → add a key → generate → consent dialog.
+
+### Self-review pass (two reviews, then fixes)
+
+**As a skeptical hiring manager:** is there taste, judgment, a finished scope? → Four coherent headlines on top of one audit; deliberate cuts with reasons (insert-into-LinkedIn, Gemini Nano, company-news "enrichment"); claims backed by tests (79) and by checking the numbers (e.g. I measured the contrast ratios and found one pair at 4.22:1 and a changelog figure that was off → fixed both). Things I'd flag myself: live-LinkedIn DOM and the live Claude call weren't testable in my environment (see `LOOM_OUTLINE.md` checklist); pdf.js adds ~1.8 MB (loaded only when a résumé is uploaded).
+
+**As a first-time student with no API key:** is it clear within a minute? → Found and fixed: the draft was below the fold (now scrolls into view); the résumé was never suggested on first run (one-time tip, dismissible); no nudge to write a one-line intro (draft note); "Not now" was styled like a destructive action; **"Scrape & Generate" is developer jargon → "Read profile & write draft"**; textarea too tall for a 200-char note.
+
+**Real defects the review surfaced:** scraping targeted `currentWindow` rather than the panel's tab (wrong with several windows) → the panel now passes its tab id; opening LinkedIn's *Contact info* overlay changed the URL and would have wiped the draft → page identity is now the profile slug; quoting a post from *Activity* can attribute a repost to the wrong person → explicit "check it's theirs" notice; `…”.` punctuation pile-up in quoted hooks; contrast on warning text.

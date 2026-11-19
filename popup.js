@@ -173,7 +173,7 @@ async function handleScrapeAndGenerate() {
     openPasteCard();           // always leave the user a way forward
   } finally {
     isGenerating = false;
-    setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', false, 'Scrape &amp; Generate');
+    setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', false, 'Read profile &amp; write draft');
   }
 }
 
@@ -314,7 +314,7 @@ async function regenerate(bump) {
     showCurrentStatus(err.message, 'error');
   } finally {
     isGenerating = false;
-    setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', false, 'Scrape &amp; Generate');
+    setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', false, 'Read profile &amp; write draft');
   }
 }
 
