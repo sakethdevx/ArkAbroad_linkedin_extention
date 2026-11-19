@@ -369,7 +369,16 @@ async function aiDrafts(provider, apiKey, ctx) {
     const filler = ['thanks', 'thank', 'you', 'best', 'regards', 'cheers', 'sincerely', 'warmly'];
     return last.length && last.length <= 4 && last.every(w => nameWords.includes(w) || filler.includes(w)) ? lines.slice(0, -1).join('\n').trim() : t;
   };
-  raw = raw.map(stripSignoff).map(greet);
+  // Models cannot count. A draft only slightly over the limit is shortened by dropping whole sentences from the middle
+  // (the hook and the ask stay); nothing is reworded or added, so no new claims can slip in.
+  const trimToFit = (t) => {
+    t = t.trim();
+    if (t.length <= maxChars) return t;
+    const parts = t.split(/(?<=[.!?])\s+/);
+    while (parts.length > 2 && parts.join(' ').length > maxChars) parts.splice(parts.length - 2, 1);
+    return parts.length >= 2 && parts.join(' ').length <= maxChars ? parts.join(' ') : t;
+  };
+  raw = raw.map(stripSignoff).map(greet).map(trimToFit);
 
   let { good, bad } = evaluate(raw);
   let recovered = 0;

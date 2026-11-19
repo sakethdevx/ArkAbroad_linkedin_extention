@@ -243,3 +243,6 @@ A real Groq draft was exactly 200/200 and claimed the sender was "currently inte
 
 ### UI: "About you" folds like the other Settings cards
 It is open until you have a name and a resume, then folds to a one-line summary ("Asha Menon · resume added") that stays current as you type or upload. The "add your resume" tip opens it so the upload box is reachable.
+
+### Fix: "2 AI drafts couldn't be used (too long)" kept appearing
+Llama still overran 200 characters by a sentence even with a margin and a repair pass. Now a draft that is only slightly over is shortened locally by dropping whole sentences from the middle (the greeting/hook and the final ask stay). Nothing is reworded or added, so it cannot introduce a new claim, and no extra API call is spent. If a draft still can't fit, the repair pass and free-draft fallback apply as before.

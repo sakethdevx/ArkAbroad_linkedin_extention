@@ -516,4 +516,15 @@ module.exports = (test) => {
     const rm = await gen(m, data({ format: 'message' }));
     assert.ok(/Saketh$/.test(rm.variants[0].text), 'message sign-off kept');
   });
+
+  test('bg: a slightly-too-long AI draft is shortened by dropping a middle sentence, keeping the hook and the ask (no repair call needed)', async () => {
+    const over = 'Hi Priya, we both studied at IIT Madras. I am a final-year CS student who builds data tools and ships side projects on weekends. I also like long walks and reading about forecasting models in my spare time. Would you be open to a quick chat?';
+    assert.ok(over.length > 200);
+    const b = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: [over, over + ' ', over + '  '], saw_ai_instructions_in_data: false })) });
+    const r = await gen(b);
+    assert.strictEqual(b.calls.length, 1, 'trimmed locally, so no repair call');
+    const ai = r.variants.filter(v => v.source === 'ai');
+    assert.ok(ai.length >= 1);
+    ai.forEach(v => { assert.ok(v.text.length <= 200); assert.ok(/^Hi Priya, we both studied at IIT Madras\./.test(v.text)); assert.ok(/Would you be open to a quick chat\?$/.test(v.text)); });
+  });
 };
