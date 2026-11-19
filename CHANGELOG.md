@@ -306,3 +306,6 @@ Idea taken from an LLM brainstorm, scoped to what fits this product: instead of 
 
 ### Ideas from the brainstorm I did not build, and why
 Reply intelligence, relationship memory, follow-up reminders, opportunity radar: they need other pages or background activity (against "reads only on click, never automates" and LinkedIn's terms). A backend holding Groq keys, accounts: against the brief (no backend, user's own key). Percentage compatibility scores: false precision. Job-description compare and an AI "Prepare me" briefing: good next slices.
+
+### Fix: the new features were invisible when they had nothing to show (user screenshots)
+On a profile with no shared ground and no relevant project, "Why you two" said only "No shared school…", the "Built on" line was empty for AI drafts, and nothing said the spotlight had been considered. Now: the card says "Your work: none of your projects or roles clearly matches their field, so the draft won't name one"; AI drafts always state what they were given ("Given to the AI: their role and headline · your intro").

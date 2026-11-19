@@ -871,6 +871,8 @@ function givenSummary() {
   const bits = selectedOverlaps().slice(0, 2).map(o => `${HOOK_WORD[o.kind] || o.kind} ${o.label}`);
   const sp = keptSpotlight();
   if (sp) bits.push(`your work “${sp.title}”`);
+  if (!bits.length) bits.push('their role and headline');
+  bits.push(senderProfile && senderProfile.intro ? 'your intro' : 'your bio');
   return bits.join(' · ');
 }
 function renderBecause(d) {
@@ -1439,6 +1441,11 @@ function refreshSpotlight() {
   const excl = selectedOverlaps().filter(o => o.kind === 'employer').map(o => o.label);
   currentSpotlight = currentProfile && hasResumeInfo(senderProfile) ? Spotlight.spotlight(senderProfile, currentProfile, { excludeCompanies: excl }) : null;
   row.classList.toggle('hidden', !currentSpotlight);
+  // say so when nothing matches, instead of silently showing nothing
+  const none = document.getElementById('spot-none');
+  const hasWork = !!(senderProfile && ((senderProfile.projects || []).length || (senderProfile.experience || []).length));
+  none.textContent = hasWork && currentProfile && !currentSpotlight ? 'Your work: none of your projects or roles clearly matches their field, so the draft won’t name one (that avoids a stretch).' : '';
+  none.classList.toggle('hidden', !none.textContent);
   if (!currentSpotlight) return;
   document.getElementById('spot-label').textContent = currentSpotlight.title;
   document.getElementById('spot-evidence').textContent = currentSpotlight.matches.length ? `matches their ${currentSpotlight.matches.join(', ')}` : '';

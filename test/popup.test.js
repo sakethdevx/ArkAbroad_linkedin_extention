@@ -582,10 +582,15 @@ module.exports = (test) => {
     const t = await boot({ senderProfile: { ...WORKER, projects: [{ name: 'Bake Sale Poster', summary: 'Designed posters' }] } });
     await t.click('scrape-btn');
     assert.ok(t.$('spot-row').classList.contains('hidden'));
+    assert.match(t.$('spot-none').textContent, /none of your projects or roles clearly matches/);
     assert.strictEqual(t.calls.at(-1).spotlight, null);
     const ai = await boot({ userApiKey: 'sk-ant-x', mode: 'ai', aiConsent: { version: 2, ackAt: 1, provider: 'anthropic' }, senderProfile: WORKER });
     await ai.click('scrape-btn');
     assert.match(ai.$('draft-because').textContent, /^Given to the AI: shared school IIT Madras.* · your work “Forecast Studio”/);
+    // even with nothing shared and nothing relevant, the line still says what the AI was given
+    const bare = await boot({ userApiKey: 'sk-ant-x', mode: 'ai', aiConsent: { version: 2, ackAt: 1, provider: 'anthropic' }, senderProfile: { intro: 'CS student', skills: ['Cobol'], projects: [{ name: 'Bake Sale Poster', summary: 'Designed posters' }] } });
+    await bare.click('scrape-btn');
+    assert.match(bare.$('draft-because').textContent, /^Given to the AI: their role and headline · your intro/);
   });
 
   test('popup: the goal field is saved with your profile, sent to the drafter, and Referral/Job hints appear as suggestions', async () => {
