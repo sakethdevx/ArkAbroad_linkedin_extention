@@ -166,3 +166,9 @@ _Slices land below as they ship._
 **Fix** If the defaults are refused, ask Groq what *this key* can use (`GET /openai/v1/models`), drop non-chat models (speech, TTS, guard, embeddings), try the best remaining ones (preference order, up to 3), and remember what worked for that key. If nothing works, the message now quotes Groq's own words and the model it tried (and says plainly when the key has no chat models, or when the key itself is rejected). Anthropic behaviour is unchanged.
 **Tests** Discovery path (skips non-chat models, remembers the working one), empty list, failing list, rejected key; 111 total.
 **Honesty** I still can't call Groq from here, so I haven't seen the real refusal text; the new message will show it.
+
+### Fix: "Groq returned an empty reply" (second real Groq key test)
+**What happened** Model discovery worked, but the model it picked was a *reasoning* model (e.g. `openai/gpt-oss-*`). Those think first, and that hidden thinking counts against `max_completion_tokens`; the key test allowed only 16 tokens, so the reply came back HTTP 200 with no text.
+**Fix** Reasoning models get a bigger budget (≥ 1024) and `reasoning_effort: low`; if a reply is empty because it hit the limit (`finish_reason: length`) it's retried once with 4× the budget; any other empty reply moves on to the next model; if every model is empty the message names the model instead of a misleading "no chat models". Non-reasoning models are untouched.
+**Tests** Budget/effort for reasoning models, the length-retry, empty-reply fall-through and the final message (113 total).
+**Still unverified live** I can't call Groq from here; the behaviour is modelled on how reasoning models are documented to work.

@@ -351,33 +351,47 @@ async function groqListChatModels(apiKey) {
   return { ok: true, models: ids.sort((x, y) => rank(x) - rank(y)) };
 }
 
-// One model, with the "JSON mode unsupported → plain text" retry. Returns { done:true, result } or { done:false, last, modelProblem }.
+// Reasoning models (e.g. openai/gpt-oss-*) think before they answer and that thinking counts against the token limit,
+// so a small limit can leave NO room for the answer: HTTP 200 with an empty reply. Give them room and ask for little thinking.
+const GROQ_REASONING = /gpt-oss|qwen3|deepseek-r1|reasoning/i;
+
+// One model, with the "JSON mode unsupported → plain text" retry and an "ran out of tokens → try again with more" retry.
+// Returns { done:true, result } or { done:false, last } (the caller then moves on to the next model).
 async function groqTryModel(provider, apiKey, model, req, messages) {
+  const reasoning = GROQ_REASONING.test(model);
   let last;
   for (const withJson of (req.json ? [true, false] : [false])) {
-    const body = { model, messages, max_completion_tokens: req.maxTokens, temperature: 0.8 };
-    if (withJson) body.response_format = { type: 'json_object' };
+    let tokens = reasoning ? Math.max(req.maxTokens * 4, 1024) : req.maxTokens;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const body = { model, messages, max_completion_tokens: tokens, temperature: 0.8 };
+      if (withJson) body.response_format = { type: 'json_object' };
+      if (/gpt-oss/i.test(model)) body.reasoning_effort = 'low';
 
-    const res = await fetch(provider.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) {
-      const text = ((data.choices || [])[0] || {}).message?.content || '';
-      if (!text) return { done: true, result: { ok: false, status: 200, userMessage: `${provider.name} returned an empty reply.` } };
-      groqWorking.set(apiKey, model);
-      return { done: true, result: { ok: true, text, model } };
+      const res = await fetch(provider.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        const choice = (data.choices || [])[0] || {};
+        const text = (choice.message && choice.message.content) || '';
+        if (text.trim()) { groqWorking.set(apiKey, model); return { done: true, result: { ok: true, text, model } }; }
+        // 200 but nothing to show: usually the token limit was eaten by hidden reasoning → retry once with more room
+        if (choice.finish_reason === 'length' && attempt === 0) { tokens = Math.min(tokens * 4, 4096); continue; }
+        last = { ok: false, status: 200, userMessage: `${provider.name} (${model}) returned an empty reply.` };
+        return { done: false, last };               // try another model rather than giving up
+      }
+
+      const msg = String(data?.error?.message || '') + ' ' + String(data?.error?.code || '');
+      last = { ok: false, status: res.status, userMessage: explainApiError(res.status, data, provider, model) };
+      if (res.status === 400 && withJson && /response_format|json/i.test(msg)) break;   // this model has no JSON mode → plain text
+      const modelProblem = res.status === 404 || (res.status === 400 && /model|decommission|does not exist|not found|access/i.test(msg));
+      return { done: !modelProblem, result: last, last };
     }
-
-    const msg = String(data?.error?.message || '') + ' ' + String(data?.error?.code || '');
-    last = { ok: false, status: res.status, userMessage: explainApiError(res.status, data, provider, model) };
-    if (res.status === 400 && withJson && /response_format|json/i.test(msg)) continue;   // this model has no JSON mode → plain text
-    const modelProblem = res.status === 404 || (res.status === 400 && /model|decommission|does not exist|not found|access/i.test(msg));
-    return { done: !modelProblem, result: last, last, modelProblem };
   }
-  return { done: false, last, modelProblem: false };
+  return { done: false, last };
 }
 
 async function callGroq(provider, apiKey, req) {
@@ -400,7 +414,11 @@ async function callGroq(provider, apiKey, req) {
   // 2) both refused → ask Groq what this key can actually use
   const listing = await groqListChatModels(apiKey).catch(() => ({ ok: false, status: 0, message: '' }));
   if (listing.ok) {
-    if (!listing.models.length) return { ok: false, status: 404, userMessage: 'Your Groq key has no chat models available. Check the models enabled for your Groq account.' };
+    if (!listing.models.length) {
+      // if we already got answers (even empty ones) the key does have models; only claim "none" when we never reached one
+      if (last && last.status === 200) return last;
+      return { ok: false, status: 404, userMessage: 'Your Groq key has no chat models available. Check the models enabled for your Groq account.' };
+    }
     for (const m of listing.models.filter(m => !tried.includes(m)).slice(0, 3)) { const out = await run(m); if (out) return out; }
   } else if (listing.status === 401 || listing.status === 403) {
     return { ok: false, status: listing.status, userMessage: explainApiError(listing.status, { error: { message: listing.message } }, provider) };

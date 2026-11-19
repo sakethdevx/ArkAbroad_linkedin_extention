@@ -243,6 +243,49 @@ module.exports = (test) => {
     assert.match((await gen(badKey)).warnings[0], /Groq API key was rejected/);
   });
 
+  test('groq: a reasoning model that burns its token budget on thinking gets room + low effort, and a "length" empty reply is retried with more', async () => {
+    const seen = [];
+    const b = boot({ store: { userApiKey: 'gsk_k' }, permissions: grant(), fetchImpl: (u, i) => {
+      if (/\/models$/.test(u)) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'openai/gpt-oss-20b' }] }) };
+      const body = JSON.parse(i.body); seen.push(body);
+      if (/llama/.test(body.model)) return fail(404, 'model not found');
+      // behaves like a real reasoning model: thinking eats the budget unless it is generous
+      return body.max_completion_tokens < 800 ? { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '' }, finish_reason: 'length' }] }) } : groqOk('OK');
+    } });
+    const r = await b.send({ type: 'TEST_API_KEY', payload: { apiKey: 'gsk_k', provider: 'groq' } });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { valid: true, provider: 'groq' });
+    const gpt = seen.filter(x => /gpt-oss/.test(x.model));
+    assert.ok(gpt[0].max_completion_tokens >= 1024, 'a 16-token request is raised to leave room for thinking');
+    assert.strictEqual(gpt[0].reasoning_effort, 'low');
+    assert.ok(!('reasoning_effort' in seen[0]), 'non-reasoning models are left alone');
+
+    // truly stingy model: first reply empty with finish_reason=length → one retry with 4× the budget
+    const budgets = [];
+    const stingy = boot({ store: { userApiKey: 'gsk_k', aiProvider: 'groq' }, permissions: grant(), fetchImpl: (u, i) => {
+      const body = JSON.parse(i.body); budgets.push(body.max_completion_tokens);
+      return budgets.length === 1 ? { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '' }, finish_reason: 'length' }] }) } : groqOk(groqBody());
+    } });
+    const r2 = await gen(stingy);
+    assert.strictEqual(r2.source, 'ai');
+    assert.deepStrictEqual(budgets, [1024, 4096]);
+  });
+
+  test('groq: an empty reply that is NOT a length cut moves on to the next model, and finally says which model was empty', async () => {
+    const empty = { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: '' }, finish_reason: 'stop' }] }) };
+    const order = [];
+    const b = boot({ store: { userApiKey: 'gsk_k' }, permissions: grant(), fetchImpl: (u, i) => {
+      if (/\/models$/.test(u)) return { ok: true, status: 200, json: async () => ({ data: [] }) };
+      const m = JSON.parse(i.body).model; order.push(m);
+      return m === 'llama-3.1-8b-instant' ? groqOk(groqBody()) : empty;
+    } });
+    const r = await gen(b);
+    assert.strictEqual(r.source, 'ai');
+    assert.deepStrictEqual(order.slice(0, 2), ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']);
+    const all = boot({ store: { userApiKey: 'gsk_k' }, permissions: grant(), fetchImpl: (u) => (/\/models$/.test(u) ? { ok: true, status: 200, json: async () => ({ data: [] }) } : empty) });
+    const r2 = await gen(all);
+    assert.match(r2.warnings[0], /llama-3\.1-8b-instant\) returned an empty reply|no chat models/);
+  });
+
   test('groq: without the optional host permission nothing is sent and the user is told how to fix it', async () => {
     const b = boot({ store: { userApiKey: 'gsk_k' }, fetchImpl: () => { throw new Error('must not call'); }, permissions: grant(false) });
     const r = await gen(b);
