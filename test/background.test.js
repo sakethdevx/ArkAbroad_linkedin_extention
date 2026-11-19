@@ -210,6 +210,39 @@ module.exports = (test) => {
     assert.strictEqual(auth.calls.length, 1);
   });
 
+  test('groq: when both default models are refused, ask Groq which models THIS key can use, skip non-chat ones, and use the best', async () => {
+    const chatModels = [];
+    const list = { ok: true, status: 200, json: async () => ({ data: [{ id: 'whisper-large-v3' }, { id: 'orpheus-v1' }, { id: 'meta-llama/llama-guard-4-12b' }, { id: 'zzz-other-chat' }, { id: 'openai/gpt-oss-20b' }] }) };
+    const b = boot({ store: { userApiKey: 'gsk_k' }, permissions: grant(), fetchImpl: (u, i) => {
+      if (/\/models$/.test(u)) { assert.strictEqual(i.headers.Authorization, 'Bearer gsk_k'); return list; }
+      const m = JSON.parse(i.body).model; chatModels.push(m);
+      return /llama-3/.test(m) ? fail(404, 'The model `' + m + '` does not exist or you do not have access to it.') : groqOk(groqBody());
+    } });
+    const r = await gen(b);
+    assert.strictEqual(r.source, 'ai');
+    assert.deepStrictEqual(chatModels, ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-oss-20b']);
+    // it remembers what worked for this key
+    chatModels.length = 0;
+    await gen(b);
+    assert.strictEqual(chatModels[0], 'openai/gpt-oss-20b');
+  });
+
+  test('groq: if nothing works, the message carries Groq\'s own words and the model; empty list and bad key are explained', async () => {
+    const refuse = (m) => fail(404, 'The model `' + m + '` does not exist or you do not have access to it.');
+    const none = boot({ store: { userApiKey: 'gsk_k' }, permissions: grant(), fetchImpl: (u, i) => (/\/models$/.test(u) ? { ok: true, status: 200, json: async () => ({ data: [{ id: 'whisper-large-v3' }] }) } : refuse(JSON.parse(i.body).model)) });
+    const r1 = await gen(none);
+    assert.strictEqual(r1.source, 'template');
+    assert.match(r1.warnings[0], /no chat models available/);
+
+    const stuck = boot({ store: { userApiKey: 'gsk_k' }, permissions: grant(), fetchImpl: (u, i) => (/\/models$/.test(u) ? fail(500, 'x') : refuse(JSON.parse(i.body).model)) });
+    const r2 = await gen(stuck);
+    assert.match(r2.warnings[0], /Groq couldn't use llama-3\.1-8b-instant/);
+    assert.match(r2.warnings[0], /does not exist or you do not have access/);
+
+    const badKey = boot({ store: { userApiKey: 'gsk_k' }, permissions: grant(), fetchImpl: (u, i) => (/\/models$/.test(u) ? fail(401, 'Invalid API Key') : refuse(JSON.parse(i.body).model)) });
+    assert.match((await gen(badKey)).warnings[0], /Groq API key was rejected/);
+  });
+
   test('groq: without the optional host permission nothing is sent and the user is told how to fix it', async () => {
     const b = boot({ store: { userApiKey: 'gsk_k' }, fetchImpl: () => { throw new Error('must not call'); }, permissions: grant(false) });
     const r = await gen(b);

@@ -335,43 +335,82 @@ async function callAnthropic(provider, apiKey, req) {
 }
 
 // Groq: OpenAI-compatible chat completions (Bearer auth). JSON mode guarantees valid JSON; the shape is in the prompt.
-// If the main model is unavailable (retired / not on this key) we try the small fast one before giving up.
+// Model availability differs per account (models get retired, and orgs can restrict them), so if our preferred models are
+// refused we ask Groq which models THIS key can use (GET /models) and try the best chat-capable ones.
+const GROQ_MODELS_URL = 'https://api.groq.com/openai/v1/models';
+const GROQ_PREFERRED  = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b'];
+const GROQ_NOT_CHAT   = /whisper|tts|orpheus|playai|guard|embed|moderation|transcri|speech/i;
+const groqWorking = new Map();   // apiKey → model that last worked (lives only as long as the service worker)
+
+async function groqListChatModels(apiKey) {
+  const res = await fetch(GROQ_MODELS_URL, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, status: res.status, message: String(data?.error?.message || '') };
+  const ids = (data.data || []).map(m => m && m.id).filter(id => typeof id === 'string' && !GROQ_NOT_CHAT.test(id));
+  const rank = (id) => { const i = GROQ_PREFERRED.indexOf(id); return i === -1 ? GROQ_PREFERRED.length : i; };
+  return { ok: true, models: ids.sort((x, y) => rank(x) - rank(y)) };
+}
+
+// One model, with the "JSON mode unsupported → plain text" retry. Returns { done:true, result } or { done:false, last, modelProblem }.
+async function groqTryModel(provider, apiKey, model, req, messages) {
+  let last;
+  for (const withJson of (req.json ? [true, false] : [false])) {
+    const body = { model, messages, max_completion_tokens: req.maxTokens, temperature: 0.8 };
+    if (withJson) body.response_format = { type: 'json_object' };
+
+    const res = await fetch(provider.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      const text = ((data.choices || [])[0] || {}).message?.content || '';
+      if (!text) return { done: true, result: { ok: false, status: 200, userMessage: `${provider.name} returned an empty reply.` } };
+      groqWorking.set(apiKey, model);
+      return { done: true, result: { ok: true, text, model } };
+    }
+
+    const msg = String(data?.error?.message || '') + ' ' + String(data?.error?.code || '');
+    last = { ok: false, status: res.status, userMessage: explainApiError(res.status, data, provider, model) };
+    if (res.status === 400 && withJson && /response_format|json/i.test(msg)) continue;   // this model has no JSON mode → plain text
+    const modelProblem = res.status === 404 || (res.status === 400 && /model|decommission|does not exist|not found|access/i.test(msg));
+    return { done: !modelProblem, result: last, last, modelProblem };
+  }
+  return { done: false, last, modelProblem: false };
+}
+
 async function callGroq(provider, apiKey, req) {
-  const models = [provider.model, provider.fallbackModel].filter(Boolean);
   const messages = (req.system ? [{ role: 'system', content: req.system }] : []).concat([{ role: 'user', content: req.user }]);
+  const tried = [];
   let last;
 
-  for (const model of models) {
-    for (const withJson of (req.json ? [true, false] : [false])) {
-      const body = { model, messages, max_completion_tokens: req.maxTokens, temperature: 0.8 };
-      if (withJson) body.response_format = { type: 'json_object' };
+  const run = async (model) => {
+    tried.push(model);
+    const r = await groqTryModel(provider, apiKey, model, req, messages);
+    if (r.done) return r.result;
+    last = r.last || last;
+    return null;
+  };
 
-      const res = await fetch(provider.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify(body)
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        const choice = (data.choices || [])[0] || {};
-        const text = (choice.message && choice.message.content) || '';
-        if (!text) return { ok: false, status: 200, userMessage: `${provider.name} returned an empty reply.` };
-        return { ok: true, text };
-      }
+  // 1) the model that already worked for this key, then our defaults
+  const first = [groqWorking.get(apiKey), provider.model, provider.fallbackModel].filter(Boolean);
+  for (const m of [...new Set(first)]) { const out = await run(m); if (out) return out; }
 
-      last = { ok: false, status: res.status, userMessage: explainApiError(res.status, data, provider) };
-      const msg = String(data?.error?.message || '') + ' ' + String(data?.error?.code || '');
-      if (res.status === 400 && withJson && /response_format|json/i.test(msg)) continue;                 // this model has no JSON mode → plain text
-      if (res.status === 404 || (res.status === 400 && /model|decommission|does not exist|not found/i.test(msg))) break;   // try the next model
-      return last;                                                                                       // auth / rate limit / server: no point retrying
-    }
+  // 2) both refused → ask Groq what this key can actually use
+  const listing = await groqListChatModels(apiKey).catch(() => ({ ok: false, status: 0, message: '' }));
+  if (listing.ok) {
+    if (!listing.models.length) return { ok: false, status: 404, userMessage: 'Your Groq key has no chat models available. Check the models enabled for your Groq account.' };
+    for (const m of listing.models.filter(m => !tried.includes(m)).slice(0, 3)) { const out = await run(m); if (out) return out; }
+  } else if (listing.status === 401 || listing.status === 403) {
+    return { ok: false, status: listing.status, userMessage: explainApiError(listing.status, { error: { message: listing.message } }, provider) };
   }
   return last;
 }
 
 const stripKeys = (o, keys) => Object.fromEntries(Object.entries(o).filter(([k]) => !keys.includes(k)));
 
-function explainApiError(status, data, provider = PROVIDERS.anthropic) {
+function explainApiError(status, data, provider = PROVIDERS.anthropic, model = '') {
   const msg = String(data?.error?.message || '');
   const name = provider.name;
   if (status === 401 || status === 403) return `Your ${name} API key was rejected. Check it in Settings.`;
@@ -381,7 +420,12 @@ function explainApiError(status, data, provider = PROVIDERS.anthropic) {
   if (status === 402 || /credit|billing|balance/i.test(msg)) return `Your ${name} account has no credit left.`;
   if (status === 413)                    return 'That request was too large for the provider.';
   if (status === 529 || status >= 500)   return provider.id === 'groq' ? 'Groq is busy right now.' : 'Claude is busy right now.';
-  if (status === 404)                    return `The ${provider.writer} model is not available to this key.`;
+  if (status === 404 || (status === 400 && /model|decommission|does not exist|not found/i.test(msg))) {
+    const said = msg.replace(/\s+/g, ' ').trim().slice(0, 160);
+    return provider.id === 'groq'
+      ? `Groq couldn't use ${model || 'the model'}${said ? ` (“${said}”)` : ''}. Check which models your Groq key can access.`
+      : `The ${provider.writer} model is not available to this key.`;
+  }
   return msg ? `${name} said: ${msg.slice(0, 160)}` : `${name} returned an error (${status}).`;
 }
 

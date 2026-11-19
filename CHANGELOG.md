@@ -160,3 +160,9 @@ _Slices land below as they ship._
 - What leaves the device in Groq mode is the same short profile summary, sent to `api.groq.com`; I did not review Groq's data-retention terms, so Settings says what we send, not how Groq handles it.
 
 **Tests** 15 new (109 total): Groq request shape (Bearer only, key never in the body), prefix detection vs explicit choice, validation and malformed-JSON fallback, every error class, model fallback / JSON-mode retry / no retry on auth errors, missing-permission behavior, preview parity, permission request and denial in the popup, per-provider consent. A new guard also asserts that only the background worker can make network calls.
+
+### Fix: "The Llama model is not available to this key" (first real Groq key test)
+**What happened** Groq refused both models I hard-coded (`llama-3.3-70b-versatile`, then `llama-3.1-8b-instant`) for a real key, and my error text hid Groq's own explanation. Model availability differs per account (models are retired, and organizations can restrict which models a key may use), so fixed names were the wrong design.
+**Fix** If the defaults are refused, ask Groq what *this key* can use (`GET /openai/v1/models`), drop non-chat models (speech, TTS, guard, embeddings), try the best remaining ones (preference order, up to 3), and remember what worked for that key. If nothing works, the message now quotes Groq's own words and the model it tried (and says plainly when the key has no chat models, or when the key itself is rejected). Anthropic behaviour is unchanged.
+**Tests** Discovery path (skips non-chat models, remembers the working one), empty list, failing list, rejected key; 111 total.
+**Honesty** I still can't call Groq from here, so I haven't seen the real refusal text; the new message will show it.
