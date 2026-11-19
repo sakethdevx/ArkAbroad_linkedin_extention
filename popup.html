@@ -254,6 +254,18 @@
           </div>
         </details>
 
+        <!-- 1b · On-device AI (Chrome's built-in model): free, private, optional -->
+        <details class="set-card hidden" id="ondevice-card">
+          <summary><span class="set-title">On-device AI <span class="set-opt">free · beta</span></span><span class="set-chip" id="ondevice-status">Checking…</span></summary>
+          <div class="set-body">
+            <p class="api-key-desc">Smarter drafts from the AI built into Chrome. No key and no account, and nothing leaves your computer.</p>
+            <div class="od-progress hidden" id="od-progress" role="progressbar" aria-label="Downloading Chrome's AI model" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="od-bar" id="od-bar"></div></div>
+            <button id="od-enable" class="btn btn-secondary btn-full hidden" type="button">Turn on</button>
+            <button id="od-disable" class="btn-ghost hidden" type="button">Turn off</button>
+            <p class="field-hint" id="od-hint" role="status" aria-live="polite"></p>
+          </div>
+        </details>
+
         <!-- 2 · About you -->
         <details class="set-card" id="about-card" open>
           <summary><span class="set-title">About you</span><span class="set-chip" id="about-summary"></span></summary>
@@ -387,6 +399,7 @@
   </dialog>
 
   <script src="utils/safety.js"></script>
+  <script src="utils/ondevice.js"></script>
   <script src="utils/profile_parse.js"></script>
   <script src="utils/overlap.js"></script>
   <script src="utils/spotlight.js"></script>

@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('paste-btn').addEventListener('click', handlePasteProfile);
   document.getElementById('privacy-details-btn').addEventListener('click', showPrivacyDetails);
   wireProviderUi();
+  wireOnDevice();
   wireModeSwitch();
   document.getElementById('resume-tip-go').addEventListener('click', () => { switchTab('settings'); document.getElementById('about-card').open = true; document.getElementById('file-upload-area').focus(); });
   document.getElementById('resume-tip-dismiss').addEventListener('click', async () => { await storageSet({ resumeTipDismissed: true }); refreshResumeTip(); });
@@ -30,6 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadPrefs();
   await renderRecentContacts();
   await refreshModeBadge();
+  await refreshOnDeviceCard();
   await refreshResumeTip();
   await onTabContextChanged();
   watchTabs();
@@ -147,6 +149,69 @@ async function turnOffAi() {
 function wireModeSwitch() {
   document.getElementById('mode-free').addEventListener('click', turnOffAi);
   document.getElementById('mode-ai').addEventListener('click', turnOnAi);
+}
+
+// ─── On-device AI (Chrome's built-in model): a free "Free+" for people with no key ─────────
+// Hardware-gated (desktop, ~22 GB free disk, 16 GB RAM or a 4 GB GPU), so the card only appears where Chrome has the API,
+// and says plainly when this computer does not qualify. Turning it on starts Chrome's one-time model download from a click.
+async function refreshOnDeviceCard() {
+  const card = document.getElementById('ondevice-card');
+  if (typeof OnDevice === 'undefined') return;
+  const st = await OnDevice.status();
+  const { onDevice } = await storageGet(['onDevice']);
+  const chip = document.getElementById('ondevice-status'), hint = document.getElementById('od-hint');
+  const on = document.getElementById('od-enable'), off = document.getElementById('od-disable');
+  const hasApi = typeof LanguageModel !== 'undefined';
+  card.classList.toggle('hidden', !hasApi);
+  if (!hasApi) return;
+  const active = !!onDevice && st === 'available';
+  on.classList.toggle('hidden', active || st === 'unsupported' || st === 'downloading');
+  off.classList.toggle('hidden', !active);
+  chip.classList.toggle('ok', active);
+  if (st === 'unsupported') {
+    chip.textContent = 'Not available here';
+    hint.textContent = 'This computer doesn’t meet Chrome’s requirements for built-in AI (desktop Chrome 138 or newer, about 22 GB free disk, and 16 GB of memory or a graphics card with 4 GB+). Everything else works as usual.';
+  } else if (st === 'downloading') {
+    chip.textContent = 'Downloading…';
+    hint.textContent = 'Chrome is downloading its AI model. You can keep working.';
+  } else if (st === 'downloadable') {
+    chip.textContent = 'Ready to set up';
+    on.textContent = 'Turn on (one-time download)';
+    hint.textContent = 'Chrome downloads its AI model once; it is large, so use a good connection. Your drafts and your profile never leave your computer.';
+  } else if (active) {
+    chip.textContent = 'On';
+    hint.textContent = 'In Free Mode your drafts appear instantly, then get polished on this device. Turn the switch to AI for your own key instead.';
+  } else {
+    chip.textContent = 'Off';
+    on.textContent = 'Turn on';
+    hint.textContent = 'The model is ready on this computer. Turn it on to polish your free drafts.';
+  }
+}
+
+async function onDeviceActive() {
+  if (typeof OnDevice === 'undefined') return false;
+  const { onDevice } = await storageGet(['onDevice']);
+  return !!onDevice && (await OnDevice.status()) === 'available';
+}
+
+function wireOnDevice() {
+  const bar = document.getElementById('od-bar'), wrap = document.getElementById('od-progress');
+  document.getElementById('od-enable').addEventListener('click', async () => {
+    const btn = document.getElementById('od-enable');
+    btn.disabled = true;
+    wrap.classList.remove('hidden');
+    document.getElementById('od-hint').textContent = 'Setting up… this can take a few minutes the first time.';
+    const res = await OnDevice.enable((f) => { bar.style.width = `${Math.round(f * 100)}%`; wrap.setAttribute('aria-valuenow', String(Math.round(f * 100))); });
+    btn.disabled = false;
+    wrap.classList.add('hidden');
+    bar.style.width = '0';
+    if (res.ok) await storageSet({ onDevice: true });
+    await refreshOnDeviceCard();
+    if (!res.ok) document.getElementById('od-hint').textContent = res.reason === 'NotAllowedError'
+      ? 'Chrome needs a click to start the download. Press Turn on again.'
+      : 'Chrome couldn’t set up its AI model on this computer. Your free drafts still work as before.';
+  });
+  document.getElementById('od-disable').addEventListener('click', async () => { await storageSet({ onDevice: false }); await refreshOnDeviceCard(); });
 }
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
@@ -1513,7 +1578,7 @@ function onSpotlightToggle() {
 
 function loadStoredSettings() {
   return new Promise(resolve => {
-    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile','prefs','aiConsent','resumeTipDismissed','aiProvider','mode'], resolve);
+    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile','prefs','aiConsent','resumeTipDismissed','aiProvider','mode','onDevice'], resolve);
   });
 }
 

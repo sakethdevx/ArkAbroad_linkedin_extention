@@ -11,7 +11,7 @@ module.exports = (test) => {
   const root = path.join(__dirname, '..');
   const PP = require(path.join(root, 'utils/profile_parse.js'));
   const tick = (n = 40) => new Promise(r => setTimeout(r, n));
-  const SCRIPTS = ['utils/safety.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/compose.js', 'utils/resume.js', 'utils/cache.js', 'popup.js'];
+  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/compose.js', 'utils/resume.js', 'utils/cache.js', 'popup.js'];
 
   const PRIYA = () => PP.buildProfile({
     name: 'Priya Rao', headline: 'Data Scientist at Globex', location: 'Chennai, India',
@@ -20,7 +20,7 @@ module.exports = (test) => {
     skills: ['Python'], recentPosts: ['Shipped a forecasting model this week and learned a lot about drift'], profileUrl: 'https://www.linkedin.com/in/priya/'
   });
 
-  async function boot(store = {}, { url = 'https://www.linkedin.com/in/priya/', signals: initialSignals } = {}) {
+  async function boot(store = {}, { url = 'https://www.linkedin.com/in/priya/', signals: initialSignals, languageModel } = {}) {
     const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8').replace(/<script[^>]*src[^>]*><\/script>/g, '');
     const w = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://x/popup.html' }).window;
     const errors = []; w.addEventListener('error', e => errors.push(e.message));
@@ -62,6 +62,7 @@ module.exports = (test) => {
         cb({});
       } }
     };
+    if (languageModel) w.LanguageModel = languageModel;
     w.navigator.clipboard = { writeText: async () => {} };
     w.eval(SCRIPTS.map(f => fs.readFileSync(path.join(root, f), 'utf8').replace(/^'use strict';/, '')).join('\n;'));
     if (w.document.readyState === 'loading') await new Promise(r => w.document.addEventListener('DOMContentLoaded', () => r()));   // jsdom fires it itself; dispatching again would run init twice
@@ -607,5 +608,52 @@ module.exports = (test) => {
     nogoal.$('message-type').value = 'Job';
     await nogoal.click('scrape-btn');
     assert.ok([...nogoal.w.document.querySelectorAll('#draft-notes .draft-note')].some(n => /add what you are looking for/.test(n.textContent)));
+  });
+
+  const fakeLM = (avail, over = {}) => { const log = { created: 0 }; const lm = { availability: async () => (typeof avail === 'function' ? avail() : avail), create: async (o) => { log.created++; if (o && o.monitor) { const l = {}; o.monitor({ addEventListener: (n, f) => { l[n] = f; } }); l.downloadprogress && l.downloadprogress({ loaded: 0.5 }); } if (over.createError) throw over.createError; return { prompt: async () => JSON.stringify({ variants: [] }), destroy: () => {} }; }, ...over.extra }; return { lm, log }; };
+
+  test('popup: the On-device AI card appears only where Chrome has the API, and says plainly when the computer does not qualify', async () => {
+    const none = await boot({});
+    await tick(60);
+    assert.ok(none.$('ondevice-card').classList.contains('hidden'), 'no LanguageModel API → no card');
+    const { lm } = fakeLM('unavailable');
+    const t = await boot({}, { languageModel: lm });
+    await tick(80);
+    assert.ok(!t.$('ondevice-card').classList.contains('hidden'));
+    assert.strictEqual(t.$('ondevice-status').textContent, 'Not available here');
+    assert.match(t.$('od-hint').textContent, /doesn’t meet Chrome’s requirements/);
+    assert.ok(t.$('od-enable').classList.contains('hidden') && t.$('od-disable').classList.contains('hidden'));
+    assert.deepStrictEqual(t.errors, []);
+  });
+
+  test('popup: Turn on starts the download from the click with progress, saves the choice, and Turn off reverts it', async () => {
+    let state = 'downloadable';
+    const { lm, log } = fakeLM(() => state, { });
+    const orig = lm.create;
+    lm.create = async (o) => { const r = await orig(o); state = 'available'; return r; };
+    const t = await boot({}, { languageModel: lm });
+    await tick(80);
+    assert.strictEqual(t.$('ondevice-status').textContent, 'Ready to set up');
+    assert.match(t.$('od-enable').textContent, /one-time download/);
+    await t.click('od-enable', 150);
+    assert.strictEqual(log.created, 1);
+    assert.strictEqual(t.store.onDevice, true);
+    assert.strictEqual(t.$('ondevice-status').textContent, 'On');
+    assert.ok(t.$('od-enable').classList.contains('hidden') && !t.$('od-disable').classList.contains('hidden'));
+    await t.click('od-disable', 100);
+    assert.strictEqual(t.store.onDevice, false);
+    assert.strictEqual(t.$('ondevice-status').textContent, 'Off');
+    assert.match(t.$('od-hint').textContent, /ready on this computer/);
+  });
+
+  test('popup: a refused or failed setup is explained and leaves the free drafts untouched', async () => {
+    const e = new Error('x'); e.name = 'NotAllowedError';
+    const { lm } = fakeLM('downloadable', { createError: e });
+    const t = await boot({}, { languageModel: lm });
+    await tick(80);
+    await t.click('od-enable', 150);
+    assert.notStrictEqual(t.store.onDevice, true);
+    assert.match(t.$('od-hint').textContent, /Press Turn on again/);
+    assert.strictEqual(t.$('od-enable').disabled, false);
   });
 };
