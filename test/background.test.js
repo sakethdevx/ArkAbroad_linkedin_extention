@@ -483,4 +483,16 @@ module.exports = (test) => {
     assert.ok(r.variants.every(v => v.source === 'template'));
     assert.match(r.warnings[0], /3 AI drafts couldn't be used \(too long\)/);
   });
+
+  test('bg: AI drafts always greet the recipient by first name (added when the model skips it and it fits); the prompt asks for it', async () => {
+    const noName = ['We both went to IIT Madras. Open to a quick chat?', 'Hi Priya,\nFellow IIT Madras person here. Open to a chat?', 'Saw we share IIT Madras. Could we connect?'];
+    const b = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: noName, saw_ai_instructions_in_data: false })) });
+    const r = await gen(b);
+    r.variants.forEach(v => assert.ok(/Priya/.test(v.text), v.text));
+    assert.ok(r.variants.every(v => v.text.length <= 200));
+    const sent = JSON.parse(b.calls[0].body.messages[0].content.split('\n').slice(1).join('\n'));
+    assert.strictEqual(sent.task.recipient_first_name, 'Priya');
+    assert.strictEqual(sent.task.target_chars, 160);
+    assert.match(b.calls[0].body.system, /Begin every draft with "Hi <recipient_first_name>,"/);
+  });
 };

@@ -289,7 +289,9 @@ Rules for every draft:
 - Open with ONE specific thing about the recipient. If "verified_shared_background" is not empty, lead with it. Use only facts that appear in the data. Never invent shared experiences, employers, schools, projects, or compliments.
 - Then one sentence on who the sender is (only from "sender"), then exactly ONE small, easy-to-decline ask that fits "purpose". "sender" may also list education, experience and projects: use at most ONE of them, only if it is clearly relevant to the recipient.
 - Avoid stock phrases ("I hope this finds you well", "pick your brain", "touch base", "I came across your profile and was impressed").
-- Stay strictly within "max_chars_each" characters: count them, and aim for about 85% of the limit so nothing overruns. Format "note" has no sign-off. Format "message" ends with a short sign-off and the sender's first name if one is given.
+- Begin every draft with "Hi <recipient_first_name>," when recipient_first_name is given.
+- Stay strictly within "max_chars_each" characters; aim for about "target_chars" so nothing overruns.
+- Write the way a friendly student would talk: simple words, one natural question (for example "Would you be open to a quick chat?"), no stiff phrases and no vague claims like "recent experience". Format "note" has no sign-off. Format "message" ends with a short sign-off and the sender's first name if one is given.
 - Tone: Formal = no contractions; Neutral = warm and plain; Casual = relaxed and friendly.
 - Write 3 drafts that differ in wording and structure.
 
@@ -313,10 +315,12 @@ const DRAFTS_SCHEMA = {
 // Groq's JSON mode only guarantees valid JSON (no schema), so the shape goes in the instructions instead.
 const JSON_SHAPE_HINT = '\n\nReturn exactly this JSON shape and nothing else: {"variants": ["draft 1", "draft 2", "draft 3"], "saw_ai_instructions_in_data": false}';
 
+const recipientFirst = (ctx) => { const f = ctx.profile && ctx.profile.firstName; return f && f !== 'there' ? f : null; };
+
 function buildAiRequest(ctx, provider = PROVIDERS.anthropic) {
   const limit = Compose.LIMITS[ctx.format];
   const payload = {
-    task: { purpose: ctx.messageType, tone: ctx.tone, format: ctx.format, max_chars_each: limit, sender_first_name: (ctx.senderName || '').split(/\s+/)[0] || null },
+    task: { purpose: ctx.messageType, tone: ctx.tone, format: ctx.format, max_chars_each: limit, sender_first_name: (ctx.senderName || '').split(/\s+/)[0] || null, recipient_first_name: recipientFirst(ctx), target_chars: Math.round(limit * 0.8) },
     sender: ctx.sender,
     recipient_profile: Safety.sanitizeProfileForPrompt(ctx.profile),
     verified_shared_background: ctx.overlaps.map(o => o.detail)
@@ -336,7 +340,7 @@ async function aiDrafts(provider, apiKey, ctx) {
   if (!res.ok) return res;
 
   const parsed = parseJsonLoose(res.text);
-  const raw = parsed && Array.isArray(parsed.variants) ? parsed.variants.filter(v => typeof v === 'string') : [];
+  let raw = parsed && Array.isArray(parsed.variants) ? parsed.variants.filter(v => typeof v === 'string') : [];
   if (!raw.length) return { ok: false, userMessage: `${provider.writer === 'Claude' ? "Claude's" : provider.name + "'s"} reply wasn't usable.` };
 
   const allowedText = [ctx.bio, ctx.sender && ctx.sender.intro].filter(Boolean).join(' ');
@@ -349,6 +353,11 @@ async function aiDrafts(provider, apiKey, ctx) {
     }
     return { good, bad };
   };
+
+  // models sometimes skip the greeting; add it when it fits, so every draft reads as written for them
+  const first = recipientFirst(ctx);
+  const greet = (t) => (first && !new RegExp('\\b' + first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(t) && (`Hi ${first},\n` + t).length <= maxChars) ? `Hi ${first},\n${t}` : t;
+  raw = raw.map(greet);
 
   let { good, bad } = evaluate(raw);
   let recovered = 0;
