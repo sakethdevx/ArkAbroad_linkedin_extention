@@ -709,7 +709,19 @@ function renderProfileCard(data) {
   const section = document.getElementById('profile-section');
   section.classList.remove('hidden');
   const name = data.name || 'Unknown';
-  document.getElementById('profile-avatar').textContent  = name.charAt(0).toUpperCase();
+  const avatar = document.getElementById('profile-avatar');
+  avatar.classList.remove('has-photo');
+  avatar.textContent = name.charAt(0).toUpperCase();          // initial first: always something sensible
+  if (ProfileParse.isLinkedInImage(data.photoUrl)) {          // then their real photo, straight from LinkedIn's image servers
+    const img = document.createElement('img');
+    img.alt = '';
+    img.referrerPolicy = 'no-referrer';
+    img.decoding = 'async';
+    img.addEventListener('load', () => avatar.classList.add('has-photo'));       // fade the picture in over the initial
+    img.addEventListener('error', () => { img.remove(); avatar.classList.remove('has-photo'); });   // keeps the initial
+    avatar.appendChild(img);
+    img.src = data.photoUrl;
+  } else avatar.classList.remove('has-photo');
   document.getElementById('profile-name').textContent    = name;
   document.getElementById('profile-headline').textContent = data.headline || '';
   document.getElementById('profile-company').textContent  = data.currentCompany || '';

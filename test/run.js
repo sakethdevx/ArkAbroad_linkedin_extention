@@ -50,6 +50,22 @@ test('detectConnection: badge, hidden label, Connect/Pending buttons; never gues
   assert.strictEqual(PP.buildProfile({ name: 'Priya' }).isConnection, null);
 });
 
+test('profile photo: picks the member\'s own picture from LinkedIn\'s CDN, skips banners, logos, tiny faces and foreign hosts', () => {
+  const photo = 'https://media.licdn.com/dms/image/v2/D4D03AQabc/profile-displayphoto-shrink_200_200/0/1700000000000?e=1&t=x';
+  const pick = (c, n) => PP.pickProfilePhoto(c, n || 'Srinivas Thammana');
+  const banner = { src: 'https://media.licdn.com/dms/image/v2/D5616AQx/profile-displaybackgroundimage-shrink_350_1400/0/1', alt: '', width: 1400, height: 350 };
+  const logo = { src: 'https://media.licdn.com/dms/image/v2/C4D0BAQy/company-logo_100_100/0/1', alt: 'PayPal', width: 100, height: 100 };
+  const mutual = { src: 'https://media.licdn.com/dms/image/v2/Z/profile-displayphoto-shrink_100_100/0/2', alt: 'Abhienaya', width: 24, height: 24 };
+  assert.strictEqual(pick([banner, logo, mutual, { src: photo, alt: 'Srinivas Thammana', width: 160, height: 160 }]), photo);
+  assert.strictEqual(pick([{ src: photo, alt: '', cls: 'pv-top-card-profile-picture__image', width: 0, height: 0 }]), photo, 'unknown size is accepted when the URL says it is a profile photo');
+  assert.strictEqual(pick([banner, logo, mutual]), '');
+  assert.strictEqual(pick([{ src: 'https://evil.example/profile-displayphoto.png', alt: 'Srinivas Thammana', width: 200, height: 200 }]), '', 'only LinkedIn image hosts');
+  assert.strictEqual(pick([{ src: 'http://media.licdn.com/x/profile-displayphoto.png', alt: 'Srinivas Thammana', width: 200, height: 200 }]), '', 'https only');
+  assert.strictEqual(pick(null), '');
+  assert.strictEqual(PP.buildProfile({ name: 'A', photoUrl: photo }).photoUrl, photo);
+  assert.strictEqual(PP.buildProfile({ name: 'A', photoUrl: 'https://evil.example/x.png' }).photoUrl, '');
+});
+
 test('single role: Marketing Intern keeps its title', () => {
   const r = PP.parseRoleLines(['Marketing Intern', 'Acme Corp · Internship', 'Jun 2024 - Aug 2024 · 3 mos', 'Chennai, India']);
   assert.strictEqual(r.title, 'Marketing Intern');

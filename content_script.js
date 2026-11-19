@@ -6,7 +6,7 @@
 
 (function () {
   // Guard against double-registering, but keyed by version so new code replaces stale code after an update.
-  const VERSION = 'scroll-4';
+  const VERSION = 'scroll-5';
   if (window.__outreachAiLoaded === VERSION) return;
   window.__outreachAiLoaded = VERSION;
 
@@ -201,7 +201,18 @@
       const d = PP.detectConnection({ lines: topLines, labels });
       return { connectionDegree: d.degree, isConnection: d.connected, connectionSignal: d.signal };
     }, { connectionDegree: '', isConnection: null, connectionSignal: '' }, warnings);
-    const profile = PP.buildProfile({ name, headline, location, about, experience, education, skills, recentPosts, profileUrl: url, warnings, ...conn });
+    // The member's profile picture (shown only in the panel; never sent anywhere)
+    const photoUrl = safe('the profile picture', () => {
+      const scope = document.querySelector('main') || document.body;
+      const candidates = Array.from(scope.querySelectorAll('img')).map(img => ({
+        src: img.currentSrc || img.getAttribute('src') || img.getAttribute('data-delayed-url') || '',
+        alt: img.getAttribute('alt') || '', cls: img.className && img.className.baseVal === undefined ? String(img.className) : '',
+        width: img.naturalWidth || img.width || (img.getBoundingClientRect && img.getBoundingClientRect().width) || 0,
+        height: img.naturalHeight || img.height || (img.getBoundingClientRect && img.getBoundingClientRect().height) || 0
+      }));
+      return PP.pickProfilePhoto(candidates, name);
+    }, '', warnings);
+    const profile = PP.buildProfile({ name, headline, photoUrl, location, about, experience, education, skills, recentPosts, profileUrl: url, warnings, ...conn });
     profile.rawTitle = document.title;
     return profile;
   }

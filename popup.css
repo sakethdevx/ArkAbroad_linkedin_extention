@@ -1118,3 +1118,8 @@ body { position: fixed; inset: 0; width: 100%; height: 100%; margin: 0; }
 
 .set-card .provider-help:empty { display: none; }
 .set-body .provider-row { margin: 0; }
+
+/* Profile photo (falls back to the initial) */
+.profile-avatar { overflow: hidden; position: relative; }
+.profile-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
+.profile-avatar.has-photo img { opacity: 1; }

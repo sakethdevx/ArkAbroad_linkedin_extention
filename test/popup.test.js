@@ -538,4 +538,20 @@ module.exports = (test) => {
     assert.ok(!/VELLORE INSTITUTE/.test(t.$('me-schools').value) || /Vellore Institute/.test(t.$('me-schools').value));
     assert.deepStrictEqual(t.errors, []);
   });
+
+  test('popup: the profile card shows their photo when one was read (LinkedIn images only), and keeps the initial if it cannot load', async () => {
+    const t = await boot({ senderProfile: SENDER });
+    const av = () => t.$('profile-avatar');
+    // drive the card directly with a photo url
+    t.w.renderProfileCard({ name: 'Priya Rao', headline: 'x', currentCompany: 'y', photoUrl: 'https://media.licdn.com/dms/image/v2/a/profile-displayphoto-shrink_200_200/0/1' });
+    const img = av().querySelector('img');
+    assert.ok(img && /licdn\.com/.test(img.src) && img.referrerPolicy === 'no-referrer');
+    assert.strictEqual(av().textContent, 'P', 'the initial shows until the picture loads');
+    img.dispatchEvent(new t.w.Event('load'));
+    assert.ok(av().classList.contains('has-photo'));
+    // foreign host is never loaded
+    t.w.renderProfileCard({ name: 'Priya Rao', photoUrl: 'https://evil.example/p.png' });
+    assert.ok(!av().querySelector('img'));
+    assert.strictEqual(av().textContent, 'P');
+  });
 };

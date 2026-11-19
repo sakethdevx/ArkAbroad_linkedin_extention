@@ -26,6 +26,7 @@ Needs Chrome 116 or newer (side panel).
 | **AI**, resume upload | The resume **text** (emails/phones already removed) so the AI can fill in your profile | the same provider |
 | Always | Never: your resume PDF, emails, phone numbers, your key (header only), or anything else on the page | n/a |
 
+- The profile card shows the person's photo, loaded from LinkedIn's own image servers (`*.licdn.com`, https only) exactly as the page does. The photo is never stored, never sent to an AI, and never leaves the panel.
 - Stored locally (`chrome.storage.local`): your key (if you add one), name/bio, resume **text** (contact details removed; the PDF is not kept), your edited "about you" info, recent drafts.
 - Profile, pasted and resume text are treated as **untrusted input**: invisible characters are stripped, fields are length-capped and whitelisted, text that tries to instruct an AI is flagged and dropped, and model output is checked before you see it.
 - Permissions: `storage`, `scripting`, `sidePanel`; hosts `linkedin.com` and `api.anthropic.com`. `api.groq.com` is an **optional** permission that Chrome asks for only if you choose Groq. The full page reader is injected only when you click. On a profile, the panel also runs one tiny function that reads just the top card's connection badge and button labels (a few short strings, kept on your device, never stored or sent) so it can pre-select "New connection" or "Already connected"; nothing else runs on LinkedIn.

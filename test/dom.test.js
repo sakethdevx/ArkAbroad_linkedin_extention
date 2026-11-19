@@ -82,4 +82,17 @@ module.exports = (test) => {
     const unknown = await read('<button>Message</button><button>More</button>');
     assert.strictEqual(unknown.isConnection, null);
   });
+
+  test('DOM: profile picture is read from the top card, ignoring banner, logos and mutual-connection faces', async () => {
+    const photo = 'https://media.licdn.com/dms/image/v2/D4D03AQabc/profile-displayphoto-shrink_200_200/0/1700000000000';
+    const html = `<html><body><header><img src="https://media.licdn.com/dms/image/v2/NAV/profile-displayphoto-shrink_100_100/0/9" width="24" height="24" alt="Me"></header>
+      <main><section><img src="https://media.licdn.com/dms/image/v2/B/profile-displaybackgroundimage-shrink_350_1400/0/1" width="1400" height="350">
+      <img class="pv-top-card-profile-picture__image" src="${photo}" alt="Priya Rao" width="160" height="160"><h1>Priya Rao</h1>
+      <div class="text-body-medium">Data Scientist at Globex</div>
+      <img src="https://media.licdn.com/dms/image/v2/M/profile-displayphoto-shrink_100_100/0/3" width="24" height="24" alt="Mutual"></section></main></body></html>`;
+    const res = await scrapeFixture(html, 'https://www.linkedin.com/in/priya/');
+    assert.strictEqual(res.data.photoUrl, photo);
+    const none = await scrapeFixture('<html><body><main><section><h1>Priya Rao</h1></section></main></body></html>', 'https://www.linkedin.com/in/priya/');
+    assert.strictEqual(none.data.photoUrl, '');
+  });
 };

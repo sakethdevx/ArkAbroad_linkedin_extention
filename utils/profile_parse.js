@@ -293,6 +293,30 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
     return '';
   }
 
+  // Only ever show a picture that comes from LinkedIn's own image CDN over https (never an arbitrary URL from the page).
+  const LICDN = /^https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.licdn\.com\//i;
+  const isLinkedInImage = (u) => typeof u === 'string' && u.length < 1500 && LICDN.test(u);
+
+  // candidates = [{ src, alt, cls, width, height }] for images in the profile's main area. The member's own photo is the big
+  // one whose URL says "profile-displayphoto"; banners, company logos and the tiny mutual-connection faces are skipped.
+  function pickProfilePhoto(candidates, name) {
+    const nm = clean(name).toLowerCase();
+    let best = null, bestScore = 0;
+    for (const c of Array.isArray(candidates) ? candidates : []) {
+      const src = c && c.src;
+      if (!isLinkedInImage(src)) continue;
+      if (/background|banner|company-logo|companylogo|ghost|logo/i.test(src + ' ' + (c.cls || ''))) continue;
+      const size = Math.max(Number(c.width) || 0, Number(c.height) || 0);
+      const isPhoto = /profile-displayphoto|profile-framedphoto/i.test(src) || /profile-picture|profile-photo|pv-top-card/i.test(c.cls || '');
+      const nameHit = nm && clean(c.alt).toLowerCase().includes(nm);
+      if (!isPhoto && !nameHit) continue;
+      if (size && size < 80) continue;                       // mutual-connection faces and nav avatars are small
+      const score = size + (nameHit ? 1000 : 0) + (isPhoto ? 500 : 0);
+      if (score > bestScore) { best = src; bestScore = score; }
+    }
+    return best || '';
+  }
+
   // Are we connected? Combines every signal we can read from the top card; never guesses.
   //   lines  = visible text lines of the top card;  labels = button texts / aria-labels in it.
   //   → { connected: true | false | null, degree, signal }   (null = could not tell)
@@ -343,6 +367,7 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
       profileUrl:        parts.profileUrl || '',
       connectionDegree:  parts.connectionDegree || '',
       isConnection:      typeof parts.isConnection === 'boolean' ? parts.isConnection : null,
+      photoUrl:          isLinkedInImage(parts.photoUrl) ? parts.photoUrl : '',
       connectionSignal:  parts.connectionSignal || '',
       source:            parts.source || 'page'
     };
@@ -422,6 +447,6 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
     parseRoleLines, parseExperienceBlocks, parseExperienceLines,
     parseEducationBlocks, parseEducationLines, parseSkills,
     titleCompanyFromHeadline, nameFromPageTitle, nameFromUrl,
-    parseConnectionDegree, detectConnection, buildProfile, assessQuality, parseProfileText, headingKey, plausibleLabel, extractPostText
+    isLinkedInImage, pickProfilePhoto, parseConnectionDegree, detectConnection, buildProfile, assessQuality, parseProfileText, headingKey, plausibleLabel, extractPostText
   };
 });
