@@ -65,11 +65,11 @@ module.exports = (test, load) => {
 
   test('compose: message format has an easy out + sign-off with name; note has neither', () => {
     const m = C.compose(base({ format: 'message' })).variants[0].text;
-    assert.match(m, /Best,\nSaketh$/);
+    assert.match(m, /Best regards,\nSaketh$/);
     assert.match(m, /No worries|Totally fine/);
     const n = C.compose(base()).variants[0].text;
-    assert.ok(!/Best,|Saketh/.test(n));
-    assert.ok(!/Best,/.test(C.compose(base({ format: 'message', senderName: '' })).variants[0].text));
+    assert.ok(!/Best regards,|Saketh/.test(n));
+    assert.ok(!/Best regards,/.test(C.compose(base({ format: 'message', senderName: '' })).variants[0].text));
   });
 
   test('compose: a cold 200-char Referral note asks for advice, not a referral', () => {

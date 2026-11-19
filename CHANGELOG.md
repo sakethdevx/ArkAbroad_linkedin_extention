@@ -352,3 +352,6 @@ README (requirements, privacy table, honest limits), LOOM addendum, and the mani
 - Turning on-device AI on with a resume already uploaded reads it automatically; "Re-read my resume with on-device AI" appears next to it. New `BUILD_RESUME_PROMPT` (background) and `OnDevice.extract()` (panel) keep prompts and checks in one place.
 - **Skills parser bug**: items are split only on commas that are outside brackets, and parentheticals are dropped ("Python (primary)" → "Python", "AI-assisted development (Claude, Antigravity)" → "AI-assisted development"), so no more `Antigravity)` fragments.
 **Tests** Skill splitting, `extract()`, `BUILD_RESUME_PROMPT`, and three panel flows (full fill with grounding and name casing, unreadable answer falls back, switch off never calls the model, auto-read on enabling, re-read); 194 with jsdom. **Unverified on real Gemini Nano**: a small model may read long or unusual resumes less completely than a cloud model; the grounding rule keeps what it returns honest.
+
+### Copy: the default message sign-off is "Best regards,"
+Free drafts in the Neutral tone signed off with a bare "Best,". They now use "Best regards," (Formal stays "Kind regards,", Casual "Cheers,"), and the AI prompts name the same three sign-offs so cloud and on-device drafts match.

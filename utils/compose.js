@@ -45,7 +45,7 @@
 
   // ── Tone ────────────────────────────────────────────────────────────────────
   const GREET   = { Formal: (n) => `Dear ${n},`, Neutral: (n) => `Hi ${n},`, Casual: (n) => `Hey ${n},` };
-  const SIGNOFF = { Formal: 'Kind regards,', Neutral: 'Best,', Casual: 'Cheers,' };
+  const SIGNOFF = { Formal: 'Kind regards,', Neutral: 'Best regards,', Casual: 'Cheers,' };
   const OUT = {
     Formal:  ['I understand if your schedule is full.', 'Please feel free to ignore this if the timing is not right.'],
     Neutral: ["No worries if you're busy.", "Totally fine if now isn't a good time."],
@@ -215,7 +215,7 @@
     } else {
       const body1 = parts.join(' ');
       const body2 = [ask, outLine].filter(Boolean).join(' ');
-      const sign = name ? `\n\n${SIGNOFF[tone] || 'Best,'}\n${name}` : '';
+      const sign = name ? `\n\n${SIGNOFF[tone] || 'Best regards,'}\n${name}` : '';
       text = `${greet}\n\n${body1}\n\n${body2}${sign}`;
     }
     return { text: tonalize(text, tone), specific, hookKind, because };
