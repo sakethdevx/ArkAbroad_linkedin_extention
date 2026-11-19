@@ -6,7 +6,7 @@
 
 (function () {
   // Guard against double-registering, but keyed by version so new code replaces stale code after an update.
-  const VERSION = 'scroll-3';
+  const VERSION = 'scroll-4';
   if (window.__outreachAiLoaded === VERSION) return;
   window.__outreachAiLoaded = VERSION;
 
@@ -191,7 +191,17 @@
       return out;
     }, [], warnings);
 
-    const profile = PP.buildProfile({ name, headline, location, about, experience, education, skills, recentPosts, profileUrl: url, warnings, connectionDegree: safe('the connection badge', () => PP.parseConnectionDegree(topLines), '', warnings) });
+    // Are we connected? (badge, hidden "1st degree" label, Connect/Pending button). Failure just means "unknown".
+    const conn = safe('the connection status', () => {
+      const labels = [];
+      if (topSection) topSection.querySelectorAll('button, a[role="button"], a, [aria-label]').forEach(el => {
+        const t = PP.clean(el.getAttribute('aria-label') || el.innerText || el.textContent || '');
+        if (t && t.length < 90) labels.push(t);
+      });
+      const d = PP.detectConnection({ lines: topLines, labels });
+      return { connectionDegree: d.degree, isConnection: d.connected, connectionSignal: d.signal };
+    }, { connectionDegree: '', isConnection: null, connectionSignal: '' }, warnings);
+    const profile = PP.buildProfile({ name, headline, location, about, experience, education, skills, recentPosts, profileUrl: url, warnings, ...conn });
     profile.rawTitle = document.title;
     return profile;
   }

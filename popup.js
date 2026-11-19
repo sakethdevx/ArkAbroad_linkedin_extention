@@ -849,13 +849,18 @@ async function saveToHistory() {
 }
 
 // ─── Format (note vs message) + remembered preferences ─────────────────────────
-// LinkedIn shows a 1st / 2nd / 3rd badge. If it was read and you have not chosen yourself, pick the matching format.
+// The page tells us whether you are connected (1st-degree badge, or a Connect / Pending button). Pick the matching format
+// unless you have chosen one yourself, and always say what we decided and why, so it never feels like magic.
 function maybeAutoFormat(profile) {
+  if (formatByUser) return;
+  const c = profile && profile.isConnection;
   const deg = profile && profile.connectionDegree;
-  if (!deg || formatByUser) return;
-  const want = deg === '1st' ? 'message' : 'note';
-  formatAutoNote = want === 'message' ? 'They are a 1st-degree connection, so I chose “Already connected”.' : '';
-  if (want !== currentFormat || formatAutoNote) setFormat(want, { silent: true });
+  let want = currentFormat;
+  if (c === true)       { want = 'message'; formatAutoNote = 'You are already connected, so I chose “Already connected”.'; }
+  else if (c === false) { want = 'note';    formatAutoNote = `You are not connected yet${deg ? ' (' + deg + ' degree)' : ''}, so I chose “New connection”.`; }
+  else if (profile && profile.source !== 'pasted') { formatAutoNote = 'I couldn’t tell if you are connected. Choose the right option above.'; }
+  else formatAutoNote = '';
+  setFormat(want, { silent: true });
 }
 
 function setFormat(f, { silent = false } = {}) {
@@ -1101,6 +1106,7 @@ function resetForNewPage() {
   if (isGenerating || isEnriching) return;
   if (!currentProfile && !drafts.length) return;
   currentProfile = null; deepProfileJSON = null; deepEnrichmentJSON = null;
+  formatAutoNote = ''; setFormat(currentFormat, { silent: true });
   overlapAll = []; overlapOff.clear(); seed = 0;
   ['profile-section', 'read-card', 'overlap-panel'].forEach(id => document.getElementById(id).classList.add('hidden'));
   document.getElementById('hooks-panel').classList.add('hidden');

@@ -37,7 +37,7 @@ module.exports = (test) => {
         request: async (q) => { permCalls.push(q.origins[0]); if (allowRequests) q.origins.forEach(o => granted.add(o)); return allowRequests; } },
       runtime: { lastError: null, getURL: x => x, sendMessage: (m, cb) => {
         if (m.type === 'TEST_API_KEY') { return cb({ valid: true, provider: m.payload.provider }); }
-        if (m.action === 'scrapeProfile') { scrapes.push(m); return cb({ success: true, data: { ...PRIYA(), connectionDegree: degree } }); }
+        if (m.action === 'scrapeProfile') { scrapes.push(m); return cb({ success: true, data: { ...PRIYA(), connectionDegree: degree, isConnection: degree === '' ? null : degree === '1st' } }); }
         if (m.type === 'PREVIEW_RESUME') return cb({ success: true, providerName: 'Anthropic', host: 'api.anthropic.com', model: 'claude-haiku-5-5', system: 'RSYS', user: '{"resume_text":"' + m.payload.text.slice(0, 20) + '"}' });
         if (m.type === 'PARSE_RESUME') { resumeCalls.push(m.payload); return cb(resumeReply || { ok: true, provider: 'anthropic', profile: {
           name: 'Asha Menon', intro: 'final-year CS student at IIT Madras', summary: 'CS student who builds data tools.', city: 'Chennai, India',
@@ -469,24 +469,32 @@ module.exports = (test) => {
     assert.deepStrictEqual(done.errors, []);
   });
 
-  test('popup: the two formats are labelled by who you are writing to, and a 1st-degree badge picks "Already connected" for you (until you choose)', async () => {
+  test('popup: the two formats are labelled by who you are writing to; the page decides which to use, says why, and respects a manual choice', async () => {
     const t = await boot({ senderProfile: SENDER });
     const labels = [...t.w.document.querySelectorAll('.format-btn')].map(b => b.textContent.replace(/\s+/g, ' ').trim());
     assert.deepStrictEqual(labels, ['New connection note · 200', 'Already connected message']);
     t.setDegree('1st');
     await t.click('scrape-btn');
     assert.strictEqual(t.calls.at(-1).format, 'message');
-    assert.match(t.$('format-tip').textContent, /1st-degree connection/);
+    assert.match(t.$('format-tip').textContent, /already connected, so I chose “Already connected”/);
     assert.match(t.$('char-count').textContent, /\/ 500$/);
+    assert.strictEqual(t.$('generated-message').rows, 10);
     // you pick a format yourself → we stop choosing
     t.w.document.querySelector('.format-btn[data-format="note"]').click(); await tick(100);
     assert.strictEqual(t.calls.at(-1).format, 'note');
     await t.click('scrape-btn');
     assert.strictEqual(t.calls.at(-1).format, 'note', 'manual choice is respected');
-    // not connected → note
-    const n = await boot({ senderProfile: SENDER });
+    assert.ok(!/so I chose/.test(t.$('format-tip').textContent));
+
+    const n = await boot({ senderProfile: SENDER, prefs: { format: 'message' } });   // saved preference is overridden by what the page says
     n.setDegree('2nd'); await n.click('scrape-btn');
     assert.strictEqual(n.calls.at(-1).format, 'note');
-    assert.deepStrictEqual(t.errors.concat(n.errors), []);
+    assert.match(n.$('format-tip').textContent, /not connected yet \(2nd degree\), so I chose “New connection”/);
+
+    const u = await boot({ senderProfile: SENDER });   // can't tell → keeps the current choice and says so
+    await u.click('scrape-btn');
+    assert.strictEqual(u.calls.at(-1).format, 'note');
+    assert.match(u.$('format-tip').textContent, /couldn’t tell if you are connected/);
+    assert.deepStrictEqual(t.errors.concat(n.errors, u.errors), []);
   });
 };

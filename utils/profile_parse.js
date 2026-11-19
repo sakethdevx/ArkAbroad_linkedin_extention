@@ -281,15 +281,29 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
   }
 
   // ── Build the normalised profile + quality report ───────────────────────────
-  // LinkedIn shows "· 1st / 2nd / 3rd" beside the name. Only a short line that is basically just the badge counts.
+  // LinkedIn shows "· 1st / 2nd / 3rd" beside the name (plus a hidden "1st degree connection" label). Only a short line that is
+  // basically just the badge counts, so a sentence like "I finished 1st in my class" is never mistaken for one.
   function parseConnectionDegree(lines) {
-    for (const raw of (Array.isArray(lines) ? lines : []).slice(0, 30)) {
+    for (const raw of (Array.isArray(lines) ? lines : []).slice(0, 40)) {
       const t = clean(raw);
-      if (t.length > 40) continue;
-      const m = t.match(/^(?:[·•]\s*)?\(?(1st|2nd|3rd\+?)\)?$/i) || t.match(/[·•]\s*(1st|2nd|3rd\+?)\b/i);
+      if (t.length > 45) continue;
+      const m = t.match(/^(?:[·•]\s*)?\(?(1st|2nd|3rd\+?)\)?(?:\s+degree(?:\s+connection)?)?$/i) || t.match(/[·•]\s*(1st|2nd|3rd\+?)\b/i) || t.match(/^(1st|2nd|3rd\+?)\s+degree\b/i);
       if (m) return m[1].toLowerCase();
     }
     return '';
+  }
+
+  // Are we connected? Combines every signal we can read from the top card; never guesses.
+  //   lines  = visible text lines of the top card;  labels = button texts / aria-labels in it.
+  //   → { connected: true | false | null, degree, signal }   (null = could not tell)
+  function detectConnection({ lines = [], labels = [] } = {}) {
+    const degree = parseConnectionDegree([...(lines || []), ...(labels || [])]);
+    if (degree === '1st') return { connected: true, degree, signal: 'badge' };
+    if (degree) return { connected: false, degree, signal: 'badge' };
+    const L = (labels || []).map(x => clean(x).toLowerCase()).filter(Boolean);
+    if (L.some(x => /^connect$|^invite .{1,80} to connect$|^pending$|^withdraw/.test(x))) return { connected: false, degree: '', signal: 'connect-button' };
+    if (L.some(x => /^remove connection$|^you and .{1,60} are connected$/.test(x))) return { connected: true, degree: '', signal: 'menu' };
+    return { connected: null, degree: '', signal: '' };
   }
 
   function buildProfile(parts = {}) {
@@ -328,6 +342,8 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
       skills:            (parts.skills || []).slice(0, 10),
       profileUrl:        parts.profileUrl || '',
       connectionDegree:  parts.connectionDegree || '',
+      isConnection:      typeof parts.isConnection === 'boolean' ? parts.isConnection : null,
+      connectionSignal:  parts.connectionSignal || '',
       source:            parts.source || 'page'
     };
     profile.quality = assessQuality(profile, { currentInferred: !cur && !fromHeadline && !!(currentTitle || currentCompany), extraWarnings: parts.warnings });
@@ -406,6 +422,6 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
     parseRoleLines, parseExperienceBlocks, parseExperienceLines,
     parseEducationBlocks, parseEducationLines, parseSkills,
     titleCompanyFromHeadline, nameFromPageTitle, nameFromUrl,
-    parseConnectionDegree, buildProfile, assessQuality, parseProfileText, headingKey, plausibleLabel, extractPostText
+    parseConnectionDegree, detectConnection, buildProfile, assessQuality, parseProfileText, headingKey, plausibleLabel, extractPostText
   };
 });

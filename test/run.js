@@ -32,6 +32,24 @@ test('connection badge: reads 1st/2nd/3rd from the top card, ignores look-alikes
   assert.strictEqual(PP.parseConnectionDegree(null), '');
 });
 
+test('detectConnection: badge, hidden label, Connect/Pending buttons; never guesses', () => {
+  const d = (o) => JSON.parse(JSON.stringify(PP.detectConnection(o)));
+  assert.deepStrictEqual(d({ lines: ['Priya', '· 1st', 'Data Scientist'] }), { connected: true, degree: '1st', signal: 'badge' });
+  assert.strictEqual(d({ lines: ['1st degree connection'] }).connected, true);
+  assert.strictEqual(d({ labels: ['2nd degree connection'] }).connected, false);
+  assert.strictEqual(d({ lines: ['Priya · 3rd+'] }).connected, false);
+  assert.deepStrictEqual(d({ labels: ['Invite Priya Rao to connect', 'Follow', 'Save in Sales Navigator'] }), { connected: false, degree: '', signal: 'connect-button' });
+  assert.strictEqual(d({ labels: ['Pending'] }).connected, false);
+  assert.strictEqual(d({ labels: ['Remove connection'] }).connected, true);
+  // a lone Message button proves nothing (Premium / open profiles can message anyone)
+  assert.strictEqual(d({ labels: ['Message', 'More actions'] }).connected, null);
+  assert.strictEqual(d({}).connected, null);
+  assert.strictEqual(d({ lines: ['I finished 1st in my class and wrote a very long sentence about it here today'] }).connected, null);
+  const p = PP.buildProfile({ name: 'Priya', isConnection: true, connectionDegree: '1st', connectionSignal: 'badge' });
+  assert.strictEqual(p.isConnection, true);
+  assert.strictEqual(PP.buildProfile({ name: 'Priya' }).isConnection, null);
+});
+
 test('single role: Marketing Intern keeps its title', () => {
   const r = PP.parseRoleLines(['Marketing Intern', 'Acme Corp · Internship', 'Jun 2024 - Aug 2024 · 3 mos', 'Chennai, India']);
   assert.strictEqual(r.title, 'Marketing Intern');

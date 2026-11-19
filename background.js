@@ -58,7 +58,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ─── Scrape profile from active tab ───────────────────────────────────────────
 // The content script is NOT declared in the manifest: nothing runs on LinkedIn until
 // the user clicks Generate. We inject it on demand (guarded against double-injection).
-const CONTENT_VERSION = 'scroll-3';   // keep in sync with content_script.js
+const CONTENT_VERSION = 'scroll-4';   // keep in sync with content_script.js
 const CONTENT_FILES = ['utils/profile_parse.js', 'utils/page_scroll.js', 'content_script.js'];
 
 async function ensureContentScript(tabId) {
@@ -598,6 +598,7 @@ function normalizeProfile(raw = {}) {
     skills:            Array.isArray(raw.skills) ? raw.skills : [],
     profileUrl:        raw.profileUrl || '',
     connectionDegree:  raw.connectionDegree || '',
+    isConnection:      typeof raw.isConnection === 'boolean' ? raw.isConnection : null,
     quality:           raw.quality || null
   };
 }

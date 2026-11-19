@@ -69,4 +69,17 @@ module.exports = (test) => {
     assert.strictEqual(res.data.currentCompany, 'Anna University');
     assert.ok(['low', 'medium'].includes(res.data.quality.confidence));
   });
+
+  test('DOM: connection status from the real top card: 1st badge, 2nd badge, Connect button, and unknown', async () => {
+    const page = (inner) => `<html><body><section><h1>Priya Rao</h1>${inner}<div class="text-body-medium">Data Scientist at Globex</div></section></body></html>`;
+    const read = async (inner) => JSON.parse(JSON.stringify((await scrapeFixture(page(inner), 'https://www.linkedin.com/in/priya/')).data));
+    const first = await read('<span class="distance-badge"><span aria-hidden="true">· 1st</span><span class="visually-hidden">1st degree connection</span></span><button>Message</button>');
+    assert.strictEqual(first.isConnection, true); assert.strictEqual(first.connectionDegree, '1st');
+    const second = await read('<span>· 2nd</span><button aria-label="Invite Priya Rao to connect">Connect</button>');
+    assert.strictEqual(second.isConnection, false); assert.strictEqual(second.connectionDegree, '2nd');
+    const btnOnly = await read('<button aria-label="Invite Priya Rao to connect">Connect</button><button>Follow</button>');
+    assert.strictEqual(btnOnly.isConnection, false);
+    const unknown = await read('<button>Message</button><button>More</button>');
+    assert.strictEqual(unknown.isConnection, null);
+  });
 };
