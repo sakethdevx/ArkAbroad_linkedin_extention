@@ -757,3 +757,59 @@ body {
 .resume-status.success { background: var(--success-bg); color: var(--success); }
 .resume-status.error   { background: var(--error-bg);   color: var(--error);   }
 .resume-status.pending { background: var(--warning-bg); color: var(--warning); }
+
+/* ── “What I read” card + paste fallback (slice 1) ─────────────────────────── */
+.read-card, .paste-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+}
+
+.read-card > summary, .paste-card > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  border-radius: var(--radius);
+}
+.paste-card > summary { color: var(--text-2); font-weight: 500; }
+.read-card > summary::-webkit-details-marker,
+.paste-card > summary::-webkit-details-marker { display: none; }
+.read-card > summary::after, .paste-card > summary::after {
+  content: '▾'; color: var(--text-2); font-size: 10px; margin-left: auto; flex-shrink: 0;
+}
+.read-card[open] > summary::after, .paste-card[open] > summary::after { transform: rotate(180deg); }
+.read-card > summary:focus-visible, .paste-card > summary:focus-visible,
+.field-input:focus-visible, .field-textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.conf-pill {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.conf-high   { color: var(--success); background: var(--success-bg); }
+.conf-medium { color: var(--warning); background: var(--warning-bg); }
+.conf-low, .conf-none { color: var(--error); background: var(--error-bg); }
+
+.read-body, .paste-body { padding: 2px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.read-counts { font-size: 11.5px; color: var(--text-2); }
+.read-fields { display: flex; flex-direction: column; gap: 8px; }
+.read-warnings { margin: 0; padding-left: 16px; font-size: 11.5px; color: var(--warning); }
+.read-warnings li + li { margin-top: 2px; }
+.read-hint { font-size: 11.5px; color: var(--accent); }
+.paste-body .field-textarea { resize: vertical; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

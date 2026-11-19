@@ -15,20 +15,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireSettingsEvents();
   wireCurrentEvents();
   wireRecentEvents();
+  wireReadCard();
+  document.getElementById('paste-btn').addEventListener('click', handlePasteProfile);
   await checkCurrentPage();
   await loadSettings();
   await renderRecentContacts();
-  await checkLicenseStatus();
+  await refreshModeBadge();
 });
 
-// ─── License key status in header ────────────────────────────────────────────
-async function checkLicenseStatus() {
+// ─── Mode badge in header (Free vs AI) ───────────────────────────────────────
+async function refreshModeBadge() {
   const s   = await loadStoredSettings();
   const key = (s.userApiKey || '').trim();
   const el  = document.getElementById('key-status');
   el.textContent = key ? '● AI Mode' : '● Free Mode';
   el.className   = 'key-status active';
-  document.getElementById('no-key-warning').classList.add('hidden');
 }
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
@@ -122,36 +123,120 @@ function wireRecentEvents() {
 async function handleScrapeAndGenerate() {
   if (isGenerating) return;
 
-
   isGenerating = true;
   hideMessage();
-  setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, 'Scraping profile…');
+  setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, 'Reading profile…');
   clearCurrentStatus();
 
   try {
     const profile = await sendToBackground({ action: 'scrapeProfile' });
-    currentProfile = profile;
-    renderProfileCard(profile);
-    setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, 'Generating message…');
+    await generateFromProfile(profile);
+  } catch (err) {
+    showCurrentStatus(err.message, 'error');
+    openPasteCard();           // always leave the user a way forward
+  } finally {
+    isGenerating = false;
+    setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', false, 'Scrape &amp; Generate');
+  }
+}
 
-    const message = await callQuickGenerate(profile);
-    renderMessage(message);
+// Shared by scraping and pasted text: show what was read, then draft unless nothing was readable.
+async function generateFromProfile(profile, setBusy = (t) => setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, t)) {
+  currentProfile = profile;
+  renderProfileCard(profile);
+  renderReadCard(profile);
+  const confidence = profile.quality ? profile.quality.confidence : 'high';
 
-    await Cache.addContact({
-      profileUrl: profile.profileUrl || '',
-      name:       profile.name       || 'Unknown',
-      headline:   profile.headline   || '',
-      company:    profile.currentCompany || '',
-      message,
-      timestamp:  Date.now()
-    });
+  if (confidence === 'none') {
+    showCurrentStatus("I couldn't read anything useful from this page. Paste the profile text below and I'll use that instead.", 'error');
+    openPasteCard();
+    return;
+  }
 
-    showCurrentStatus('Message ready.', 'success');
+  setBusy('Generating message…');
+  const message = await callQuickGenerate(currentProfile);
+  renderMessage(message);
+
+  await Cache.addContact({
+    profileUrl: profile.profileUrl || '',
+    name:       profile.name       || 'Unknown',
+    headline:   profile.headline   || '',
+    company:    profile.currentCompany || '',
+    message,
+    timestamp:  Date.now()
+  });
+
+  if (confidence === 'high') showCurrentStatus('Message ready.', 'success');
+  else showCurrentStatus('Draft ready. I only read part of this profile, so check “What I read” above.', 'warning');
+}
+
+// ─── “What I read” card + paste fallback ─────────────────────────────────────
+const CONF_LABEL = { high: 'Read well', medium: 'Partly read', low: 'Barely read', none: 'Nothing read' };
+
+function renderReadCard(profile) {
+  const q = profile.quality || { confidence: 'high', warnings: [], missing: [] };
+  const card = document.getElementById('read-card');
+  card.classList.remove('hidden');
+  card.open = q.confidence !== 'high';       // open by default only when something needs attention
+
+  const pill = document.getElementById('read-conf');
+  pill.textContent = CONF_LABEL[q.confidence] || '';
+  pill.className = `conf-pill conf-${q.confidence}`;
+
+  document.getElementById('read-name').value    = profile.name || '';
+  document.getElementById('read-role').value    = profile.currentTitle || '';
+  document.getElementById('read-company').value = profile.currentCompany || '';
+
+  const n = (a) => (a || []).length;
+  document.getElementById('read-counts').textContent =
+    `Experience ${n(profile.experienceEntries)} · Education ${n(profile.educationEntries)} · Skills ${n(profile.skills)} · About ${profile.about ? '✓' : '—'}`;
+
+  const list = document.getElementById('read-warnings');
+  list.innerHTML = '';
+  const notes = [...(q.warnings || [])];
+  if (q.missing && q.missing.length && q.confidence !== 'high') notes.push(`Not found: ${q.missing.join(', ')}.`);
+  notes.forEach(t => { const li = document.createElement('li'); li.textContent = t; list.appendChild(li); });
+  list.classList.toggle('hidden', notes.length === 0);
+}
+
+function wireReadCard() {
+  const apply = () => {
+    if (!currentProfile) return;
+    currentProfile.name           = document.getElementById('read-name').value.trim();
+    currentProfile.currentTitle   = document.getElementById('read-role').value.trim();
+    currentProfile.currentCompany = document.getElementById('read-company').value.trim();
+    if (deepProfileJSON) {   // Review/Deep flow keeps its own normalised copy
+      deepProfileJSON.name           = currentProfile.name;
+      deepProfileJSON.firstName      = currentProfile.name.split(/\s+/)[0] || 'there';
+      deepProfileJSON.currentTitle   = currentProfile.currentTitle;
+      deepProfileJSON.currentCompany = currentProfile.currentCompany;
+    }
+    renderProfileCard(currentProfile);
+    document.getElementById('read-edit-hint').classList.remove('hidden');
+  };
+  ['read-name', 'read-role', 'read-company'].forEach(id => document.getElementById(id).addEventListener('input', apply));
+}
+
+function openPasteCard() { document.getElementById('paste-card').open = true; }
+
+async function handlePasteProfile() {
+  if (isGenerating) return;
+  const text = document.getElementById('paste-text').value;
+  if (text.trim().length < 20) { showCurrentStatus('Paste the profile text first (select all on the profile, copy, paste here).', 'error'); return; }
+
+  const profile = ProfileParse.parseProfileText(text);
+  isGenerating = true;
+  hideMessage();
+  clearCurrentStatus();
+  setButtonLoading('paste-btn', 'paste-label', 'paste-spinner', true, 'Reading…');
+  try {
+    if (currentMode === 'deep') await runEnrich(profile);
+    else await generateFromProfile(profile, (t) => setButtonLoading('paste-btn', 'paste-label', 'paste-spinner', true, t));
   } catch (err) {
     showCurrentStatus(err.message, 'error');
   } finally {
     isGenerating = false;
-    setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', false, 'Scrape &amp; Generate');
+    setButtonLoading('paste-btn', 'paste-label', 'paste-spinner', false, 'Use pasted text');
   }
 }
 
@@ -183,10 +268,7 @@ async function handleRegenerate() {
 }
 
 // ─── Deep Mode ────────────────────────────────────────────────────────────────
-async function handleEnrich() {
-  if (isEnriching) return;
-
-
+function resetDeepState() {
   deepProfileJSON = null;
   deepEnrichmentJSON = null;
   resetLayerStatuses();
@@ -194,56 +276,63 @@ async function handleEnrich() {
   document.getElementById('deep-generate-btn').disabled = true;
   hideMessage();
   clearCurrentStatus();
+}
+
+async function handleEnrich() {
+  if (isEnriching) return;
+  resetDeepState();
 
   isEnriching = true;
-  setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', true, 'Scraping profile…');
-  setLayerStatus(1, 'running', 'Scraping…');
+  setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', true, 'Reading profile…');
+  setLayerStatus(1, 'running', 'Reading…');
 
-  let rawProfileData;
   try {
-    rawProfileData = await sendToBackground({ action: 'scrapeProfile' });
+    const raw = await sendToBackground({ action: 'scrapeProfile' });
+    await runEnrich(raw);
   } catch (err) {
     setLayerStatus(1, 'error', 'Failed');
-    showCurrentStatus('Could not scrape. Are you on a LinkedIn profile page?', 'error');
+    showCurrentStatus(err.message, 'error');
+    openPasteCard();
+  } finally {
     isEnriching = false;
     setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', false, 'Scrape + Enrich (L1 + L2)');
+  }
+}
+
+// Shared by scraping and pasted text.
+async function runEnrich(rawProfileData) {
+  resetDeepState();
+  currentProfile = rawProfileData;
+  renderProfileCard(rawProfileData);
+  renderReadCard(rawProfileData);
+
+  if (rawProfileData.quality && rawProfileData.quality.confidence === 'none') {
+    setLayerStatus(1, 'error', 'Nothing read');
+    showCurrentStatus("I couldn't read anything useful from this page. Paste the profile text below instead.", 'error');
+    openPasteCard();
     return;
   }
 
-  currentProfile = rawProfileData;
-  renderProfileCard(rawProfileData);
   setLayerStatus(1, 'running', 'Parsing…');
-  setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', true, 'Running AI layers…');
-  showCurrentStatus('Enriching…');
+  showCurrentStatus('Finding hooks…');
+  const response = await new Promise(resolve => chrome.runtime.sendMessage({ type: 'RUN_ENRICH', payload: { rawProfileData } }, resolve));
 
-  chrome.runtime.sendMessage({ type: 'RUN_ENRICH', payload: { rawProfileData } }, (response) => {
-    isEnriching = false;
-    setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', false, 'Scrape + Enrich (L1 + L2)');
+  if (chrome.runtime.lastError || !response || response.status === 'error') {
+    setLayerStatus(1, 'error', 'Error');
+    setLayerStatus(2, 'error', 'Error');
+    showCurrentStatus((response && response.error) || 'Something went wrong. Please try again.', 'error');
+    return;
+  }
 
-    if (chrome.runtime.lastError || !response) {
-      setLayerStatus(1, 'error', 'Error');
-      setLayerStatus(2, 'error', 'Error');
-      showCurrentStatus('Pipeline error. Check your connection.', 'error');
-      return;
-    }
-
-    if (response.status === 'error') {
-      setLayerStatus(1, 'error', 'Error');
-      setLayerStatus(2, 'error', 'Error');
-      showCurrentStatus(response.error, 'error');
-      return;
-    }
-
-    setLayerStatus(1, 'done', 'Done');
-    setLayerStatus(2, 'done', 'Done');
-    deepProfileJSON    = response.profileJSON;
-    deepEnrichmentJSON = response.enrichmentJSON;
-    renderProfileCard({ name: deepProfileJSON.name, headline: deepProfileJSON.headline, currentCompany: deepProfileJSON.currentCompany });
-    renderHooks(deepEnrichmentJSON);
-    setLayerStatus(3, '', 'Ready');
-    document.getElementById('deep-generate-btn').disabled = false;
-    showCurrentStatus('Enrichment done. Hit Generate Message.', 'success');
-  });
+  setLayerStatus(1, 'done', 'Done');
+  setLayerStatus(2, 'done', 'Done');
+  deepProfileJSON    = response.profileJSON;
+  deepEnrichmentJSON = response.enrichmentJSON;
+  renderProfileCard(deepProfileJSON);
+  renderHooks(deepEnrichmentJSON);
+  setLayerStatus(3, '', 'Ready');
+  document.getElementById('deep-generate-btn').disabled = false;
+  showCurrentStatus('Hooks found. Hit Generate Message.', 'success');
 }
 
 async function handleDeepGenerate() {
@@ -278,8 +367,7 @@ async function handleDeepGenerate() {
 
       setLayerStatus(3, 'done', 'Done');
       renderMessage(response.generatedMessage);
-      const rem = response.remaining !== undefined ? ` (${response.remaining} messages left today)` : '';
-      showCurrentStatus(`Message ready.${rem}`, 'success');
+      showCurrentStatus('Message ready.', 'success');
 
       await Cache.addContact({
         profileUrl: deepProfileJSON.profileUrl || '',
@@ -325,7 +413,7 @@ async function handleSaveSettings() {
   }
   await new Promise(resolve => chrome.storage.local.set(savePayload, resolve));
   showSettingsStatus('Settings saved!', 'success');
-  await checkLicenseStatus();
+  await refreshModeBadge();
 }
 
 async function handleValidateKey() {
@@ -347,11 +435,9 @@ async function handleValidateKey() {
   el.classList.remove('hidden');
 
   if (result && result.valid) {
-    el.textContent = '✓ Key works — AI Mode on';
+    // "Test" only tests. Saving stays an explicit action (it used to silently save the key).
+    el.textContent = '✓ Key works. Click Save Settings to turn AI Mode on.';
     el.className   = 'key-validation-status valid';
-    const s = await loadStoredSettings();
-    await new Promise(resolve => chrome.storage.local.set({ ...s, userApiKey: apiKey }, resolve));
-    await checkLicenseStatus();
   } else {
     el.textContent = `✗ ${result?.reason || 'Key did not work'}`;
     el.className   = 'key-validation-status invalid';

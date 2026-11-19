@@ -35,44 +35,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === 'SAVE_RECENT') {
-    chrome.storage.local.get(['recentContacts'], (result) => {
-      const recent  = result.recentContacts || [];
-      const updated = [message.payload, ...recent.filter(c => c.profileUrl !== message.payload.profileUrl)].slice(0, 5);
-      chrome.storage.local.set({ recentContacts: updated });
-      sendResponse({ status: 'saved' });
-    });
-    return true;
-  }
-
-  if (message.type === 'GET_RECENT') {
-    chrome.storage.local.get(['recentContacts'], (result) => {
-      sendResponse({ contacts: result.recentContacts || [] });
-    });
-    return true;
-  }
 });
 
 // ─── Scrape profile from active tab ───────────────────────────────────────────
+// The content script is NOT declared in the manifest: nothing runs on LinkedIn until
+// the user clicks Generate. We inject it on demand (guarded against double-injection).
+const CONTENT_FILES = ['utils/profile_parse.js', 'content_script.js'];
+
+async function ensureContentScript(tabId) {
+  try {
+    const pong = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+    if (pong?.ok) return;
+  } catch (_) { /* no receiver yet → inject below */ }
+  await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_FILES });
+}
+
 async function handleScrapeProfile(sendResponse) {
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     const tab  = tabs[0];
     if (!tab) throw new Error('No active tab found.');
-    if (!tab.url || !tab.url.includes('linkedin.com')) {
-      throw new Error('Please navigate to a LinkedIn profile page first.');
+    if (!tab.url || !/^https:\/\/www\.linkedin\.com\/in\//.test(tab.url)) {
+      throw new Error('Open a LinkedIn profile (linkedin.com/in/…) first, or paste the profile text instead.');
     }
 
-    let result;
-    try {
-      result = await chrome.tabs.sendMessage(tab.id, { action: 'scrapeProfile' });
-    } catch (_) {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content_script.js'] });
-      await delay(400);
-      result = await chrome.tabs.sendMessage(tab.id, { action: 'scrapeProfile' });
-    }
+    await ensureContentScript(tab.id);
+    const result = await chrome.tabs.sendMessage(tab.id, { action: 'scrapeProfile' });
 
-    if (!result?.success) throw new Error(result?.error || 'Scrape failed.');
+    if (!result?.success) throw new Error(result?.error || 'Could not read this page.');
     sendResponse({ success: true, data: result.data });
   } catch (err) {
     sendResponse({ success: false, error: err.message });
@@ -151,7 +141,8 @@ function normalizeProfile(raw = {}) {
     pastCompanies:     raw.pastCompanies || [],
     educationEntries:  raw.educationEntries || [],
     skills:            raw.skills || [],
-    profileUrl:        raw.profileUrl || ''
+    profileUrl:        raw.profileUrl || '',
+    quality:           raw.quality || null
   };
 }
 
@@ -177,7 +168,10 @@ function localMessage(p, hooks, messageType, tone, settings = {}) {
   const greet = { Formal: `Dear ${p.firstName},`, Neutral: `Hi ${p.firstName},`, Casual: `Hey ${p.firstName}!` }[tone] || `Hi ${p.firstName},`;
   const close = { Formal: 'Kind regards,', Neutral: 'Best,', Casual: 'Cheers,' }[tone] || 'Best,';
 
-  let hookLine = `I came across your profile and was impressed by your work as ${role}${co}.`;
+  // Never print "your work as your work" when the scrape found no role.
+  let hookLine = (p.currentTitle || p.headline)
+    ? `I came across your profile and was impressed by your work as ${role}${co}.`
+    : `I came across your profile and wanted to reach out.`;
   if (p.recentPosts.length) hookLine = `I enjoyed your recent post about "${truncate(p.recentPosts[0], 60)}".`;
   else if (p.skills.length) hookLine = `Your experience in ${p.skills.slice(0, 2).join(' and ')}${co} caught my attention.`;
 

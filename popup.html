@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LinkedIn Outreach Generator</title>
+  <title>LinkedIn Outreach AI</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
@@ -32,12 +32,7 @@
 
       <div class="alert alert-info hidden" id="page-warning">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        Navigate to a LinkedIn profile page to generate a message.
-      </div>
-
-      <div class="alert alert-warning hidden" id="no-key-warning">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        
+        Open a LinkedIn profile to read it automatically, or paste profile text below.
       </div>
 
       <div class="profile-card hidden" id="profile-section">
@@ -48,6 +43,32 @@
           <div class="profile-company" id="profile-company"></div>
         </div>
       </div>
+
+      <details class="read-card hidden" id="read-card">
+        <summary>
+          <span class="read-title">What I read</span>
+          <span class="conf-pill" id="read-conf"></span>
+        </summary>
+        <div class="read-body">
+          <ul class="read-warnings hidden" id="read-warnings"></ul>
+          <p class="read-counts" id="read-counts"></p>
+          <div class="read-fields">
+            <div class="field-group full">
+              <label class="field-label" for="read-name">Name</label>
+              <input id="read-name" type="text" class="field-input" autocomplete="off" />
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="read-role">Role</label>
+              <input id="read-role" type="text" class="field-input" autocomplete="off" />
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="read-company">Company</label>
+              <input id="read-company" type="text" class="field-input" autocomplete="off" />
+            </div>
+          </div>
+          <p class="read-hint hidden" id="read-edit-hint">Fixed something? Hit Regenerate to use your changes.</p>
+        </div>
+      </details>
 
       <div class="controls-row">
         <div class="field-group">
@@ -140,7 +161,20 @@
         </button>
       </div>
 
-      <div class="status-bar hidden" id="status-message"></div>
+      <div class="status-bar hidden" id="status-message" role="status" aria-live="polite"></div>
+
+      <details class="paste-card" id="paste-card">
+        <summary>Can’t read the page? Paste the profile text instead</summary>
+        <div class="paste-body">
+          <label class="field-label" for="paste-text">Profile text</label>
+          <textarea id="paste-text" class="field-textarea" rows="5" spellcheck="false"
+            placeholder="On the LinkedIn profile: select all (Ctrl/Cmd + A), copy, then paste here. Nothing is sent anywhere."></textarea>
+          <button id="paste-btn" class="btn btn-secondary btn-full">
+            <span id="paste-label">Use pasted text</span>
+            <span id="paste-spinner" class="spinner hidden"></span>
+          </button>
+        </div>
+      </details>
 
       <div class="message-area hidden" id="message-section">
         <div class="message-area-header">
@@ -225,6 +259,7 @@
 
   </div>
 
+  <script src="utils/profile_parse.js"></script>
   <script src="utils/cache.js"></script>
   <script src="popup.js"></script>
 </body>

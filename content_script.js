@@ -1,200 +1,164 @@
 'use strict';
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.action === 'scrapeProfile') {
-    scrapeWithScroll().then(profile => {
-      sendResponse({ success: true, data: profile });
-    }).catch(err => {
-      sendResponse({ success: false, error: err.message });
-    });
-    return true;
+// content_script.js — injected on demand (only when the user clicks Generate).
+// Reads what is already rendered on the page; never clicks, types or navigates.
+// Depends on utils/profile_parse.js (injected first).
+
+(function () {
+  if (window.__outreachAiLoaded) return;   // guard: injecting twice must not double-register
+  window.__outreachAiLoaded = true;
+
+  const PP = window.ProfileParse;
+
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg && msg.action === 'ping') { sendResponse({ ok: true }); return; }
+    if (msg && msg.action === 'scrapeProfile') {
+      scrapeWithScroll()
+        .then(profile => sendResponse({ success: true, data: profile }))
+        .catch(err => sendResponse({ success: false, error: (err && err.message) || 'Scrape failed.' }));
+      return true;
+    }
+  });
+
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  const jump = (y) => window.scrollTo({ top: y, behavior: 'instant' });
+
+  // LinkedIn lazy-renders lower sections; nudge the page, then put the user back where they were.
+  async function scrapeWithScroll() {
+    const startY = window.scrollY;
+    try {
+      for (const y of [800, 1600, 2400]) { jump(y); await wait(450); }
+    } finally {
+      jump(startY);
+    }
+    return scrapeProfile();
   }
-});
 
-async function scrapeWithScroll() {
-  window.scrollTo(0, 800);  await wait(500);
-  window.scrollTo(0, 1600); await wait(500);
-  window.scrollTo(0, 2400); await wait(600);
-  window.scrollTo(0, 0);    await wait(300);
-  return scrapeProfile();
-}
+  // ── DOM helpers (all defensive) ─────────────────────────────────────────────
+  const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'SVG', 'PATH', 'IMG', 'BUTTON', 'NOSCRIPT']);
 
-function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function scrapeProfile() {
-  const clean = (str) => (str || '').replace(/\s+/g, ' ').trim();
-
-  // Find section by h2 heading text
-  function getSection(heading) {
-    return Array.from(document.querySelectorAll('section')).find(s =>
-      s.querySelector('h2')?.innerText?.trim().toLowerCase().includes(heading.toLowerCase())
-    ) || null;
+  function leafLines(root, excludeEls) {
+    if (!root) return [];
+    const lines = [];
+    for (const el of root.querySelectorAll('*')) {
+      if (el.children.length > 0 || SKIP_TAGS.has(el.tagName.toUpperCase())) continue;
+      if (excludeEls && excludeEls.some(x => x.contains(el))) continue;
+      const t = (el.innerText || el.textContent || '').trim();
+      if (t) lines.push(t);
+    }
+    return PP.cleanLines(lines);
   }
 
-  // Get all leaf text nodes from a section using P tags and spans
-  function getTexts(section) {
+  // Language-independent first: LinkedIn puts <div id="experience"> anchors inside each card.
+  // Fallback: match the section's heading text in several languages.
+  function findSection(key) {
+    try {
+      const anchor = document.getElementById(key);
+      const viaAnchor = anchor && anchor.closest('section');
+      if (viaAnchor) return viaAnchor;
+    } catch (_) { /* fall through */ }
+    const aliases = (PP.SECTION_ALIASES[key] || [key]).map(a => a.toLowerCase());
+    return Array.from(document.querySelectorAll('section')).find(s => {
+      const h = s.querySelector('h2');
+      const t = ((h && (h.innerText || h.textContent)) || '').trim().toLowerCase();
+      return t && aliases.some(a => t === a || t.startsWith(a));
+    }) || null;
+  }
+
+  // Top-level <li> items of a section → {lines, children[]} blocks (children = roles inside a company group).
+  function sectionBlocks(section) {
     if (!section) return [];
-    return Array.from(section.querySelectorAll('p, span'))
-      .filter(el => el.children.length === 0)
-      .map(el => clean(el.innerText))
-      .filter(t => t.length > 2 && !/^[·•\s]+$/.test(t));
+    const all = Array.from(section.querySelectorAll('li'));
+    const top = all.filter(li => {
+      const outer = li.parentElement && li.parentElement.closest('li');
+      return !(outer && section.contains(outer));
+    });
+    return top.map(li => {
+      const nested = all.filter(n => n !== li && li.contains(n) && n.parentElement.closest('li') === li);
+      return {
+        lines: leafLines(li, nested),
+        children: nested.map(n => ({ lines: leafLines(n), children: [] }))
+      };
+    }).filter(b => b.lines.length || b.children.length);
   }
 
-  // ── NAME ──────────────────────────────────────────────────────────────────
-  const name = clean(document.querySelector('h1')?.innerText) ||
-               clean(document.title.split('|')[0]);
-
-  // ── HEADLINE ──────────────────────────────────────────────────────────────
-  let headline = null;
-  const allSections = Array.from(document.querySelectorAll('section'));
-  for (const sec of allSections) {
-    if (sec.querySelector('h1')) {
-      const pTags = Array.from(sec.querySelectorAll('p'))
-        .filter(p => p.children.length === 0)
-        .map(p => clean(p.innerText))
-        .filter(t => t.length > 5 && t !== name);
-      // Headline often contains | or @ or job title keywords
-      const headlineEl = pTags.find(t =>
-        t.includes('|') || t.includes('@') || t.includes('·') ||
-        /manager|engineer|analyst|developer|designer|founder|director|lead|specialist|consultant|intern|fellow|trainee/i.test(t)
-      ) || pTags[0];
-      if (headlineEl) { headline = headlineEl; break; }
-    }
+  function safe(label, fn, fallback, warnings) {
+    try { return fn(); }
+    catch (e) { warnings.push(`Could not read ${label}.`); return fallback; }
   }
 
-  // ── LOCATION ──────────────────────────────────────────────────────────────
-  let location = null;
-  for (const sec of allSections) {
-    if (sec.querySelector('h1')) {
-      const pTags = Array.from(sec.querySelectorAll('p'))
-        .filter(p => p.children.length === 0)
-        .map(p => clean(p.innerText))
-        .filter(t => t.length > 3);
-      // Location is usually the 2nd or 3rd p tag — looks like "City, Country"
-      const locEl = pTags.find(t =>
-        t.includes(',') && t.length < 60 && !t.includes('|') && !t.includes('@')
-      );
-      if (locEl) { location = locEl; break; }
-    }
-  }
+  // ── Scrape ──────────────────────────────────────────────────────────────────
+  function scrapeProfile() {
+    const warnings = [];
+    const url = window.location.href.split('?')[0];
 
-  // ── ABOUT ─────────────────────────────────────────────────────────────────
-  let about = null;
-  const aboutSection = getSection('About');
-  if (aboutSection) {
-    const texts = getTexts(aboutSection);
-    const longText = texts.find(t => t.length > 80 && !t.includes('Experience') && !t.includes('Skills'));
-    if (longText) about = longText;
-  }
+    const topSection = Array.from(document.querySelectorAll('section')).find(s => s.querySelector('h1')) || null;
+    const topLines   = safe('the top card', () => leafLines(topSection), [], warnings);
 
-  // ── EXPERIENCE ────────────────────────────────────────────────────────────
-  const experienceEntries = [];
-  const expSection = getSection('Experience');
-  if (expSection) {
-    const pTags = Array.from(expSection.querySelectorAll('p'))
-      .filter(p => p.children.length === 0)
-      .map(p => clean(p.innerText))
-      .filter(t => t.length > 2 && t !== 'Experience');
+    const name = safe('the name', () => {
+      const h1 = document.querySelector('h1');
+      const fromH1 = PP.clean(h1 && (h1.innerText || h1.textContent));
+      if (fromH1) return fromH1;
+      // Fallbacks only make sense on an actual profile URL (never invent a name like "LinkedIn").
+      return /^\/in\//.test(window.location.pathname) ? (PP.nameFromPageTitle(document.title) || PP.nameFromUrl(url)) : '';
+    }, '', warnings);
 
-    // Group into entries of 3-4 lines each
-    // Pattern: title, company·type, date, location(optional)
-    let i = 0;
-    while (i < pTags.length) {
-      const title   = pTags[i];
-      const company = pTags[i+1] || null;
-      const dur     = pTags[i+2] || null;
+    const headline = safe('the headline', () => {
+      const viaClass = document.querySelector('div.text-body-medium');
+      const c = PP.clean(viaClass && viaClass.innerText);
+      if (c && c !== name) return c;
+      const cands = topLines.filter(t => t !== name && t.length > 5 && !/^(?:·|\(?\d+(?:st|nd|rd)\)?|contact info)/i.test(t));
+      return cands.find(t => /[|@·]|\bat\b/i.test(t)) || cands[0] || '';
+    }, '', warnings);
 
-      // Skip if looks like a date/location (not a title)
-      if (/^\d{4}|present|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(title)) {
-        i++; continue;
-      }
+    const location = safe('the location', () => {
+      const viaClass = document.querySelector('span.text-body-small.inline.break-words');
+      const c = PP.clean(viaClass && viaClass.innerText);
+      if (c && c.length < 80) return c;
+      return topLines.find(t => t !== name && t !== headline && t.includes(',') && t.length < 60 && !/[|@]/.test(t)) || '';
+    }, '', warnings);
 
-      experienceEntries.push({
-        title,
-        company:   company ? company.split('·')[0].trim() : null,
-        duration:  dur && /\d{4}|present|yr|mos|mo\b/i.test(dur) ? dur : null,
-        isCurrent: experienceEntries.length === 0
+    const about = safe('About', () => {
+      const lines = leafLines(findSection('about')).filter(t => t.length > 40 && !/^about$/i.test(t));
+      return lines.sort((a, b) => b.length - a.length)[0] || '';
+    }, '', warnings);
+
+    const experience = safe('Experience', () => {
+      const sec = findSection('experience');
+      if (!sec) return [];
+      const blocks = sectionBlocks(sec);
+      const viaBlocks = PP.parseExperienceBlocks(blocks);
+      return viaBlocks.length ? viaBlocks : PP.parseExperienceLines(leafLines(sec));
+    }, [], warnings);
+
+    const education = safe('Education', () => {
+      const sec = findSection('education');
+      if (!sec) return [];
+      const viaBlocks = PP.parseEducationBlocks(sectionBlocks(sec));
+      return viaBlocks.length ? viaBlocks : PP.parseEducationLines(leafLines(sec));
+    }, [], warnings);
+
+    const skills = safe('Skills', () => {
+      const sec = findSection('skills');
+      if (!sec) return [];
+      const blocks = sectionBlocks(sec);
+      const firsts = blocks.map(b => b.lines[0]).filter(Boolean);
+      return PP.parseSkills(firsts.length ? firsts : leafLines(sec));
+    }, [], warnings);
+
+    const recentPosts = safe('Activity', () => {
+      const sec = findSection('activity');
+      const out = [];
+      leafLines(sec).forEach(t => {
+        if (t.length > 40 && t.length < 500 &&
+            !/dialog|window|escape|cancel|close|beginning|notifications|premium|people you may|you might/i.test(t) &&
+            !out.includes(t)) out.push(t);
       });
+      return out.slice(0, 3);
+    }, [], warnings);
 
-      // Advance past this entry (title + company + date + optional location = 3-4 lines)
-      i += /remote|onsite|on-site|hybrid|india|bengaluru|mumbai|delhi/i.test(pTags[i+3] || '')
-        ? 4 : 3;
-    }
+    const profile = PP.buildProfile({ name, headline, location, about, experience, education, skills, recentPosts, profileUrl: url, warnings });
+    profile.rawTitle = document.title;
+    return profile;
   }
-
-  const currentEntry   = experienceEntries[0] || null;
-  const currentTitle   = currentEntry?.title   || extractFromHeadline(headline, 'title');
-  const currentCompany = currentEntry?.company || extractFromHeadline(headline, 'company');
-  const pastCompanies  = [...new Set(
-    experienceEntries.slice(1).map(e => e.company).filter(Boolean)
-  )];
-
-  // ── SKILLS ────────────────────────────────────────────────────────────────
-  const skills = [];
-  const skillsSection = getSection('Skills');
-  if (skillsSection) {
-    const texts = getTexts(skillsSection);
-    texts.filter(t =>
-      t !== 'Skills' &&
-      t.length < 60 &&
-      t.length > 2 &&
-      !/\d{4}|follower|connection|endorsement|endorse|show all|see all|dialog|window|escape/i.test(t)
-    ).forEach(t => skills.push(t));
-  }
-
-  // ── EDUCATION ─────────────────────────────────────────────────────────────
-  const educationEntries = [];
-  const eduSection = getSection('Education');
-  if (eduSection) {
-    const pTags = Array.from(eduSection.querySelectorAll('p'))
-      .filter(p => p.children.length === 0)
-      .map(p => clean(p.innerText))
-      .filter(t => t.length > 2 && t !== 'Education');
-    for (let i = 0; i < pTags.length; i += 3) {
-      if (pTags[i]) educationEntries.push(
-        [pTags[i], pTags[i+1]].filter(Boolean).join(' — ')
-      );
-    }
-  }
-
-  // ── RECENT POSTS ──────────────────────────────────────────────────────────
-  const recentPosts = [];
-  const activitySection = getSection('Activity');
-  if (activitySection) {
-    Array.from(activitySection.querySelectorAll('p, span'))
-      .filter(el => el.children.length === 0)
-      .map(el => clean(el.innerText))
-      .filter(t =>
-        t.length > 40 && t.length < 500 &&
-        !/dialog|window|escape|cancel|close|beginning|notifications|premium|people you may|you might/i.test(t)
-      )
-      .forEach(t => { if (!recentPosts.includes(t)) recentPosts.push(t); });
-  }
-
-  return {
-    name,
-    headline,
-    currentTitle,
-    currentCompany,
-    location,
-    about,
-    recentPosts:       recentPosts.slice(0, 3),
-    experienceEntries: experienceEntries.slice(0, 5),
-    pastCompanies:     pastCompanies.slice(0, 4),
-    educationEntries:  educationEntries.slice(0, 3),
-    skills:            skills.slice(0, 10),
-    profileUrl:        window.location.href.split('?')[0],
-    rawTitle:          document.title
-  };
-}
-
-function extractFromHeadline(headline, field) {
-  if (!headline) return null;
-  const atMatch = headline.match(/^(.+?)\s+at\s+(.+)$/i);
-  if (atMatch) return field === 'title' ? atMatch[1].trim() : atMatch[2].trim();
-  const pipeMatch = headline.match(/^(.+?)\s*[|·]\s*(.+)$/);
-  if (pipeMatch) return field === 'title' ? pipeMatch[1].trim() : pipeMatch[2].trim();
-  return null;
-}
+})();
