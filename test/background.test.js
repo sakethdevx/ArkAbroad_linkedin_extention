@@ -585,4 +585,40 @@ module.exports = (test) => {
     const fr = await gen(f, data({ format: 'message', settings: { userName: 'JANGALA SAKETH', userBio: '' } }));
     fr.variants.forEach(v => assert.ok(/Jangala Saketh$/.test(v.text) && !/JANGALA/.test(v.text), v.text));
   });
+
+  test('bg: BUILD_PROMPT gives the panel one source of truth: compact on-device system prompt, the same payload as cloud, a schema, and no network', async () => {
+    const b = boot({ fetchImpl: () => { throw new Error('no network'); } });
+    const r = await b.send({ type: 'BUILD_PROMPT', payload: data({ spotlight: { type: 'project', title: 'CampusMap', text: 'I built CampusMap, a route planner for campus.', matches: ['Python'] } }) });
+    assert.ok(r.success);
+    assert.match(r.system, /Use ONLY facts that appear in the data/);
+    assert.ok(!/Return exactly this JSON shape/.test(r.system), 'the panel passes responseConstraint, so no shape hint');
+    assert.strictEqual(r.limit, 200);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(r.schema.required)), ['variants']);
+    const payload = JSON.parse(r.user.split('\n').slice(1).join('\n'));
+    assert.strictEqual(payload.task.recipient_first_name, 'Priya');
+    assert.strictEqual(payload.sender_spotlight.title, 'CampusMap');
+    assert.ok(!r.user.includes('sk-ant'), 'no secrets');
+    assert.strictEqual(b.calls.length, 0);
+  });
+
+  test('bg: FINISH_DRAFTS applies the shared checks + groundedness; invented details are rejected and free drafts fill the gaps; never touches the network', async () => {
+    const b = boot({ fetchImpl: () => { throw new Error('no network'); } });
+    const good = 'Hi Priya,\nI noticed we both studied at IIT Madras. Would you be open to a quick chat?';
+    const raw = [good, 'Hi Priya,\nI interned at Google for 3 years. Would you be open to a chat?', 'x'.repeat(300)];
+    const r = await b.send({ type: 'FINISH_DRAFTS', payload: { data: data(), raw } });
+    assert.ok(r.success);
+    assert.strictEqual(r.source, 'ondevice');
+    assert.strictEqual(r.polished, 1);
+    assert.strictEqual(r.variants.length, 3);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(r.variants.map(v => v.source))), ['ondevice', 'template', 'template']);
+    assert.strictEqual(r.variants[0].text, good);
+    assert.match(r.warnings[0], /2 on-device drafts couldn't be used .*not in your data/);
+    // nothing usable → pure templates, source says so
+    const none = await b.send({ type: 'FINISH_DRAFTS', payload: { data: data(), raw: ['nope http://x.io', 5, null] } });
+    assert.strictEqual(none.source, 'template');
+    assert.strictEqual(none.variants.length, 3);
+    const junk = await b.send({ type: 'FINISH_DRAFTS', payload: { data: data(), raw: 'not an array' } });
+    assert.ok(junk.success && junk.variants.length === 3);
+    assert.strictEqual(b.calls.length, 0);
+  });
 };

@@ -315,3 +315,10 @@ Researched next steps with the user (reply-rate studies, Chrome's built-in AI do
 - New `utils/draftcheck.js` (pure): the steps that used to be closures inside `aiDrafts` (strip a stray name sign-off on notes, complete a partial sign-off on messages, "you both" → "we both", add the greeting, trim a slightly-long draft by dropping middle sentences, validate) are now `finishDrafts()`, shared by the cloud path and the coming on-device path. All 118 existing tests pass unchanged.
 - New **groundedness check**: every capitalised word (mid-sentence) and every number in a draft must already appear in the facts the model was given, otherwise the draft is rejected ("mentions "Google", which is not in your data"). Small on-device models invent more than big cloud ones, so it is opt-in (`requireGrounded`) and will be on for on-device drafts only.
 **Tests** Greeting/voice/sign-off/trim, rejection reasons, groundedness (hallucinated employer/number/event rejected, accented names and ordinary sentence-opening words allowed), null safety; 124 without jsdom.
+
+## Slice E2: prompt building and finishing for the on-device model (step 2 of 6)
+Chrome's built-in model can only run in a page (not the service worker), so the panel runs it, but **prompts and checks stay in one place** (`background.js`):
+- `BUILD_PROMPT {data}` → `{ system, user, limit, schema }`. Same payload as the cloud path (recipient profile, verified shared background, spotlight, short sender summary), a shorter system prompt for a small model (same rules), and the JSON schema for the panel to pass as `responseConstraint`.
+- `FINISH_DRAFTS {data, raw}` → runs the model's variants through `DraftCheck.finishDrafts` with **groundedness on**, fills gaps with free drafts, and answers in the usual drafts shape (`source: 'ondevice'`, a warning that names the reason when something was rejected).
+- `buildAiRequest` also returns `facts` (everything the model was told about people, never the task settings); that is what groundedness checks drafts against.
+Neither handler touches the network (tested).
