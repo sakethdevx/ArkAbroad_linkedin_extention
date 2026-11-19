@@ -355,3 +355,8 @@ README (requirements, privacy table, honest limits), LOOM addendum, and the mani
 
 ### Copy: the default message sign-off is "Best regards,"
 Free drafts in the Neutral tone signed off with a bare "Best,". They now use "Best regards," (Formal stays "Kind regards,", Casual "Cheers,"), and the AI prompts name the same three sign-offs so cloud and on-device drafts match.
+
+## Simplify: Review Mode removed, one flow
+**Why** Review Mode produced exactly the same drafts as Quick Mode (both call the same code); it only added a pause and a "hooks" box that repeats what "What I read" and "Why you two" already show after one click, where you can already fix a bad reading and press New drafts. It cost a second mode toggle, extra buttons and a three-step explanation, in the area the user had already called confusing.
+**What** One button, **Read profile & write draft**, for scraped profiles and for pasted text. Removed: the Quick/Review toggle, the Review panel and its two buttons, the "hooks" list, the `RUN_ENRICH` / `RUN_GENERATE` background handlers and `buildHooks`, the panel code that drove them, about 24 unused CSS rules, and their tests. Nothing else changes: connection detection, spotlight, on-device AI, translation and every setting behave as before. (The base `PROJECT_REPORT.md` still describes the old Deep Mode; it is left as the historical report.)
+**Tests** 137 without jsdom, 193 with (the Review flow test went away with the feature).

@@ -49,8 +49,6 @@ module.exports = (test) => {
         if (m.type === 'BUILD_PROMPT') { builds.push(m.payload); return cb({ success: true, system: 'SYS', user: 'USER', schema: { type: 'object' }, limit: 200 }); }
         if (m.type === 'FINISH_DRAFTS') { finishes.push(m.payload); return cb(finishReply || { success: true, polished: 3, warnings: [], source: 'ondevice', injection: [], variants: [{ text: 'Polished A', source: 'ondevice' }, { text: 'Polished B', source: 'ondevice' }, { text: 'Polished C', source: 'ondevice' }], generatedMessage: 'Polished A' }); }
         if (m.type === 'BUILD_RESUME_PROMPT') { resumeBuilds.push(m.payload); return cb({ success: true, system: 'RSYS', user: 'RUSER', schema: { type: 'object' }, resume: m.payload.text }); }
-        if (m.type === 'RUN_ENRICH') return cb({ status: 'enrich_complete', profileJSON: PRIYA(), enrichmentJSON: { topHooks: ['Shared: You both studied at IIT Madras'] } });
-        if (m.type === 'RUN_GENERATE') return cb({ status: 'generate_complete', success: true, warnings: [], injection: [], variants: [{ text: 'Hi Priya, review-mode draft', source: 'template' }], generatedMessage: 'x' });
         if (m.type === 'PREVIEW_PAYLOAD') {
           const g = (store.aiProvider === 'groq') || /^gsk_/.test(store.userApiKey || '');
           return cb({ success: true, model: g ? 'llama-3.3-70b-versatile' : 'claude-haiku-5-5', providerName: g ? 'Groq' : 'Anthropic', host: g ? 'api.groq.com' : 'api.anthropic.com', system: 'SYS', user: '{"recipient_profile":{"name":"Priya Rao"}}' });
@@ -435,26 +433,6 @@ module.exports = (test) => {
     assert.ok(!t.$('consent-dialog').hasAttribute('open'));
     assert.strictEqual(t.resumeCalls.length, 0);
     assert.ok(t.$('resume-ai-btn').classList.contains('hidden'));
-  });
-
-  test('popup: Review Mode shows ONE next action at a time (Read → Write), with a plain instruction', async () => {
-    const t = await boot({ senderProfile: SENDER });
-    await t.click('mode-deep', 60);
-    const vis = (id) => !t.$(id).classList.contains('hidden');
-    assert.ok(vis('enrich-btn') && !vis('deep-generate-btn') && !vis('reread-btn'));
-    assert.match(t.$('deep-step').textContent, /Step 1 of 2/);
-    assert.strictEqual(t.$('enrich-label').textContent, 'Read this profile');
-    await t.click('enrich-btn', 200);
-    assert.ok(!vis('enrich-btn') && vis('deep-generate-btn') && vis('reread-btn'));
-    assert.strictEqual(t.$('deep-generate-btn').disabled, false);
-    assert.match(t.$('deep-step').textContent, /Step 2 of 2/);
-    assert.match(t.$('status-message').textContent, /press “Write my draft”/);
-    assert.ok(!/Generate Message/.test(t.w.document.body.textContent));
-    assert.ok(vis('hooks-panel'));
-    await t.click('deep-generate-btn', 200);
-    assert.match(t.$('generated-message').value, /review-mode draft/);
-    await t.click('reread-btn', 200);   // read again → back through the same flow
-    assert.deepStrictEqual(t.errors, []);
   });
 
   test('popup: Settings cards fold: "About you" is open until name + resume exist, then shows a one-line summary', async () => {

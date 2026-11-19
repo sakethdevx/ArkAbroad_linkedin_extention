@@ -132,40 +132,11 @@
         <p class="format-tip" id="format-tip"></p>
       </div>
 
-      <div class="mode-toggle">
-        <button class="mode-btn active" id="mode-simple">⚡ Quick Mode</button>
-        <button class="mode-btn" id="mode-deep">🔍 Review Mode</button>
-      </div>
-
-      <!-- Simple Mode -->
       <div id="simple-mode-ui">
         <button id="scrape-btn" class="btn btn-primary btn-full">
           <span id="btn-label">Read profile &amp; write draft</span>
           <span id="btn-spinner" class="spinner hidden"></span>
         </button>
-      </div>
-
-      <!-- Deep Mode -->
-      <div id="deep-mode-ui" class="hidden">
-        <div class="deep-guide" id="deep-guide" aria-live="polite">
-          <span class="deep-step" id="deep-step">Step 1 of 2</span>
-          <span id="deep-guide-text">Read this profile and see what you have in common.</span>
-        </div>
-
-        <div class="hooks-panel hidden" id="hooks-panel">
-          <div class="hooks-label">What I found you can mention</div>
-          <div id="hooks-list"></div>
-        </div>
-
-        <button id="enrich-btn" class="btn btn-primary btn-full">
-          <span id="enrich-label">Read this profile</span>
-          <span id="enrich-spinner" class="spinner hidden"></span>
-        </button>
-        <button id="deep-generate-btn" class="btn btn-primary btn-full hidden" disabled>
-          <span id="deep-gen-label">Write my draft</span>
-          <span id="deep-gen-spinner" class="spinner hidden"></span>
-        </button>
-        <button id="reread-btn" type="button" class="btn-link hidden">Read the page again</button>
       </div>
 
       <div class="status-bar hidden" id="status-message" role="status" aria-live="polite"></div>

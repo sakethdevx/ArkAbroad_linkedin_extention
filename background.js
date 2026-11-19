@@ -49,8 +49,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'scrapeProfile')  { handleScrapeProfile(message.tabId, sendResponse); return true; }
   if (message.action === 'generateMessage') { handleQuickGenerate(message.data, sendResponse); return true; }
   if (message.type === 'TEST_API_KEY')     { handleTestKey(message.payload, sendResponse); return true; }
-  if (message.type === 'RUN_ENRICH')       { handleEnrich(message.payload, sendResponse); return true; }
-  if (message.type === 'RUN_GENERATE')     { handleDeepGenerate(message.payload, sendResponse); return true; }
   if (message.type === 'PREVIEW_PAYLOAD')  { handlePreview(message.payload, sendResponse); return true; }
   if (message.type === 'PARSE_RESUME')     { handleParseResume(message.payload, sendResponse); return true; }
   if (message.type === 'BUILD_PROMPT')     { handleBuildPrompt(message.payload, sendResponse); return true; }
@@ -133,27 +131,6 @@ async function handleQuickGenerate(data, sendResponse) {
     sendResponse(await generateDrafts(data));
   } catch (err) {
     sendResponse({ success: false, error: err.message });
-  }
-}
-
-async function handleDeepGenerate(payload, sendResponse) {
-  try {
-    const { profileJSON, ...rest } = payload;
-    const stored = await new Promise(resolve => chrome.storage.local.get(['userName', 'userBio'], resolve));
-    const r = await generateDrafts({ ...rest, profileData: profileJSON, settings: stored });
-    sendResponse({ status: 'generate_complete', ...r });
-  } catch (err) {
-    sendResponse({ status: 'error', error: err.message });
-  }
-}
-
-// Review mode step 1+2: normalise + local hooks. (Shared background is computed in the popup.)
-async function handleEnrich({ rawProfileData }, sendResponse) {
-  try {
-    const profileJSON = normalizeProfile(rawProfileData);
-    sendResponse({ status: 'enrich_complete', profileJSON, enrichmentJSON: { topHooks: buildHooks(profileJSON) } });
-  } catch (err) {
-    sendResponse({ status: 'error', error: err.message });
   }
 }
 
@@ -671,21 +648,6 @@ function normalizeProfile(raw = {}) {
     isConnection:      typeof raw.isConnection === 'boolean' ? raw.isConnection : null,
     quality:           raw.quality || null
   };
-}
-
-// Short list shown in Review mode ("Hooks found").
-function buildHooks(p, overlaps = []) {
-  const hooks = [];
-  overlaps.slice(0, 2).forEach(o => hooks.push(`Shared: ${o.detail}`));
-  if (p.recentPosts.length) hooks.push(`Recent post: "${truncate(p.recentPosts[0], 90)}"`);
-  if (p.currentTitle && p.currentCompany) hooks.push(`Works as ${p.currentTitle} at ${p.currentCompany}`);
-  else if (p.currentCompany) hooks.push(`Currently at ${p.currentCompany}`);
-  const realSkills = p.skills.filter(k => !/^skills?\b.*\(\d+\)$/i.test(k) && !/^skills?$/i.test(k));
-  if (realSkills.length) hooks.push(`Skills: ${realSkills.slice(0, 3).join(', ')}`);
-  if (p.pastCompanies.length) hooks.push(`Previously at ${p.pastCompanies.slice(0, 2).join(' and ')}`);
-  if (p.educationEntries.length) hooks.push(`Studied at ${stringify(p.educationEntries[0])}`);
-  if (!hooks.length && p.headline) hooks.push(`Headline: ${p.headline}`);
-  return hooks.slice(0, 4);
 }
 
 // ─── Utils ────────────────────────────────────────────────────────────────────

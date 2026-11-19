@@ -3,10 +3,6 @@
 // ─── State ────────────────────────────────────────────────────────────────────
 let currentProfile     = null;
 let isGenerating       = false;
-let currentMode        = 'simple';
-let deepProfileJSON    = null;
-let deepEnrichmentJSON = null;
-let isEnriching        = false;
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -344,19 +340,8 @@ function switchTab(name) {
 
 // ─── Mode toggle ──────────────────────────────────────────────────────────────
 function initModeToggle() {
-  document.getElementById('mode-simple').addEventListener('click', () => setMode('simple'));
-  document.getElementById('mode-deep').addEventListener('click', () => setMode('deep'));
 }
 
-function setMode(mode) {
-  currentMode = mode;
-  document.getElementById('mode-simple').classList.toggle('active', mode === 'simple');
-  document.getElementById('mode-deep').classList.toggle('active', mode === 'deep');
-  document.getElementById('simple-mode-ui').classList.toggle('hidden', mode === 'deep');
-  document.getElementById('deep-mode-ui').classList.toggle('hidden', mode === 'simple');
-  hideMessage();
-  clearCurrentStatus();
-}
 
 // ─── Page check ───────────────────────────────────────────────────────────────
 // Are you connected to this person? Read just the top card's badge/buttons as soon as the profile is open, so the right
@@ -390,7 +375,6 @@ async function checkCurrentPage() {
   const tab       = tabs[0];
   const onProfile = tab && tab.url && /linkedin\.com\/in\/[^/?#]+/.test(tab.url);
   document.getElementById('scrape-btn').disabled  = !onProfile;
-  document.getElementById('enrich-btn').disabled  = !onProfile;
   if (onProfile) autoDetectConnection(tab);   // not awaited: picks the right format in the background
   if (!onProfile) {
     document.getElementById('page-warning').classList.remove('hidden');
@@ -403,9 +387,6 @@ async function checkCurrentPage() {
 // ─── Wire events ──────────────────────────────────────────────────────────────
 function wireCurrentEvents() {
   document.getElementById('scrape-btn').addEventListener('click', handleScrapeAndGenerate);
-  document.getElementById('enrich-btn').addEventListener('click', handleEnrich);
-  document.getElementById('deep-generate-btn').addEventListener('click', handleDeepGenerate);
-  document.getElementById('reread-btn').addEventListener('click', handleEnrich);
   document.getElementById('regenerate-btn').addEventListener('click', () => regenerate(true));
   document.getElementById('spot-chip').addEventListener('click', onSpotlightToggle);
   document.getElementById('copy-btn').addEventListener('click', handleCopy);
@@ -544,12 +525,6 @@ function wireReadCard() {
     currentProfile.name           = document.getElementById('read-name').value.trim();
     currentProfile.currentTitle   = document.getElementById('read-role').value.trim();
     currentProfile.currentCompany = document.getElementById('read-company').value.trim();
-    if (deepProfileJSON) {   // Review/Deep flow keeps its own normalised copy
-      deepProfileJSON.name           = currentProfile.name;
-      deepProfileJSON.firstName      = currentProfile.name.split(/\s+/)[0] || 'there';
-      deepProfileJSON.currentTitle   = currentProfile.currentTitle;
-      deepProfileJSON.currentCompany = currentProfile.currentCompany;
-    }
     renderProfileCard(currentProfile);
     renderOverlaps(true);
     document.getElementById('read-edit-hint').classList.remove('hidden');
@@ -574,8 +549,7 @@ async function handlePasteProfile() {
   clearCurrentStatus();
   setButtonLoading('paste-btn', 'paste-label', 'paste-spinner', true, 'Reading…');
   try {
-    if (currentMode === 'deep') await runEnrich(profile);
-    else await generateFromProfile(profile, (t) => setButtonLoading('paste-btn', 'paste-label', 'paste-spinner', true, t));
+    await generateFromProfile(profile, (t) => setButtonLoading('paste-btn', 'paste-label', 'paste-spinner', true, t));
   } catch (err) {
     showCurrentStatus(err.message, 'error');
   } finally {
@@ -659,7 +633,6 @@ async function maybePolishOnDevice(data, resp, profile) {
 async function regenerate(bump) {
   if (isGenerating || !currentProfile) return;
   if (bump) seed += 3;
-  if (currentMode === 'deep') { handleDeepGenerate(); return; }
 
   isGenerating = true;
   setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, 'Writing…');
@@ -681,97 +654,6 @@ async function applyChangeLive() {
   if (!hasDraft) return;
   if (!(await getModeState()).ai) regenerate(false);
   else showCurrentStatus('Press Regenerate to apply this (AI mode uses a request).', '');
-}
-
-// ─── Deep Mode ────────────────────────────────────────────────────────────────
-function resetDeepState() {
-  deepProfileJSON = null;
-  deepEnrichmentJSON = null;
-  resetLayerStatuses();
-  document.getElementById('hooks-panel').classList.add('hidden');
-  document.getElementById('deep-generate-btn').disabled = true;
-  hideMessage();
-  clearCurrentStatus();
-}
-
-async function handleEnrich() {
-  if (isEnriching) return;
-  resetDeepState();
-
-  isEnriching = true;
-  setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', true, 'Reading profile…');
-
-  try {
-    const raw = await sendToBackground({ action: 'scrapeProfile', tabId: await activeTabId() });
-    await runEnrich(raw);
-  } catch (err) {
-    showCurrentStatus(err.message, 'error');
-    openPasteCard();
-  } finally {
-    isEnriching = false;
-    setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', false, 'Read this profile');
-  }
-}
-
-// Shared by scraping and pasted text.
-async function runEnrich(rawProfileData) {
-  resetDeepState();
-  currentProfile = rawProfileData;
-  maybeAutoFormat(rawProfileData);
-  renderProfileCard(rawProfileData);
-  renderReadCard(rawProfileData);
-  renderOverlaps(false);
-
-  if (rawProfileData.quality && rawProfileData.quality.confidence === 'none') {
-    showCurrentStatus("I couldn't read anything useful from this page. Paste the profile text below instead.", 'error');
-    openPasteCard();
-    return;
-  }
-
-  showCurrentStatus('Finding hooks…');
-  const response = await new Promise(resolve => chrome.runtime.sendMessage({ type: 'RUN_ENRICH', payload: { rawProfileData } }, resolve));
-
-  if (chrome.runtime.lastError || !response || response.status === 'error') {
-    showCurrentStatus((response && response.error) || 'Something went wrong. Please try again.', 'error');
-    return;
-  }
-
-  deepProfileJSON    = response.profileJSON;
-  deepEnrichmentJSON = response.enrichmentJSON;
-  renderProfileCard(deepProfileJSON);
-  renderHooks(deepEnrichmentJSON);
-  document.getElementById('deep-generate-btn').disabled = false;
-  setDeepStep(2);
-  showCurrentStatus('Done reading. Now press “Write my draft”.', 'success');
-}
-
-async function handleDeepGenerate() {
-  if (isGenerating || !deepProfileJSON || !deepEnrichmentJSON) return;
-
-  isGenerating = true;
-  setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', true, 'Writing draft…');
-  showCurrentStatus('Writing your draft…');
-  hideMessage();
-
-  try {
-    const data = await requestData(deepProfileJSON);
-    const { profileData, ...rest } = data;
-    const response = await new Promise(resolve =>
-      chrome.runtime.sendMessage({ type: 'RUN_GENERATE', payload: { profileJSON: profileData, enrichmentJSON: deepEnrichmentJSON, ...rest } }, resolve));
-
-    if (chrome.runtime.lastError || !response) throw new Error('Generation failed. Please try again.');
-    if (response.status === 'error') throw new Error(response.error);
-
-    renderDrafts(response);
-    const warn = response.warnings && response.warnings.length ? response.warnings[0] : '';
-    showCurrentStatus(warn || 'Draft ready. Read it, make it yours, then send it yourself.', warn ? 'warning' : 'success');
-    await saveToHistory();
-  } catch (err) {
-    showCurrentStatus(err.message, 'error');
-  } finally {
-    isGenerating = false;
-    setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', false, 'Write my draft');
-  }
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
@@ -901,36 +783,6 @@ async function handleValidateKey() {
 }
 
 // ─── Pipeline UI ──────────────────────────────────────────────────────────────
-// Review Mode shows ONE next action at a time: step 1 = read the page, step 2 = write the draft.
-function setDeepStep(step) {
-  const two = step === 2;
-  document.getElementById('enrich-btn').classList.toggle('hidden', two);
-  document.getElementById('deep-generate-btn').classList.toggle('hidden', !two);
-  document.getElementById('reread-btn').classList.toggle('hidden', !two);
-  document.getElementById('deep-step').textContent = `Step ${step} of 2`;
-  document.getElementById('deep-guide-text').textContent = two
-    ? 'Check what I found below (and the shared background above), then write your draft.'
-    : 'Read this profile and see what you have in common.';
-}
-const resetLayerStatuses = () => setDeepStep(1);
-
-function renderHooks(enrichmentJSON) {
-  const panel = document.getElementById('hooks-panel');
-  const list  = document.getElementById('hooks-list');
-  list.innerHTML = '';
-  const hooks = enrichmentJSON.topHooks?.length
-    ? enrichmentJSON.topHooks
-    : (enrichmentJSON.companyNews || []).map(n => n.relevance || n.headline).filter(Boolean);
-  if (!hooks.length) return;
-  hooks.slice(0, 3).forEach(hook => {
-    const d = document.createElement('div');
-    d.className   = 'hook-item';
-    d.textContent = hook;
-    list.appendChild(d);
-  });
-  panel.classList.remove('hidden');
-}
-
 // ─── UI helpers ───────────────────────────────────────────────────────────────
 function renderProfileCard(data) {
   const section = document.getElementById('profile-section');
@@ -1413,17 +1265,14 @@ async function onTabContextChanged() {
 
 // A draft written for one person must never sit under another person's profile.
 function resetForNewPage() {
-  if (isGenerating || isEnriching) return;
+  if (isGenerating) return;
   if (!currentProfile && !drafts.length) return;
-  currentProfile = null; deepProfileJSON = null; deepEnrichmentJSON = null;
+  currentProfile = null;
   cancelPolish();
   resetTranslate();
   formatAutoNote = ''; setFormat(currentFormat, { silent: true });
   overlapAll = []; overlapOff.clear(); spotlightOff = false; currentSpotlight = null; seed = 0;
   ['profile-section', 'read-card', 'overlap-panel'].forEach(id => document.getElementById(id).classList.add('hidden'));
-  document.getElementById('hooks-panel').classList.add('hidden');
-  document.getElementById('deep-generate-btn').disabled = true;
-  resetLayerStatuses();
   hideMessage();
   showCurrentStatus('You moved to a new page, so the old draft was cleared.', '');
 }
