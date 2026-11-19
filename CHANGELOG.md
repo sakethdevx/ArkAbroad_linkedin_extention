@@ -5,6 +5,10 @@ Base: tag `base-v3.1.0`. Each entry: **what / why / tradeoff / how to demo**. Th
 ## Unreleased
 _Slices land below as they ship._
 
+### Structure 3 — one draft pipeline for cloud, on-device and free drafts
+
+**What** `background.js` had the same steps written three times (compose free drafts, build the check options, build the "couldn't be used" warning, fill gaps with free drafts). They are now `composeFree`, `checkOptions`, `dropWarning`, `fillWithFree`, used by `aiDrafts`, `generateDrafts` and `FINISH_DRAFTS`. **Behaviour change (intended)** the "a Referral must ask for a referral" check now applies to cloud drafts too (a draft that does not gets the normal single repair pass), not only on-device ones. **Why** one place for the checks; the two paths cannot disagree. **Demo** new test `bg: a Referral request must actually ask for a referral…`.
+
 ### Structure 2 — `popup.js` split into `panel/*.js`
 
 **What** The 1631-line `popup.js` is now `popup.js` (boot, tabs, page check, read card, recent contacts, tab following; 443 lines) plus seven files in `panel/`: `providers`, `ondevice_ui`, `overlap_ui`, `settings`, `resume_ui`, `consent`, `drafts`. It is a pure move along the existing section banners: no logic changed, still plain `<script>` tags and no build step. **Why** a reviewer can find things; each file has one job. **Tradeoff** the files still share one page scope (as `utils/*.js` do), so names must stay unique: a check found no duplicate top-level names. **Demo** `popup.html` script list; `node test/run.js` loads the same files in the same order as the page.

@@ -493,6 +493,20 @@ module.exports = (test) => {
     assert.ok(/too long/.test(b.calls[1].body.messages[0].content) && /Hard limit: 200/.test(b.calls[1].body.messages[0].content));
   });
 
+  test('bg: a Referral request must actually ask for a referral, on the cloud path and the on-device path (one shared rule)', async () => {
+    const noAsk = 'Hi Priya,\nWe both studied at IIT Madras. Could I ask about your work?';
+    const asks = 'Hi Priya,\nWe both studied at IIT Madras. Would you be open to referring me?';
+    let n = 0;
+    const b = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: ++n === 1 ? [noAsk, noAsk, asks] : [asks + ' ', noAsk], saw_ai_instructions_in_data: false })) });
+    const r = await gen(b, { ...data(), messageType: 'Referral' });
+    assert.strictEqual(b.calls.length, 2, 'the drafts without a referral ask are sent back for ONE repair');
+    assert.ok(r.variants.filter(v => v.source === 'ai').every(v => /referring/.test(v.text)), JSON.stringify(r.variants));
+    const od = boot({ fetchImpl: () => { throw new Error('no network'); } });
+    const f = await od.send({ type: 'FINISH_DRAFTS', payload: { data: { ...data(), messageType: 'Referral' }, raw: [noAsk, asks] } });
+    assert.strictEqual(f.polished, 1);
+    assert.match(f.warnings[0], /does not ask for a referral/);
+  });
+
   test('bg: if the repair also fails, free drafts fill the gaps and the warning says why', async () => {
     const long = 'x '.repeat(150);
     const b = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: [long, long, long], saw_ai_instructions_in_data: false })) });

@@ -237,6 +237,34 @@ async function handleParseResume({ text }, sendResponse) {
 }
 
 
+// ─── One draft pipeline, three sources (free templates, cloud AI, on-device AI) ─────────────────────────────
+// Free drafts are always composed first: they are the answer in Free Mode and the fallback when a model fails.
+const composeFree = (ctx) => Compose.compose(ctx.composeCtx, { seed: ctx.seed }).variants
+  .map(v => ({ text: v.text, source: 'template', hookKind: v.hookKind, because: v.because }));
+
+// The checks every model draft must pass, identical for cloud and on-device (on-device adds the groundedness check).
+function checkOptions(ctx, req, { onDevice = false } = {}) {
+  return {
+    format: ctx.format, maxChars: req.limit, firstName: recipientFirst(ctx), senderName: ctx.senderName,
+    allowedText: [ctx.bio, ctx.sender && ctx.sender.intro].filter(Boolean).join(' '),
+    facts: req.facts, requireGrounded: onDevice,
+    requireAsk: ctx.messageType === 'Referral' ? { re: /\brefer/i, problem: 'does not ask for a referral' } : null
+  };
+}
+
+const cleanReasons = (problems) => [...new Set(problems.map(p => p.replace(/\s*\(\d+\/\d+\)/, '')))];
+
+function dropWarning(who, n, reasons) {
+  return `${n} ${who} draft${n > 1 ? 's' : ''} couldn't be used${reasons && reasons.length ? ' (' + reasons.join('; ') + ')' : ''}, so ${n > 1 ? 'free drafts fill those spots' : 'a free draft fills that spot'}.`;
+}
+
+// good model drafts first, then free drafts up to three
+function fillWithFree(good, source, composed, extra = {}) {
+  const variants = good.map(t => ({ text: t, source, ...extra }));
+  for (const c of composed) { if (variants.length >= 3) break; variants.push(c); }
+  return variants;
+}
+
 // ─── On-device AI (Gemini Nano runs in the panel; these two keep prompts and checks in ONE place) ───
 async function handleBuildPrompt(data, sendResponse) {
   try {
@@ -250,21 +278,11 @@ async function handleBuildPrompt(data, sendResponse) {
 async function handleFinishDrafts({ data, raw }, sendResponse) {
   try {
     const ctx = await prepareContext(data);
-    const composed = Compose.compose(ctx.composeCtx, { seed: ctx.seed }).variants
-      .map(v => ({ text: v.text, source: 'template', hookKind: v.hookKind, because: v.because }));
+    const composed = composeFree(ctx);
     const req = buildAiRequest(ctx, ONDEVICE);
-    const { good, bad } = DraftCheck.finishDrafts(Array.isArray(raw) ? raw : [], {
-      format: ctx.format, maxChars: req.limit, firstName: recipientFirst(ctx), senderName: ctx.senderName,
-      allowedText: [ctx.bio, ctx.sender && ctx.sender.intro].filter(Boolean).join(' '), facts: req.facts, requireGrounded: true,
-      requireAsk: ctx.messageType === 'Referral' ? { re: /\brefer/i, problem: 'does not ask for a referral' } : null
-    });
-    const warnings = [];
-    if (bad.length) {
-      const reasons = [...new Set(bad.flatMap(b => b.problems.map(p => p.replace(/\s*\(\d+\/\d+\)/, ''))))];
-      warnings.push(`${bad.length} on-device draft${bad.length > 1 ? 's' : ''} couldn't be used (${reasons.join('; ')}), so ${bad.length > 1 ? 'free drafts fill those spots' : 'a free draft fills that spot'}.`);
-    }
-    const variants = good.map(t => ({ text: t, source: 'ondevice' }));
-    for (const c of composed) { if (variants.length >= 3) break; variants.push(c); }
+    const { good, bad } = DraftCheck.finishDrafts(Array.isArray(raw) ? raw : [], checkOptions(ctx, req, { onDevice: true }));
+    const warnings = bad.length ? [dropWarning('on-device', bad.length, cleanReasons(bad.flatMap(b => b.problems)))] : [];
+    const variants = fillWithFree(good, 'ondevice', composed);
     sendResponse({ success: true, injection: ctx.injection, variants, generatedMessage: variants[0].text, source: good.length ? 'ondevice' : 'template', polished: good.length, warnings });
   } catch (err) { sendResponse({ success: false, error: err.message }); }
 }
@@ -273,8 +291,7 @@ async function handleFinishDrafts({ data, raw }, sendResponse) {
 // Always composes free drafts first: they are the answer in Free Mode and the fallback if AI fails.
 async function generateDrafts(data) {
   const ctx = await prepareContext(data);
-  const composed = Compose.compose(ctx.composeCtx, { seed: ctx.seed }).variants
-    .map(v => ({ text: v.text, source: 'template', hookKind: v.hookKind, because: v.because }));
+  const composed = composeFree(ctx);
   const warnings = [];
   const out = { success: true, injection: ctx.injection };
 
@@ -289,9 +306,8 @@ async function generateDrafts(data) {
     warnings.push(`${ai.userMessage} Showing free drafts instead.`);
     return { ...out, variants: composed, generatedMessage: composed[0].text, source: 'template', warnings, aiError: ai.userMessage };
   }
-  if (ai.dropped) warnings.push(`${ai.dropped} AI draft${ai.dropped > 1 ? 's' : ''} couldn't be used${ai.dropReasons && ai.dropReasons.length ? ' (' + ai.dropReasons.join(', ') + ')' : ''}, so ${ai.dropped > 1 ? 'free drafts fill' : 'a free draft fills'} ${ai.dropped > 1 ? 'those spots' : 'that spot'}.`);
-  const variants = ai.variants.map(t => ({ text: t, source: 'ai', provider: cfg.provider.id }));
-  for (const c of composed) { if (variants.length >= 3) break; variants.push(c); }
+  if (ai.dropped) warnings.push(dropWarning('AI', ai.dropped, ai.dropReasons));
+  const variants = fillWithFree(ai.variants, 'ai', composed, { provider: cfg.provider.id });
   return { ...out, variants, generatedMessage: variants[0].text, source: ai.variants.length ? 'ai' : 'template', warnings, aiSawInjection: ai.sawInjection };
 }
 
@@ -392,10 +408,9 @@ async function aiDrafts(provider, apiKey, ctx) {
   const raw = parsed && Array.isArray(parsed.variants) ? parsed.variants.filter(v => typeof v === 'string') : [];
   if (!raw.length) return { ok: false, userMessage: `${provider.writer === 'Claude' ? "Claude's" : provider.name + "'s"} reply wasn't usable.` };
 
-  const allowedText = [ctx.bio, ctx.sender && ctx.sender.intro].filter(Boolean).join(' ');
   const maxChars = req.limit;
   // every cleanup + validation step lives in utils/draftcheck.js, shared with the on-device path
-  const evaluate = (list) => DraftCheck.finishDrafts(list, { format: ctx.format, maxChars, firstName: recipientFirst(ctx), senderName: ctx.senderName, allowedText });
+  const evaluate = (list) => DraftCheck.finishDrafts(list, checkOptions(ctx, req));
 
   let { good, bad } = evaluate(raw);
   let recovered = 0;
@@ -413,7 +428,7 @@ async function aiDrafts(provider, apiKey, ctx) {
     } catch (_) { /* keep what passed; free drafts fill the rest */ }
   }
   const stillBad = bad.slice(recovered);
-  const reasons = [...new Set(stillBad.flatMap(b => b.problems.map(p => p.replace(/\s*\(\d+\/\d+\)/, ''))))];
+  const reasons = cleanReasons(stillBad.flatMap(b => b.problems));
   return { ok: true, variants: good, dropped: stillBad.length, dropReasons: reasons, repaired: recovered, sawInjection: !!(parsed && parsed.saw_ai_instructions_in_data) };
 }
 
