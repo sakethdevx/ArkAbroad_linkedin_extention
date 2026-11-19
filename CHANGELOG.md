@@ -5,6 +5,10 @@ Base: tag `base-v3.1.0`. Each entry: **what / why / tradeoff / how to demo**. Th
 ## Unreleased
 _Slices land below as they ship._
 
+### Feature 3 — Follow-up Coach (Recent tab)
+
+**What** Marking a message **Sent** now starts a clock (`sentAt`; un-marking resets it). Four days later the entry shows "Follow-up 1 of 2 is due", ten days after the send "Follow-up 2 of 2", and never a third. A count appears on the RECENT tab and one calm line on the Current tab. **Write follow-up** shows a short, polite, editable draft (free, no AI, nothing invented, signed with your full name); **Copy follow-up** copies it and counts it as sent; **They replied** stops all reminders; **Snooze 3 days** hides it. The rules are in a pure `utils/followup.js`; the UI is `panel/followup_ui.js`. **Why** most replies come from the second touch and most people forget to send it. **Tradeoffs** the check runs when the panel opens, so there is no toolbar badge and no `alarms` / `notifications` permission (permissions unchanged); entries marked sent before this change use their saved date. **Demo** Recent tab on any sent entry (in DevTools, set `sentAt` to 5 days ago to see it due). Tests: `followup:` (4) and `popup: Follow-up Coach…`.
+
 ### Feature 2 — one "Best next move" per person (`utils/approach.js`)
 
 **What** The tips under the drafts were scattered and sometimes stacked. One rule-based line now says the best move for THIS person: already connected → "a short message is enough"; a Referral with no shared ground → "ask for advice first, keep the referral request for your second message"; a recent post → "like or comment first" (labelled directional, from one vendor dataset); shared ground → "open with what you share". First rule that applies wins, so there is never a pile. **Why** it answers "should I even send this now?" without any AI. **Tradeoff** advice, not prediction; nothing leaves the device. The Referral hint moved out of `Spotlight.adviceFor` (which now only covers your own profile hints). **Demo** Current tab under the drafts. Tests: `approach:` (3) and `popup: ONE "Best next move" line…`.

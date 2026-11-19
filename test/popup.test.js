@@ -11,7 +11,7 @@ module.exports = (test) => {
   const root = path.join(__dirname, '..');
   const PP = require(path.join(root, 'utils/profile_parse.js'));
   const tick = (n = 40) => new Promise(r => setTimeout(r, n));
-  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/approach.js', 'utils/compose.js', 'utils/resume.js', 'utils/person.js', 'utils/cache.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'popup.js'];
+  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/approach.js', 'utils/compose.js', 'utils/followup.js', 'utils/resume.js', 'utils/person.js', 'utils/cache.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'panel/followup_ui.js', 'popup.js'];
 
   const PRIYA = () => PP.buildProfile({
     name: 'Priya Rao', headline: 'Data Scientist at Globex', location: 'Chennai, India',
@@ -160,6 +160,45 @@ module.exports = (test) => {
     const c = await boot({ senderProfile: SENDER }); c.setDegree('1st');
     await c.click('scrape-btn');
     assert.match([...c.w.document.querySelectorAll('#draft-notes .draft-note.move')].map(n => n.textContent).join(' '), /already connected/);
+  });
+
+  test('popup: Follow-up Coach — marking sent starts the clock; a due entry shows a badge, a banner and a draft you copy yourself; replied/snooze stop it', async () => {
+    const DAY = 24 * 3600e3;
+    const mk = (over) => ({ profileUrl: 'https://www.linkedin.com/in/priya/', name: 'Priya Rao', message: 'Hi Priya', timestamp: Date.now() - 6 * DAY, sent: true, sentAt: Date.now() - 5 * DAY, ...over });
+    const t = await boot({ senderProfile: SENDER, userName: 'SAKETH JANGALA', recentContacts: [mk()] }, { url: 'https://www.linkedin.com/feed/' });
+    assert.strictEqual(t.$('recent-badge').textContent, '1');
+    assert.ok(!t.$('followup-banner').classList.contains('hidden'));
+    assert.match(t.$('followup-banner-text').textContent, /1 follow-up is due/);
+    t.w.document.querySelector('.tab-btn[data-tab="recent"]').click(); await tick(60);
+    assert.match(t.w.document.querySelector('.followup-note').textContent, /Follow-up 1 of 2 is due.*5 days/);
+    await t.click('fu-write-0');
+    const text = t.$('fu-text-0').value;
+    assert.match(text, /^Hi Priya,\n/); assert.match(text, /\nBest regards,\nSaketh Jangala$/);
+    t.$('fu-text-0').value = text + ' (edited)';
+    await t.click('fu-copy-0', 1200);
+    assert.deepStrictEqual(t.copied, [text + ' (edited)']);
+    assert.strictEqual(t.store.recentContacts[0].followUps, 1);
+    assert.strictEqual(t.$('recent-badge').classList.contains('hidden'), true, 'the second one is not due until day 10');
+
+    const s = await boot({ senderProfile: SENDER, recentContacts: [mk()] }, { url: 'https://www.linkedin.com/feed/' });
+    s.w.document.querySelector('.tab-btn[data-tab="recent"]').click(); await tick(60);
+    await s.click('fu-snooze-0');
+    assert.ok(s.store.recentContacts[0].snoozeUntil > Date.now() + 2 * DAY);
+    assert.strictEqual(s.$('recent-badge').classList.contains('hidden'), true);
+    const r = await boot({ senderProfile: SENDER, recentContacts: [mk()] }, { url: 'https://www.linkedin.com/feed/' });
+    r.w.document.querySelector('.tab-btn[data-tab="recent"]').click(); await tick(60);
+    await r.click('fu-replied-0');
+    assert.strictEqual(r.store.recentContacts[0].replied, true);
+    assert.match(r.w.document.querySelector('.followup-note').textContent, /They replied/);
+
+    // marking sent starts the clock, un-marking resets everything
+    const m = await boot({ senderProfile: SENDER, recentContacts: [mk({ sent: false, sentAt: undefined })] }, { url: 'https://www.linkedin.com/feed/' });
+    m.w.document.querySelector('.tab-btn[data-tab="recent"]').click(); await tick(60);
+    assert.ok(!m.w.document.querySelector('.followup-box'), 'nothing to follow up until it is sent');
+    await m.click('sent-0');
+    assert.ok(Math.abs(m.store.recentContacts[0].sentAt - Date.now()) < 5000);
+    await m.click('sent-0');
+    assert.strictEqual(m.store.recentContacts[0].sentAt, null);
   });
 
   test('popup: switching Free ⇄ AI: AI asks once (names provider, host, model), the choice is remembered, and nothing asks per draft', async () => {

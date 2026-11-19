@@ -30,11 +30,17 @@ const Cache = (() => {
     });
   }
 
-  async function setSent(contact, sent) {
+  // change one entry (found by person, not by position). patch = object to merge, or a function(entry) → object
+  async function update(contact, patch) {
     const contacts = await getContacts();
-    const updated = contacts.map(c => (keyOf(c) === keyOf(contact) ? { ...c, sent: !!sent } : c));
+    const updated = contacts.map(c => (keyOf(c) === keyOf(contact) ? { ...c, ...(typeof patch === 'function' ? patch(c) : patch) } : c));
     return new Promise((resolve) => chrome.storage.local.set({ [KEY]: updated }, resolve));
   }
+
+  // marking sent starts the follow-up clock; un-marking resets it
+  const setSent = (contact, sent) => update(contact, (c) => (sent
+    ? { sent: true, sentAt: c.sentAt || Date.now() }
+    : { sent: false, sentAt: null, followUps: 0, replied: false, snoozeUntil: null }));
 
   async function clearContacts() {
     return new Promise((resolve) => {
@@ -42,5 +48,5 @@ const Cache = (() => {
     });
   }
 
-  return { getContacts, addContact, setSent, clearContacts, MAX };
+  return { getContacts, addContact, update, setSent, clearContacts, MAX };
 })();

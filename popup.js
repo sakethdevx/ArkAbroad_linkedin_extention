@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireSettingsEvents();
   wireCurrentEvents();
   wireRecentEvents();
+  document.getElementById('followup-banner-go').addEventListener('click', () => switchTab('recent'));
   wireReadCard();
   document.getElementById('paste-btn').addEventListener('click', handlePasteProfile);
   document.getElementById('privacy-details-btn').addEventListener('click', showPrivacyDetails);
@@ -37,6 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
   await loadPrefs();
   await renderRecentContacts();
+  await refreshFollowUpBadge();
   await refreshModeBadge();
   await refreshOnDeviceCard();
   await refreshResumeTip();
@@ -392,6 +394,7 @@ function buildContactCard(contact, idx) {
     await Cache.setSent(contact, next);
     sentBtn.textContent = next ? '✓ Sent' : 'Mark as sent';
     sentBtn.setAttribute('aria-pressed', String(next));
+    renderRecentContacts(); refreshFollowUpBadge();   // the follow-up clock starts (or resets) with this click
   });
 
   card.querySelector(`#copy-c-${idx}`).addEventListener('click', async () => {
@@ -401,6 +404,7 @@ function buildContactCard(contact, idx) {
     setTimeout(() => { btn.textContent = 'Copy'; }, 2200);
   });
 
+  addFollowUp(card, contact, idx);
   return card;
 }
 

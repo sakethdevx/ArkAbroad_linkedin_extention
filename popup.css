@@ -466,6 +466,13 @@ body {
 button.contact-link { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; text-align: left; }
 button.contact-link:hover, button.contact-link:focus-visible { color: var(--accent, #0a66c2); text-decoration: underline; }
 .contact-nolink { font-style: italic; }
+.tab-badge { display: inline-block; min-width: 16px; padding: 0 5px; margin-left: 4px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 10px; line-height: 16px; text-align: center; }
+.followup-banner { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 10px; border-radius: var(--radius); background: var(--accent-light); color: var(--accent); font-size: 12px; font-weight: 600; }
+.followup-box { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.followup-box.followup-quiet { padding-top: 6px; }
+.followup-note { font-size: 12px; line-height: 1.45; margin: 0 0 8px; }
+.followup-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+.followup-draft textarea { width: 100%; box-sizing: border-box; resize: vertical; font-size: 12px; line-height: 1.5; }
 .contact-date  { font-size: 11px; color: var(--text-2); flex-shrink: 0; margin-left: 8px; }
 
 .contact-message-preview,

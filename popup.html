@@ -31,12 +31,13 @@
 
     <nav class="tab-nav" role="tablist" aria-label="Sections">
       <button class="tab-btn active" role="tab" id="tabbtn-current" aria-controls="tab-current" aria-selected="true" data-tab="current">CURRENT</button>
-      <button class="tab-btn" role="tab" id="tabbtn-recent" aria-controls="tab-recent" aria-selected="false" tabindex="-1" data-tab="recent">RECENT</button>
+      <button class="tab-btn" role="tab" id="tabbtn-recent" aria-controls="tab-recent" aria-selected="false" tabindex="-1" data-tab="recent">RECENT <span class="tab-badge hidden" id="recent-badge" aria-label="follow-ups due"></span></button>
       <button class="tab-btn" role="tab" id="tabbtn-settings" aria-controls="tab-settings" aria-selected="false" tabindex="-1" data-tab="settings">SETTINGS</button>
     </nav>
 
     <!-- ── CURRENT tab ── -->
     <section class="tab-content active" id="tab-current" role="tabpanel" aria-labelledby="tabbtn-current">
+      <div class="followup-banner hidden" id="followup-banner"><span id="followup-banner-text"></span><button class="btn-link" id="followup-banner-go">Review in Recent</button></div>
 
       <div class="resume-tip hidden" id="resume-tip">
         <p>Add your resume so drafts can mention what you have in common with them. It stays on your device.</p>
@@ -400,6 +401,7 @@
   <script src="utils/spotlight.js"></script>
   <script src="utils/approach.js"></script>
   <script src="utils/compose.js"></script>
+  <script src="utils/followup.js"></script>
   <script src="utils/resume.js"></script>
   <script src="utils/person.js"></script>
   <script src="utils/cache.js"></script>
@@ -410,6 +412,7 @@
   <script src="panel/resume_ui.js"></script>
   <script src="panel/consent.js"></script>
   <script src="panel/drafts.js"></script>
+  <script src="panel/followup_ui.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
