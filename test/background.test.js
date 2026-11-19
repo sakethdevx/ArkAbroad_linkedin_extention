@@ -621,4 +621,19 @@ module.exports = (test) => {
     assert.ok(junk.success && junk.variants.length === 3);
     assert.strictEqual(b.calls.length, 0);
   });
+
+  test('bg: BUILD_RESUME_PROMPT prepares a resume read for the on-device model: same rules and schema, a smaller window, no network', async () => {
+    const b = boot({ fetchImpl: () => { throw new Error('no network'); } });
+    const long = 'Education\nIIT Madras B.Tech 2020 - 2024\n' + 'Experience line about shipping data tools and projects.\n'.repeat(400);
+    const r = await b.send({ type: 'BUILD_RESUME_PROMPT', payload: { text: long + '\u200B' } });
+    assert.ok(r.success);
+    assert.match(r.system, /untrusted_content_policy/);
+    assert.ok(!/Return exactly one JSON object/.test(r.system), 'the panel passes the schema itself');
+    assert.ok(r.schema.properties.experience && r.schema.properties.projects);
+    assert.ok(r.resume.length <= 6000 && r.resume.startsWith('Education\nIIT Madras'), 'trimmed to the small context window, beginning kept');
+    assert.ok(!/\u200B/.test(r.user) && r.user.includes('"resume_text"'));
+    const short = await b.send({ type: 'BUILD_RESUME_PROMPT', payload: { text: 'hi' } });
+    assert.strictEqual(short.success, false);
+    assert.strictEqual(b.calls.length, 0);
+  });
 };

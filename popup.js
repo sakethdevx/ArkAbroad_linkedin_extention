@@ -208,6 +208,7 @@ function wireOnDevice() {
     bar.style.width = '0';
     if (res.ok) await storageSet({ onDevice: true });
     await refreshOnDeviceCard();
+    if (res.ok) { await refreshAiResumeBtn(); await autoReadResumeOnDevice(); }
     if (!res.ok) document.getElementById('od-hint').textContent = res.reason === 'NotAllowedError'
       ? 'Chrome needs a click to start the download. Press Turn on again.'
       : 'Chrome couldn’t set up its AI model on this computer. Your free drafts still work as before.';
@@ -448,7 +449,7 @@ function wireSettingsEvents() {
   document.getElementById('resume-ai-btn').addEventListener('click', async () => {
     const { resumeText } = await storageGet(['resumeText']);
     if (!resumeText) { setResumeStatus('Upload or paste your resume first.', 'error'); return; }
-    await tryAiResume(resumeText);
+    if ((await getModeState()).ai) await tryAiResume(resumeText); else await tryOnDeviceResume(resumeText);
   });
   ['me-intro', 'me-goal', 'me-schools', 'me-employers', 'me-skills', 'me-city', 'me-education', 'me-experience', 'me-projects', 'me-certs', 'me-languages'].forEach(id =>
     document.getElementById(id).addEventListener('change', () => saveSenderFromCard()));
@@ -845,6 +846,13 @@ async function handleSaveSettings() {
 }
 
 // After AI is switched on, an already-uploaded resume gets the same full read, so the student never has to ask.
+// Turning on on-device AI with a resume already uploaded: give it the same full read, so nobody has to ask.
+async function autoReadResumeOnDevice() {
+  if ((await getModeState()).ai) return;
+  const { resumeText } = await storageGet(['resumeText']);
+  if (resumeText && (!senderProfile || !['ai', 'ondevice'].includes(senderProfile.source))) await tryOnDeviceResume(resumeText);
+}
+
 async function autoReadResumeWithAi() {
   const { resumeText } = await storageGet(['resumeText']);
   if (resumeText && (!senderProfile || senderProfile.source !== 'ai')) await tryAiResume(resumeText);
@@ -1526,7 +1534,11 @@ function renderMeSummary(sp) {
 
 async function refreshAiResumeBtn() {
   const s = await storageGet(['resumeText']);
-  document.getElementById('resume-ai-btn').classList.toggle('hidden', !((await getModeState()).ai && s.resumeText));
+  const m = await getModeState();
+  const local = !m.ai && (await onDeviceActive());
+  const btn = document.getElementById('resume-ai-btn');
+  btn.classList.toggle('hidden', !((m.ai || local) && s.resumeText));
+  btn.textContent = local ? 'Re-read my resume with on-device AI' : 'Re-read my resume with AI';
 }
 
 async function saveSenderFromCard() {
@@ -1562,7 +1574,10 @@ async function ingestResumeText(text, fileName, opts = {}) {
   if (!opts.quiet) document.getElementById('me-card').open = true;
   renderOverlaps(true);
   refreshResumeTip();
-  if (!opts.quiet) await tryAiResume(parsed.redactedText, { afterDevice: true });
+  if (!opts.quiet) {
+    const cloud = await tryAiResume(parsed.redactedText, { afterDevice: true });
+    if (!cloud && !(await getModeState()).ai) await tryOnDeviceResume(parsed.redactedText);
+  }
 }
 
 // AI Mode: let the provider the user chose read the resume and fill in the whole profile.
@@ -1581,8 +1596,12 @@ async function tryAiResume(text, opts = {}) {
     setResumeStatus(`${(res && res.userMessage) || 'AI could not read the resume.'} Using what was read on this device.`, 'error');
     return false;
   }
-  const ai = res.profile;
-  senderProfile = { ...ai, source: 'ai', provider: res.provider, updatedAt: Date.now() };
+  return applyResumeProfile(res.profile, `${prev.providerName}`, { source: 'ai', provider: res.provider, sawInjection: res.sawInjection });
+}
+
+// Shared by the cloud read and the on-device read: store the full profile, fill name/bio only where empty, show what was found.
+async function applyResumeProfile(ai, label, { source, provider, sawInjection } = {}) {
+  senderProfile = { ...ai, source, provider, updatedAt: Date.now() };
   const toStore = { senderProfile };
 
   // fill the other fields this profile belongs in, without overwriting what the user already typed
@@ -1599,11 +1618,29 @@ async function tryAiResume(text, opts = {}) {
     ai.projects.length   && `${ai.projects.length} project${ai.projects.length > 1 ? 's' : ''}`,
     ai.skills.length     && `${ai.skills.length} skills`
   ].filter(Boolean);
-  setResumeStatus(`${prev.providerName} read your resume ✓ Filled in ${bits.join(', ') || 'your profile'}. Check it below.${res.sawInjection ? ' Note: the resume contained text aimed at an AI; it was ignored.' : ''}`, 'success');
+  setResumeStatus(`${label} read your resume ✓ Filled in ${bits.join(', ') || 'your profile'}. Check it below.${sawInjection ? ' Note: the resume contained text aimed at an AI; it was ignored.' : ''}`, 'success');
   document.getElementById('me-card').open = true;
   renderOverlaps(true);
   refreshResumeTip();
   return true;
+}
+
+// Free Mode + on-device AI: Chrome's built-in model reads the resume. Nothing leaves the computer. Its answer is held to the same
+// rules as the cloud's (whitelist, caps, instruction screen, every school/employer/skill/project must appear in the resume text),
+// and a read that finds nothing leaves the on-device heuristic result in place.
+async function tryOnDeviceResume(text, opts = {}) {
+  if (!(await onDeviceActive())) return false;
+  setResumeStatus('Reading your resume with Chrome’s built-in AI… this can take a moment.', 'pending');
+  const built = await sendMsg({ type: 'BUILD_RESUME_PROMPT', payload: { text } });
+  if (!built || !built.success) { setResumeStatus(`${(built && built.error) || 'Could not prepare the resume.'} Using what was read on this device.`, 'error'); return false; }
+  const obj = await OnDevice.extract({ system: built.system, user: built.user, schema: built.schema }, { timeoutMs: 90000 });
+  const profile = obj ? Safety.sanitizeSenderProfile(obj, built.resume) : null;
+  const found = profile ? profile.education.length + profile.experience.length + profile.skills.length + profile.projects.length : 0;
+  if (!profile || (!found && !profile.intro)) {
+    setResumeStatus('Chrome’s built-in AI couldn’t read this resume well, so I’m using what was read on this device. Edit anything below.', 'pending');
+    return false;
+  }
+  return applyResumeProfile(profile, 'Chrome’s built-in AI', { source: 'ondevice', provider: 'ondevice', sawInjection: !!obj.saw_ai_instructions_in_data });
 }
 
 async function processResumeFile(file) {

@@ -24,7 +24,7 @@ module.exports = (test) => {
     const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8').replace(/<script[^>]*src[^>]*><\/script>/g, '');
     const w = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://x/popup.html' }).window;
     const errors = []; w.addEventListener('error', e => errors.push(e.message));
-    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; let about = ''; const copied = []; const builds = [], finishes = []; let finishReply = null; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
+    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; const resumeBuilds = []; let about = ''; const copied = []; const builds = [], finishes = []; let finishReply = null; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
     let tabUrl = url;
     w.chrome = {
       tabs: { query: async () => [{ id: 42, url: tabUrl, active: true }], onActivated: { addListener: f => listeners.push(f) }, onUpdated: { addListener: f => listeners.push(f) } },
@@ -48,6 +48,7 @@ module.exports = (test) => {
         if (m.action === 'detectConnection') { detects.push(m.tabId); return cb({ success: true, lines: signals.lines, labels: signals.labels }); }
         if (m.type === 'BUILD_PROMPT') { builds.push(m.payload); return cb({ success: true, system: 'SYS', user: 'USER', schema: { type: 'object' }, limit: 200 }); }
         if (m.type === 'FINISH_DRAFTS') { finishes.push(m.payload); return cb(finishReply || { success: true, polished: 3, warnings: [], source: 'ondevice', injection: [], variants: [{ text: 'Polished A', source: 'ondevice' }, { text: 'Polished B', source: 'ondevice' }, { text: 'Polished C', source: 'ondevice' }], generatedMessage: 'Polished A' }); }
+        if (m.type === 'BUILD_RESUME_PROMPT') { resumeBuilds.push(m.payload); return cb({ success: true, system: 'RSYS', user: 'RUSER', schema: { type: 'object' }, resume: m.payload.text }); }
         if (m.type === 'RUN_ENRICH') return cb({ status: 'enrich_complete', profileJSON: PRIYA(), enrichmentJSON: { topHooks: ['Shared: You both studied at IIT Madras'] } });
         if (m.type === 'RUN_GENERATE') return cb({ status: 'generate_complete', success: true, warnings: [], injection: [], variants: [{ text: 'Hi Priya, review-mode draft', source: 'template' }], generatedMessage: 'x' });
         if (m.type === 'PREVIEW_PAYLOAD') {
@@ -73,7 +74,7 @@ module.exports = (test) => {
     else w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
     await tick();
     const $ = id => w.document.getElementById(id);
-    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, setAbout: a => { about = a; }, copied, builds, finishes, setFinish: f => { finishReply = f; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
+    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, resumeBuilds, setAbout: a => { about = a; }, copied, builds, finishes, setFinish: f => { finishReply = f; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
   }
 
   const SENDER = { schools: ['IIT Madras'], skills: ['Python'], intro: 'CS student' };
@@ -805,5 +806,69 @@ module.exports = (test) => {
     assert.ok(t.$('tr-result').classList.contains('hidden'));
     assert.strictEqual(t.$('tr-out').value, '');
     assert.deepStrictEqual(t.errors.concat(u.errors), []);
+  });
+
+  const RESUME_OBJ = { name: 'JANGALA SAKETH', intro: 'B.Tech CSE student at Vellore Institute of Technology', summary: 'CS student who ships AI-powered applications.', city: 'Chennai, India',
+    education: [{ school: 'Vellore Institute of Technology', degree: 'B.Tech', field: 'Computer Science', years: '2022 - 2026' }],
+    experience: [{ title: 'Software Intern', company: 'Initech', years: '2024', detail: 'Built a forecasting API' }],
+    projects: [{ name: 'CampusMap', summary: 'route planner' }, { name: 'Invented Thing', summary: 'not in the resume' }],
+    skills: ['Python', 'SQL', 'Kubernetes'], certifications: [], languages: [], saw_ai_instructions_in_data: false };
+
+  const RESUME_TEXT = 'JANGALA SAKETH\nChennai, India\n\nEDUCATION\nVellore Institute of Technology\nB.Tech Computer Science 2022 - 2026\n\nEXPERIENCE\nSoftware Intern, Initech, 2024\nBuilt a forecasting API\n\nPROJECTS\nCampusMap: a route planner for campus\n\nSKILLS\nPython, SQL, Docker';
+
+  test('popup: Free Mode + on-device AI reads the resume with Chrome\'s model and fills the whole profile (grounded, name cased, nothing sent anywhere)', async () => {
+    const log = {};
+    const t = await boot({ onDevice: true }, { languageModel: readyLM(JSON.stringify(RESUME_OBJ), log) });
+    await tick(80);
+    t.$('resume-paste').value = RESUME_TEXT;
+    await t.click('resume-paste-btn', 400);
+    assert.strictEqual(t.resumeBuilds.length, 1);
+    assert.strictEqual(t.resumeCalls.length, 0, 'the cloud route is never used in Free Mode');
+    assert.strictEqual(log.prompts, 1);
+    assert.match(t.$('resume-status').textContent, /^Chrome’s built-in AI read your resume ✓ Filled in 1 education, 1 experience, 1 project/);
+    assert.match(t.$('me-education').value, /Vellore Institute of Technology \| B\.Tech \| Computer Science/);
+    assert.match(t.$('me-experience').value, /Software Intern \| Initech/);
+    assert.match(t.$('me-projects').value, /CampusMap/);
+    assert.ok(!/Invented Thing/.test(t.$('me-projects').value), 'a project that is not in the resume text is dropped');
+    assert.ok(!/Kubernetes/.test(t.$('me-skills').value), 'an invented skill is dropped');
+    assert.match(t.$('me-intro').value, /Vellore Institute of Technology/);
+    assert.strictEqual(t.$('user-name').value, 'Jangala Saketh', 'ALL CAPS name is cased properly');
+    const sp = JSON.parse(JSON.stringify(t.store.senderProfile));
+    assert.strictEqual(sp.source, 'ondevice');
+    assert.strictEqual(sp.experience[0].company, 'Initech');
+    assert.deepStrictEqual(t.errors, []);
+  });
+
+  test('popup: an unreadable on-device answer keeps the on-device heuristic result and says so; Free Mode without the switch never calls the model', async () => {
+    const bad = await boot({ onDevice: true }, { languageModel: readyLM('this is not json') });
+    await tick(80);
+    bad.$('resume-paste').value = fs.readFileSync(path.join(__dirname, 'fixtures/resume_sample.txt'), 'utf8');
+    await bad.click('resume-paste-btn', 400);
+    assert.match(bad.$('resume-status').textContent, /couldn’t read this resume well, so I’m using what was read on this device/);
+    assert.match(bad.$('me-schools').value, /Indian Institute of Technology Madras/);
+    const log = {};
+    const off = await boot({ onDevice: false }, { languageModel: readyLM(JSON.stringify(RESUME_OBJ), log) });
+    await tick(80);
+    off.$('resume-paste').value = fs.readFileSync(path.join(__dirname, 'fixtures/resume_sample.txt'), 'utf8');
+    await off.click('resume-paste-btn', 300);
+    assert.strictEqual(off.resumeBuilds.length, 0);
+    assert.ok(!log.prompts);
+    assert.ok(off.$('resume-ai-btn').classList.contains('hidden'));
+  });
+
+  test('popup: turning on-device AI on reads an already-uploaded resume by itself, and "Re-read" works with it', async () => {
+    let state = 'downloadable'; const log = {};
+    const lm = { availability: async () => state, create: async (o) => { if (o && o.monitor) { /* download */ } state = 'available'; return { prompt: async () => { log.prompts = (log.prompts || 0) + 1; return JSON.stringify(RESUME_OBJ); }, destroy: () => {} }; } };
+    const resumeText = fs.readFileSync(path.join(__dirname, 'fixtures/resume_sample.txt'), 'utf8');
+    const t = await boot({ resumeText, resumeFileName: 'r.pdf', senderProfile: SENDER }, { languageModel: lm });
+    await tick(80);
+    assert.strictEqual(t.resumeBuilds.length, 0);
+    await t.click('od-enable', 500);
+    assert.strictEqual(t.resumeBuilds.length, 1, 'read automatically after turning it on');
+    assert.strictEqual(JSON.parse(JSON.stringify(t.store.senderProfile)).source, 'ondevice');
+    assert.ok(!t.$('resume-ai-btn').classList.contains('hidden'));
+    assert.strictEqual(t.$('resume-ai-btn').textContent, 'Re-read my resume with on-device AI');
+    await t.click('resume-ai-btn', 400);
+    assert.strictEqual(t.resumeBuilds.length, 2);
   });
 };

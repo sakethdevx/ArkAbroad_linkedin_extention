@@ -66,4 +66,17 @@ module.exports = (test, load) => {
     assert.strictEqual(await withLM(hang, () => OD.polish({ user: 'u' }, { timeoutMs: 20000, signal: ctl.signal })), null);
     assert.strictEqual(log.destroyed, 1);
   });
+
+  test('ondevice: extract() returns a JSON object (even wrapped in prose), passes the schema, and is null on anything else', async () => {
+    const log = {};
+    const mk = (reply) => ({ availability: async () => 'available', create: async () => session(reply, log) });
+    assert.deepStrictEqual(await withLM(mk('{"name":"Asha","skills":["Python"]}'), () => OD.extract({ system: 'S', user: 'U', schema: { type: 'object' } })), { name: 'Asha', skills: ['Python'] });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(log.prompted.o.responseConstraint)), { type: 'object' });
+    assert.strictEqual(log.destroyed, 1);
+    assert.deepStrictEqual(await withLM(mk('Sure!\n```json\n{"name":"B"}\n```'), () => OD.extract({ user: 'u' })), { name: 'B' });
+    assert.strictEqual(await withLM(mk('[1,2,3]'), () => OD.extract({ user: 'u' })), null, 'arrays are not objects');
+    assert.strictEqual(await withLM(mk('nope'), () => OD.extract({ user: 'u' })), null);
+    assert.strictEqual(await withLM(mk(new Error('quota')), () => OD.extract({ user: 'u' })), null);
+    assert.strictEqual(await withLM(undefined, () => OD.extract({ user: 'u' })), null);
+  });
 };

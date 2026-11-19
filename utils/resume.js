@@ -147,12 +147,25 @@
       }
     });
 
+    // split on commas/bullets that are NOT inside brackets, so "tool (a, b)" stays one item
+    function splitTopLevel(line) {
+      const out = []; let depth = 0, cur = '';
+      for (const ch of String(line)) {
+        if (ch === '(' || ch === '[') depth++;
+        else if ((ch === ')' || ch === ']') && depth > 0) depth--;
+        if (depth === 0 && /[,;|•·]/.test(ch)) { out.push(cur); cur = ''; } else cur += ch;
+      }
+      out.push(cur);
+      return out;
+    }
+
     // skills: section tokens first, then a vocabulary sweep over the whole text
     const skillTokens = [];
     for (const raw of sec.skills || []) {
       const l = stripBullet(raw).replace(/^[\p{L} &/]{2,25}:\s*/u, '');
-      for (const t of l.split(/[,;|•·]/)) {
-        const s = PP.clean(t);
+      for (const t of splitTopLevel(l)) {
+        // "Python (primary)" → "Python"; "AI-assisted development (Claude, Antigravity)" → "AI-assisted development"
+        const s = PP.clean(t.replace(/\s*[([].*$/, '') || t.replace(/[()[\]]/g, ''));
         if (s.length >= 2 && s.length <= 30 && s.split(' ').length <= 3 && !/^\d+$/.test(s) && !/^(?:and|etc\.?|others?)$/i.test(s)) skillTokens.push(SKILL_CANON.get(s.toLowerCase()) || s);
       }
     }

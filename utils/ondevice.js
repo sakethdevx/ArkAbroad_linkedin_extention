@@ -44,13 +44,22 @@
     }
   }
 
+  const tryJson = (t) => { try { return JSON.parse(t); } catch (_) { return null; } };
+  // JSON object from a reply, recovering one that is wrapped in prose or code fences
+  function parseObject(text) {
+    const o = tryJson(text);
+    if (o && typeof o === 'object' && !Array.isArray(o)) return o;
+    const m = String(text || '').match(/\{[\s\S]*\}/);
+    const r = m ? tryJson(m[0]) : null;
+    return r && typeof r === 'object' && !Array.isArray(r) ? r : null;
+  }
   function parseVariants(text) {
-    const tryParse = (t) => { try { const o = JSON.parse(t); return o && Array.isArray(o.variants) ? o.variants.filter(v => typeof v === 'string') : null; } catch (_) { return null; } };
-    return tryParse(text) || (() => { const m = String(text || '').match(/\{[\s\S]*\}/); return m ? tryParse(m[0]) : null; })();
+    const o = parseObject(text);
+    return o && Array.isArray(o.variants) ? o.variants.filter(v => typeof v === 'string') : null;
   }
 
-  // req = { system, user, schema }.  opts = { timeoutMs, signal }.  Always cleans up; never throws.
-  async function polish(req, opts = {}) {
+  // One prompt, one reply, always cleaned up. req = { system, user, schema }.  opts = { timeoutMs, signal }.  → text | null
+  async function run(req, opts = {}) {
     const L = lm();
     if (!L || !req || !req.user) return null;
     const ctl = new AbortController();
@@ -61,8 +70,7 @@
     try {
       session = await L.create({ ...EXPECT, signal: ctl.signal, initialPrompts: req.system ? [{ role: 'system', content: req.system }] : undefined });
       const text = await session.prompt(req.user, { signal: ctl.signal, ...(req.schema ? { responseConstraint: req.schema } : {}) });
-      const variants = parseVariants(text);
-      return variants && variants.length ? variants : null;
+      return typeof text === 'string' ? text : null;
     } catch (_) {
       return null;
     } finally {
@@ -72,5 +80,16 @@
     }
   }
 
-  return { status, enable, polish, parseVariants, EXPECT };
+  // drafts: { variants: [...] } → string[] | null.   Never throws.
+  async function polish(req, opts = {}) {
+    const variants = parseVariants(await run(req, opts));
+    return variants && variants.length ? variants : null;
+  }
+
+  // anything structured (e.g. a resume): a JSON object | null.   Never throws.
+  async function extract(req, opts = {}) {
+    return parseObject(await run(req, opts));
+  }
+
+  return { status, enable, polish, extract, parseVariants, parseObject, EXPECT };
 });

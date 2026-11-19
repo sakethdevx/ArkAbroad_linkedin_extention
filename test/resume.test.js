@@ -72,4 +72,13 @@ module.exports = (test, load) => {
     assert.ok(err, 'should throw');
     assert.ok(R.explainPdfError(err).length > 10);
   });
+
+  test('resume: skills with brackets stay whole ("tool (a, b)"), parentheticals are dropped, and nothing is split inside them', () => {
+    const p = R.parseResume('Jane Doe\nChennai, India\n\nSKILLS\nDocker, Git, AI-assisted development (Claude, Antigravity), Python (primary), SQL, LLM applications (Groq, Gemini API)\n\nEDUCATION\nIIT Madras\nB.Tech 2020 - 2024');
+    const skills = JSON.parse(JSON.stringify(p.skills));
+    assert.ok(skills.includes('Docker') && skills.includes('Python') && skills.includes('SQL'), skills.join('|'));
+    assert.ok(skills.some(s => /^AI-assisted development$/.test(s)) || skills.some(s => /^LLM applications$/.test(s)), skills.join('|'));
+    ['Antigravity)', 'Claude', 'development (Claude', 'Groq', 'Gemini API)', 'primary)'].forEach(bad => assert.ok(!skills.includes(bad), `fragment "${bad}" leaked: ${skills.join('|')}`));
+    assert.ok(skills.every(s => !/[()]/.test(s)), skills.join('|'));
+  });
 };
