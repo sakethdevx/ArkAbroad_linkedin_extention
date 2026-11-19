@@ -121,6 +121,26 @@ module.exports = (test, load) => {
     ctl.destroy();
   });
 
+  test('notefill: the REAL LinkedIn "Add a note to your invitation" markup (pasted from linkedin.com) is found, in the page and in a shadow root, and filled', () => {
+    const real = fs.readFileSync(path.join(__dirname, 'fixtures/linkedin_invite_dialog.html'), 'utf8');
+    for (const where of ['page', 'shadow']) {
+      const dom = new JSDOM('<body><div id="artdeco-modal-outlet"></div><div id="interop-outlet"></div></body>', { runScripts: 'outside-only' });
+      const w = dom.window, d = w.document, clicks = [];
+      const root = where === 'page' ? d.getElementById('artdeco-modal-outlet') : d.getElementById('interop-outlet').attachShadow({ mode: 'open' });
+      root.innerHTML = real;
+      root.querySelectorAll('button').forEach(b => b.addEventListener('click', () => clicks.push(b.getAttribute('aria-label'))));
+      const ctl = N.create(w); ctl.scan();
+      let host = root.querySelector('[data-outreach-fill]');
+      assert.ok(host, where + ': the button appears even before a draft exists');
+      assert.match(host.shadowRoot.getElementById('hint').textContent, /Write a draft in the Outreach AI panel first/);
+      ctl.setDraft('Hi Aryan,\nWe both study at VIT. Open to a quick chat?', 'note');
+      host.shadowRoot.getElementById('fill').click();
+      assert.strictEqual(root.querySelector('#custom-message').value, 'Hi Aryan,\nWe both study at VIT. Open to a quick chat?', where);
+      assert.strictEqual(N.limitOf(N.findNoteBox(d)), 300, 'the limit comes from the 0/300 counter (this textarea has no maxlength)');
+      assert.deepStrictEqual(clicks, [], where + ': Send / Cancel / Dismiss never clicked');
+    }
+  });
+
   test('notefill: the button lives in a shadow root and the draft is never written into the page until you press it', () => {
     const s = setup(INVITE());
     s.ctl.setDraft('SECRET-DRAFT-TEXT', 'note');

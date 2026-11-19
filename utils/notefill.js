@@ -19,8 +19,10 @@
   }
 })(typeof self !== 'undefined' ? self : this, function () {
 
-  const VERSION = 'notefill-2';
+  const VERSION = 'notefill-3';
   const NOTE_WORDS = /invitation|add a note|personal note|your note/i;
+  // short breadcrumbs in the page console (DevTools → Console → filter "Outreach AI"), never the draft's text
+  const log = (...a) => { try { console.debug('[Outreach AI]', ...a); } catch (_) { /* no console */ } };
 
   const isShown = (el) => !!el && !el.hidden && el.getAttribute('aria-hidden') !== 'true' && !el.closest('[hidden], [aria-hidden="true"]');
 
@@ -44,12 +46,25 @@
     return null;
   }
 
+  // The pop-up is recognised by what it says (not by the element LinkedIn happens to wrap it in): a visible, editable
+  // textarea with "invitation" / "personal note" around it, or LinkedIn's own "We know each other from…" placeholder.
+  function noteScope(ta) {
+    if (/know each other|personal note/i.test(ta.getAttribute('placeholder') || '')) return ta.closest('[role="dialog"], dialog, .artdeco-modal') || ta.parentElement;
+    let a = ta.parentElement;
+    for (let i = 0; i < 8 && a; i++, a = a.parentElement) {
+      const t = a.textContent || '';
+      if (t.length > 3000) break;
+      if (NOTE_WORDS.test(t)) return a;
+    }
+    return null;
+  }
+
   function findIn(doc) {
-    // 1. the invitation note: an editable textarea inside a dialog about an invitation / note
-    for (const dlg of doc.querySelectorAll('[role="dialog"], .artdeco-modal')) {
-      if (!isShown(dlg) || !NOTE_WORDS.test(dlg.textContent || '')) continue;
-      const ta = [...dlg.querySelectorAll('textarea')].find(t => !t.readOnly && !t.disabled && isShown(t));
-      if (ta) return { kind: 'textarea', el: ta, scope: dlg };
+    // 1. the invitation note
+    for (const ta of doc.querySelectorAll('textarea')) {
+      if (ta.readOnly || ta.disabled || !isShown(ta)) continue;
+      const scope = noteScope(ta);
+      if (scope) return { kind: 'textarea', el: ta, scope };
     }
     // 2. a message box (already connected): the messaging text box, never the post composer
     const ed = [...doc.querySelectorAll('[contenteditable="true"][role="textbox"]')].find(e =>
@@ -121,10 +136,11 @@
     const doc = win.document;
     let draft = { text: '', format: 'note' };
     let enabled = true;
+    let lastMiss = 0;
     const uis = new Map();   // box element → ui
 
     const ctl = {
-      setDraft(text, format) { draft = { text: String(text || '').trim(), format: format === 'message' ? 'message' : 'note' }; ctl.scan(); },
+      setDraft(text, format) { draft = { text: String(text || '').trim(), format: format === 'message' ? 'message' : 'note' }; log(`draft received (${draft.text.length} characters)`); ctl.scan(); },
       getDraft: () => ({ ...draft }),
       setEnabled(on) { enabled = !!on; if (!enabled) { uis.forEach(ui => ui.host.remove()); uis.clear(); } else ctl.scan(); },
 
@@ -132,9 +148,13 @@
         if (!enabled) return;
         for (const [el, ui] of uis) if (!el.isConnected) { ui.host.remove(); uis.delete(el); }   // the box went away
         const box = findNoteBox(doc);
-        if (!box) return;
+        if (!box) {
+          const n = [doc, ...shadowRoots(doc)].reduce((k, r) => k + r.querySelectorAll('textarea').length, 0);
+          if (n && Date.now() - lastMiss > 5000) { lastMiss = Date.now(); log(`saw ${n} text box(es) but none looks like a note box`); }
+          return;
+        }
         let ui = uis.get(box.el);
-        if (!ui) { ui = mountUi(box, ctl); uis.set(box.el, ui); }
+        if (!ui) { ui = mountUi(box, ctl); uis.set(box.el, ui); log(`found the ${box.kind === 'textarea' ? 'invitation note' : 'message'} box; button added`); }
         ui.box = box;
         if (!ui.busy) ctl.describe(ui);
       },
@@ -194,6 +214,7 @@
       if (msg.action === 'noteFillDraft') { ctl.setEnabled(msg.enabled !== false); ctl.setDraft(msg.text, msg.format); sendResponse({ ok: true }); return; }
     });
     ctl.watch();
+    log('helper running (' + VERSION + ')');
   }
 
   return { VERSION, create, start, findNoteBox, limitOf, fillBox };

@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await refreshModeBadge();
   await refreshOnDeviceCard();
   await refreshNoteFillCard();
+  pushDraftToPage();   // panel opened on a LinkedIn tab: start the helper so its button can appear (with or without a draft)
   await refreshResumeTip();
   await onTabContextChanged();
   watchTabs();
@@ -426,6 +427,7 @@ async function onTabContextChanged() {
   }
   lastPageUrl = key;
   await checkCurrentPage();
+  pushDraftToPage();   // a different tab or person: the helper there needs the (possibly empty) current draft
 }
 
 // A draft written for one person must never sit under another person's profile.

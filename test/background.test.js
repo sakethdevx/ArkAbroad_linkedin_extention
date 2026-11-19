@@ -577,7 +577,7 @@ module.exports = (test) => {
   test('bg: armNoteFill only talks to LinkedIn profile/messaging tabs, injects the helper once, and hands over just the text and format', async () => {
     const injected = [], sent = []; let ready = false;
     const b = boot({ tabs: { get: async (id) => ({ id, url: id === 1 ? 'https://www.linkedin.com/in/aryan/' : id === 3 ? 'https://www.linkedin.com/messaging/thread/1/' : 'https://www.google.com/' }),
-        sendMessage: async (id, m) => { sent.push(m); if (m.action === 'noteFillPing') { if (!ready) throw new Error('no receiver'); return { ok: true, version: 'notefill-2' }; } return { ok: true }; } },
+        sendMessage: async (id, m) => { sent.push(m); if (m.action === 'noteFillPing') { if (!ready) throw new Error('no receiver'); return { ok: true, version: 'notefill-3' }; } return { ok: true }; } },
       scripting: { executeScript: async (o) => { injected.push(o); ready = true; return []; } }, fetchImpl: () => { throw new Error('no network'); } });
     const r = await b.send({ action: 'armNoteFill', tabId: 1, text: 'Hi Aryan, hello.', format: 'note', enabled: true, extra: 'ignored' });
     assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { success: true });
@@ -590,12 +590,14 @@ module.exports = (test) => {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(off)), { success: false, reason: 'not-linkedin' });
     assert.strictEqual(injected.length, 1, 'never touches other sites');
     assert.strictEqual(b.calls.length, 0);
-    // nothing to hand over and not running yet: it does not inject at all
+    // switched OFF and not running yet: it does not inject at all; switched on with no draft yet: it starts so the box can explain
     const fresh = []; const idle = boot({ tabs: { get: async (id) => ({ id, url: 'https://www.linkedin.com/in/a/' }), sendMessage: async () => { throw new Error('no receiver'); } },
       scripting: { executeScript: async (o) => { fresh.push(o); return []; } }, fetchImpl: () => { throw new Error('no network'); } });
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(await idle.send({ action: 'armNoteFill', tabId: 1, text: '', format: 'note', enabled: true }))), { success: true, idle: true });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(await idle.send({ action: 'armNoteFill', tabId: 1, text: '', format: 'note', enabled: false }))), { success: true, idle: true });
     assert.strictEqual(fresh.length, 0);
-    assert.strictEqual(require(path.join(root, 'utils/notefill.js')).VERSION, 'notefill-2', 'keep the background version in step with the helper');
+    await idle.send({ action: 'armNoteFill', tabId: 1, text: '', format: 'note', enabled: true });
+    assert.strictEqual(fresh.length, 1, 'on, with no draft yet: the helper starts');
+    assert.strictEqual(require(path.join(root, 'utils/notefill.js')).VERSION, 'notefill-3', 'keep the background version in step with the helper');
   });
 
   test('bg: openComposer only runs on /in/ profiles, injects the self-contained opener with just the word note/message, and never touches the network', async () => {

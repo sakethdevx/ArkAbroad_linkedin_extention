@@ -18,10 +18,10 @@ async function doPush() {
   try {
     const enabled = await noteFillEnabled();
     const text = enabled && drafts.length ? currentDraftText() : '';
-    if (!text && !pushedOnce) return;
+    if (!enabled && !pushedOnce) return;      // switched off and never on: nothing to tell the page
     const tabId = await activeTabId();
     if (tabId === undefined) return;
-    pushedOnce = !!text;
+    pushedOnce = true;
     chrome.runtime.sendMessage({ action: 'armNoteFill', tabId, text, format: currentFormat, enabled }, () => { void chrome.runtime.lastError; });
   } catch (err) { debug('push draft to page', err); }
 }

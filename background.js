@@ -75,7 +75,7 @@ async function ensureContentScript(tabId) {
 
 // "Fill with my draft": hands the current draft to a small helper in the LinkedIn tab (see utils/notefill.js).
 // The helper only types into a note box when YOU press its button; it never clicks anything. The text goes nowhere else.
-const NOTEFILL_VERSION = 'notefill-2';   // keep in sync with utils/notefill.js
+const NOTEFILL_VERSION = 'notefill-3';   // keep in sync with utils/notefill.js
 async function handleArmNoteFill({ tabId, text, format, enabled }, sendResponse) {
   try {
     const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId) : null;
@@ -83,7 +83,9 @@ async function handleArmNoteFill({ tabId, text, format, enabled }, sendResponse)
     let ready = false;
     try { const pong = await chrome.tabs.sendMessage(tabId, { action: 'noteFillPing' }); ready = !!(pong && pong.ok && pong.version === NOTEFILL_VERSION); } catch (_) { /* not injected yet */ }
     if (!ready) {
-      if (enabled === false || !String(text || '').trim()) { sendResponse({ success: true, idle: true }); return; }   // nothing to hand over: do not inject for nothing
+      if (enabled === false) { sendResponse({ success: true, idle: true }); return; }   // switched off: do not inject for nothing
+      // switched on and the panel is open on a LinkedIn tab: start the helper even before a draft exists, so the box
+      // says "write a draft in the panel first" instead of showing nothing
       await chrome.scripting.executeScript({ target: { tabId }, files: ['utils/notefill.js'] });
     }
     await chrome.tabs.sendMessage(tabId, { action: 'noteFillDraft', text: String(text || '').slice(0, 2000), format: format === 'message' ? 'message' : 'note', enabled: enabled !== false });
