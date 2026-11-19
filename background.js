@@ -45,6 +45,7 @@ chrome.commands && chrome.commands.onCommand.addListener((command, tab) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return;   // only our own extension pages
 
+  if (message.action === 'detectConnection') { handleDetectConnection(message.tabId, sendResponse); return true; }
   if (message.action === 'scrapeProfile')  { handleScrapeProfile(message.tabId, sendResponse); return true; }
   if (message.action === 'generateMessage') { handleQuickGenerate(message.data, sendResponse); return true; }
   if (message.type === 'TEST_API_KEY')     { handleTestKey(message.payload, sendResponse); return true; }
@@ -67,6 +68,30 @@ async function ensureContentScript(tabId) {
     if (pong?.ok && pong.version === CONTENT_VERSION) return;   // stale script from before an update → inject the new one
   } catch (_) { /* no receiver yet → inject below */ }
   await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_FILES });
+}
+
+// Reads ONLY the top card's connection signals (the 1st/2nd/3rd badge and button labels) so the panel can pick
+// "New connection" vs "Already connected" before you press anything. Nothing is stored or sent; it returns a few short strings.
+// Runs inside the page, so it must be self-contained.
+function readTopCardSignals() {
+  const h1 = document.querySelector('h1');
+  const root = (h1 && (h1.closest('section') || h1.parentElement)) || document.querySelector('main') || document.body;
+  const text = (root.innerText || '').split('\n').map(t => t.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 80);
+  const labels = [];
+  root.querySelectorAll('button, a, [aria-label]').forEach(el => {
+    const t = (el.getAttribute('aria-label') || el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (t && t.length < 90) labels.push(t);
+  });
+  return { lines: text, labels: labels.slice(0, 60) };
+}
+
+async function handleDetectConnection(tabId, sendResponse) {
+  try {
+    const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId) : null;
+    if (!tab || !/^https:\/\/www\.linkedin\.com\/in\//.test(tab.url || '')) { sendResponse({ success: false }); return; }
+    const [res] = await chrome.scripting.executeScript({ target: { tabId }, func: readTopCardSignals });
+    sendResponse({ success: true, ...(res && res.result ? res.result : { lines: [], labels: [] }) });
+  } catch (_) { sendResponse({ success: false }); }
 }
 
 async function handleScrapeProfile(tabId, sendResponse) {

@@ -12,7 +12,8 @@ Works **free, on your device**, with no account and no API key. Optionally add y
 Needs Chrome 116 or newer (side panel).
 
 ## What it does
-- **Reads the profile you're on** (only when you click), shows you *what it read* and lets you fix it. If the page can't be read, paste the profile text instead.
+- **Picks the right format** by itself: it notices whether you are already connected (the 1st-degree badge, or a Connect / Pending button) and selects *Already connected* or *New connection*, telling you which and why.
+- **Reads the profile you're on** (the full read only when you click), shows you *what it read* and lets you fix it. If the page can't be read, paste the profile text instead.
 - **Uses your resume** (optional PDF, read on your device) to find what you two have in common: shared school, employer, skills, city. In AI Mode the AI also fills in your whole profile (education, experience, projects, skills) from it, so you don't type anything.
 - **Writes 3 drafts** that open with that shared ground, say who you are in one line and make one small ask. Pick **Connection note** (≤ 200 characters, LinkedIn's limit) or **Message**.
 - **Checks the draft** as you edit: specific? one ask? fits? no stock phrases?
@@ -27,7 +28,7 @@ Needs Chrome 116 or newer (side panel).
 
 - Stored locally (`chrome.storage.local`): your key (if you add one), name/bio, resume **text** (contact details removed; the PDF is not kept), your edited "about you" info, recent drafts.
 - Profile, pasted and resume text are treated as **untrusted input**: invisible characters are stripped, fields are length-capped and whitelisted, text that tries to instruct an AI is flagged and dropped, and model output is checked before you see it.
-- Permissions: `storage`, `scripting`, `sidePanel`; hosts `linkedin.com` and `api.anthropic.com`. `api.groq.com` is an **optional** permission that Chrome asks for only if you choose Groq. The page script is injected only when you click; nothing runs on LinkedIn otherwise.
+- Permissions: `storage`, `scripting`, `sidePanel`; hosts `linkedin.com` and `api.anthropic.com`. `api.groq.com` is an **optional** permission that Chrome asks for only if you choose Groq. The full page reader is injected only when you click. On a profile, the panel also runs one tiny function that reads just the top card's connection badge and button labels (a few short strings, kept on your device, never stored or sent) so it can pre-select "New connection" or "Already connected"; nothing else runs on LinkedIn.
 
 ## About LinkedIn's rules
 LinkedIn's help centre says it does not permit browser extensions that scrape or automate activity on its site. This tool only reads the page you are looking at, on your click, never navigates, clicks, types or sends, and offers a **paste-text mode that needs no page access at all**. Using any extension on LinkedIn is your call and your account's risk; please read LinkedIn's terms.

@@ -194,12 +194,39 @@ function setMode(mode) {
 }
 
 // ─── Page check ───────────────────────────────────────────────────────────────
+// Are you connected to this person? Read just the top card's badge/buttons as soon as the profile is open, so the right
+// format is already selected before you press anything. Retries a few times while LinkedIn finishes drawing the page.
+let connDetectKey = '';
+let connDetectBusy = false;
+async function autoDetectConnection(tab) {
+  const key = pageKey(tab && tab.url);
+  if (formatByUser || connDetectBusy || connDetectKey === key) return;
+  connDetectBusy = true;
+  try {
+    for (const wait of [0, 900, 2200, 4500]) {
+      if (wait) await new Promise(r => setTimeout(r, wait));
+      const cur = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!cur[0] || pageKey(cur[0].url) !== key || formatByUser) return;
+      const res = await new Promise(r => chrome.runtime.sendMessage({ action: 'detectConnection', tabId: tab.id }, r));
+      if (!res || !res.success) continue;
+      const d = ProfileParse.detectConnection({ lines: res.lines, labels: res.labels });
+      if (d.connected !== null) {
+        connDetectKey = key;
+        maybeAutoFormat({ isConnection: d.connected, connectionDegree: d.degree, source: 'page' }, { applyLive: true });
+        return;
+      }
+    }
+  } catch (_) { /* detection is a convenience; the format buttons always work */ }
+  finally { connDetectBusy = false; }
+}
+
 async function checkCurrentPage() {
   const tabs      = await chrome.tabs.query({ active: true, currentWindow: true });
   const tab       = tabs[0];
   const onProfile = tab && tab.url && /linkedin\.com\/in\/[^/?#]+/.test(tab.url);
   document.getElementById('scrape-btn').disabled  = !onProfile;
   document.getElementById('enrich-btn').disabled  = !onProfile;
+  if (onProfile) autoDetectConnection(tab);   // not awaited: picks the right format in the background
   if (!onProfile) {
     document.getElementById('page-warning').classList.remove('hidden');
   } else {
@@ -851,16 +878,20 @@ async function saveToHistory() {
 // ─── Format (note vs message) + remembered preferences ─────────────────────────
 // The page tells us whether you are connected (1st-degree badge, or a Connect / Pending button). Pick the matching format
 // unless you have chosen one yourself, and always say what we decided and why, so it never feels like magic.
-function maybeAutoFormat(profile) {
+function maybeAutoFormat(profile, { applyLive = false } = {}) {
   if (formatByUser) return;
   const c = profile && profile.isConnection;
   const deg = profile && profile.connectionDegree;
   let want = currentFormat;
   if (c === true)       { want = 'message'; formatAutoNote = 'You are already connected, so I chose “Already connected”.'; }
   else if (c === false) { want = 'note';    formatAutoNote = `You are not connected yet${deg ? ' (' + deg + ' degree)' : ''}, so I chose “New connection”.`; }
+  else if (/so I chose/.test(formatAutoNote)) return;   // an earlier, clearer reading of this page stands
   else if (profile && profile.source !== 'pasted') { formatAutoNote = 'I couldn’t tell if you are connected. Choose the right option above.'; }
   else formatAutoNote = '';
+  const changed = want !== currentFormat;
   setFormat(want, { silent: true });
+  // if a draft is already showing and the format just changed under it, rebuild it (free drafts are instant)
+  if (applyLive && changed) applyChangeLive();
 }
 
 function setFormat(f, { silent = false } = {}) {
@@ -883,7 +914,7 @@ async function loadPrefs() {
     if (prefs.messageType) document.getElementById('message-type').value = prefs.messageType;
     if (prefs.tone)        document.getElementById('tone').value = prefs.tone;
   }
-  setFormat(prefs && prefs.format, { silent: true });
+  if (!/so I chose/.test(formatAutoNote)) setFormat(prefs && prefs.format, { silent: true });   // the page's answer beats a saved preference
 }
 
 function savePrefs() {
@@ -1094,11 +1125,17 @@ function pageKey(url) {
 let lastPageUrl = null;
 
 async function onTabContextChanged() {
-  await checkCurrentPage();
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   const key = pageKey(tabs[0] && tabs[0].url);
-  if (lastPageUrl !== null && key !== lastPageUrl) resetForNewPage();
+  if (lastPageUrl !== null && key !== lastPageUrl) {
+    // a new person: forget the last person's connection reading BEFORE reading this page
+    connDetectKey = ''; formatAutoNote = '';
+    if (!formatByUser) currentFormat = 'note';
+    setFormat(currentFormat, { silent: true });
+    resetForNewPage();
+  }
   lastPageUrl = key;
+  await checkCurrentPage();
 }
 
 // A draft written for one person must never sit under another person's profile.

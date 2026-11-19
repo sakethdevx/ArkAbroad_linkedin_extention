@@ -527,4 +527,17 @@ module.exports = (test) => {
     assert.ok(ai.length >= 1);
     ai.forEach(v => { assert.ok(v.text.length <= 200); assert.ok(/^Hi Priya, we both studied at IIT Madras\./.test(v.text)); assert.ok(/Would you be open to a quick chat\?$/.test(v.text)); });
   });
+
+  test('bg: detectConnection only runs on /in/ profiles, injects a function (not files), and returns just short strings', async () => {
+    const injected = [];
+    const b = boot({ tabs: { get: async (id) => ({ id, url: id === 1 ? 'https://www.linkedin.com/in/priya/' : 'https://www.google.com/' }) },
+      scripting: { executeScript: async (opts) => { injected.push(opts); return [{ result: { lines: ['· 1st'], labels: ['Message'] } }]; } }, fetchImpl: () => { throw new Error('no network'); } });
+    const ok1 = await b.send({ action: 'detectConnection', tabId: 1 });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(ok1)), { success: true, lines: ['· 1st'], labels: ['Message'] });
+    assert.ok(typeof injected[0].func === 'function' && !injected[0].files, 'a tiny reader function, no script files');
+    const bad = await b.send({ action: 'detectConnection', tabId: 2 });
+    assert.strictEqual(bad.success, false);
+    assert.strictEqual(injected.length, 1, 'never touches a non-profile tab');
+    assert.strictEqual(b.calls.length, 0);
+  });
 };

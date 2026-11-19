@@ -20,11 +20,11 @@ module.exports = (test) => {
     skills: ['Python'], recentPosts: ['Shipped a forecasting model this week and learned a lot about drift'], profileUrl: 'https://www.linkedin.com/in/priya/'
   });
 
-  async function boot(store = {}, { url = 'https://www.linkedin.com/in/priya/' } = {}) {
+  async function boot(store = {}, { url = 'https://www.linkedin.com/in/priya/', signals: initialSignals } = {}) {
     const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8').replace(/<script[^>]*src[^>]*><\/script>/g, '');
     const w = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://x/popup.html' }).window;
     const errors = []; w.addEventListener('error', e => errors.push(e.message));
-    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; let granted = new Set(); let allowRequests = true;
+    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
     let tabUrl = url;
     w.chrome = {
       tabs: { query: async () => [{ id: 42, url: tabUrl, active: true }], onActivated: { addListener: f => listeners.push(f) }, onUpdated: { addListener: f => listeners.push(f) } },
@@ -45,6 +45,7 @@ module.exports = (test) => {
           experience: [{ title: 'Software Intern', company: 'Globex', years: '2024', detail: 'Built a forecasting API' }],
           projects: [{ name: 'CampusMap', summary: 'route planner' }], skills: ['Python', 'SQL'], certifications: ['AWS CP'], languages: [],
           schools: ['IIT Madras'], employers: ['Globex'] } }); }
+        if (m.action === 'detectConnection') { detects.push(m.tabId); return cb({ success: true, lines: signals.lines, labels: signals.labels }); }
         if (m.type === 'RUN_ENRICH') return cb({ status: 'enrich_complete', profileJSON: PRIYA(), enrichmentJSON: { topHooks: ['Shared: You both studied at IIT Madras'] } });
         if (m.type === 'RUN_GENERATE') return cb({ status: 'generate_complete', success: true, warnings: [], injection: [], variants: [{ text: 'Hi Priya, review-mode draft', source: 'template' }], generatedMessage: 'x' });
         if (m.type === 'PREVIEW_PAYLOAD') {
@@ -66,7 +67,7 @@ module.exports = (test) => {
     else w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
     await tick();
     const $ = id => w.document.getElementById(id);
-    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
+    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
   }
 
   const SENDER = { schools: ['IIT Madras'], skills: ['Python'], intro: 'CS student' };
@@ -496,5 +497,35 @@ module.exports = (test) => {
     assert.strictEqual(u.calls.at(-1).format, 'note');
     assert.match(u.$('format-tip').textContent, /couldn’t tell if you are connected/);
     assert.deepStrictEqual(t.errors.concat(n.errors, u.errors), []);
+  });
+
+  test('popup: connected or not is detected as soon as the profile is open (no click needed), and again when you move to someone else', async () => {
+    const t = await boot({ senderProfile: SENDER }, { signals: { lines: ['Srinivas Thammana', 'He/Him · 1st'], labels: ['Message', 'Save', 'More'] } });
+    await tick(120);
+    assert.strictEqual(t.scrapes.length, 0, 'nothing was read from the page beyond the badge');
+    assert.ok(t.detects.length >= 1 && t.detects.every(id => id === 42));
+    const on = (f) => t.w.document.querySelector(`.format-btn[data-format="${f}"]`).getAttribute('aria-checked');
+    assert.strictEqual(on('message'), 'true');
+    assert.match(t.$('format-tip').textContent, /already connected, so I chose “Already connected”/);
+    // a later scrape that cannot tell must not undo the earlier clear reading
+    await t.click('scrape-btn');
+    assert.strictEqual(t.calls.at(-1).format, 'message');
+
+    // someone else, not connected
+    t.setSignals({ lines: ['· 2nd'], labels: ['Invite Zed Roe to connect'] });
+    t.setDegree('');
+    t.setUrl('https://www.linkedin.com/in/zed-roe/'); t.listeners[0](); await tick(400);
+    assert.strictEqual(on('note'), 'true');
+    assert.match(t.$('format-tip').textContent, /not connected yet \(2nd degree\)/);
+    assert.deepStrictEqual(t.errors, []);
+  });
+
+  test('popup: if you already chose a format, background detection leaves it alone', async () => {
+    const t = await boot({ senderProfile: SENDER }, { signals: { lines: [], labels: [] } });
+    t.w.document.querySelector('.format-btn[data-format="note"]').click(); await tick(60);
+    t.setSignals({ lines: ['· 1st'], labels: [] });
+    t.setUrl('https://www.linkedin.com/in/other/'); t.listeners[0](); await tick(400);
+    assert.strictEqual(t.w.document.querySelector('.format-btn[data-format="note"]').getAttribute('aria-checked'), 'true');
+    assert.ok(!/so I chose/.test(t.$('format-tip').textContent));
   });
 };
