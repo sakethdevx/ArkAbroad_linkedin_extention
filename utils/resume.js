@@ -210,7 +210,7 @@
   async function extractPdfText(data, opts = {}) {
     const { pdfjs, maxPages = 5, timeoutMs = 20000 } = opts;
     const lib = pdfjs || await loadPdfjs();
-    const task = lib.getDocument({ data: new Uint8Array(data), isEvalSupported: false, disableFontFace: true, useSystemFonts: false, maxImageSize: 16 * 1024 * 1024 });
+    const task = lib.getDocument({ data: new Uint8Array(data), isEvalSupported: false, disableFontFace: true, useSystemFonts: false, verbosity: 0, maxImageSize: 16 * 1024 * 1024 });
     const doc = await withTimeout(task.promise, timeoutMs, () => task.destroy && task.destroy());
     try {
       const pages = Math.min(doc.numPages, maxPages);

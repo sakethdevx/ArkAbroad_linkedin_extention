@@ -207,3 +207,6 @@ UI text, prompts, README, changelog and tests. The one exception is a heading de
 - Schools, Employers and Skills are now small auto-wrapping boxes instead of single lines that cut the text off.
 - The upload hint used to say "read on this device only", which is wrong in AI Mode; it now says what happens in each mode. The paste fallback is labelled "Prefer to paste your resume text?".
 - Settings intro no longer says you "see exactly what is sent first" (that now happens once, when AI is turned on; "What's sent?" is always available).
+
+### Fix: harmless pdf.js warning in chrome://extensions "Errors"
+**What** `UnknownErrorException: Ensure that the standardFontDataUrl API parameter is provided` is a pdf.js *warning* for PDFs whose fonts are not embedded. It only matters for drawing glyphs; we only read text, so extraction was never affected. **Fix** pdf.js is told to log errors only (`verbosity: 0`), so real failures still surface and this one no longer clutters the Errors page.
