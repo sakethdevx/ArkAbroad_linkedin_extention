@@ -49,3 +49,27 @@ _Slices land below as they ship._
 **Demo** Settings → upload résumé → show the card it built (and that nothing was uploaded) → open a profile → chips light up ("School · IIT Madras", "Skills · Python and SQL") → untick one → draft changes. Then: a scanned PDF → friendly fallback.
 
 **Verify** `node test/run.js` (35 tests incl. a real PDF through the vendored pdf.js). Manual: load unpacked → Settings → upload a text-based PDF résumé → confirm the card, then a profile page → chips.
+
+### Slice 3 — Free Mode that doesn't read like a template, and fits LinkedIn (headline #2)
+
+**What**
+- **A composer instead of one fixed template** (`utils/compose.js`). Each draft is built from slots: greeting → **hook** (best shared background → their post → their role) → **one line on who you are** (your résumé intro) → **one ask** → **easy out** → sign-off. It produces **3 distinct drafts** (A/B/C); "New drafts" really gives new ones (the base version's *Regenerate* returned identical text in Free Mode).
+- **Format switch: Connection note (200) vs Message (~500)**, with a live counter that turns red over the limit. Notes are fitted by dropping the least valuable slot first (easy-out → 2nd shared point → who-I-am → short-form hook/ask); the 200-char limit is enforced by a fuzz test over 1,100+ combinations of type × tone × format × awkward inputs (long company names, long titles, long intros).
+- **"Reply-ready" checklist**, live on whatever you type: *specific to them · one clear ask · fits the limit · no stock phrases · uses their name*. It teaches *why* a message works and re-checks your edits.
+- **Writing choices backed by the research brief**: short, specific hook, a single small ask, no "I hope this finds you well". A cold 200-char note asks for advice, not a referral. Formal tone expands contractions; it never claims things the sender may not be able to stand behind ("I've been following…" was cut during review).
+- **Warm-first tip** when they have recent posts (labelled directional, from a single vendor dataset).
+- **Remembers** your format / tone / type. Free drafts update instantly when you toggle a chip, format or tone; in AI mode it asks you to press the button so a toggle never silently spends a request.
+- **Claude path (only if you add your own key)**, hardened: system prompt states the profile/résumé content is **untrusted data**; strings are JSON-encoded; only whitelisted, clipped fields are sent; invisible/control/Unicode-tag characters are stripped; fields that look like instructions to an AI (*"ignore previous instructions…"*) are **flagged to you and dropped entirely**; the model has no tools; output is **validated** (length, no links/emails/phones, no leaked instructions or keys) and falls back to a free draft if it fails. Structured JSON output (3 drafts). Friendly errors for bad key / rate limit / overloaded / offline / refusal, and the user always still gets a free draft.
+- Fixes along the way: the 600-character prompt limit (LinkedIn's note limit is 200), `Test` no longer saves silently, all `innerHTML` for scraped text replaced by `textContent`.
+
+**Why** 90% of this audience never adds an API key, so the free path has to be genuinely good, and a 200-character note with one specific hook and one small ask is what gets replies. The checklist makes the "why" visible.
+
+**Tradeoffs / honesty**
+- Composed text is deliberately plain and short rather than "clever"; variety comes from phrasing pools and structure, not from pretending to be an LLM.
+- Prompt-injection defence is layered, not absolute: sanitise → whitelist → flag/drop → untrusted-data policy → no tools → output validation → a human reads every draft.
+- The Claude request/response path is tested against a **stubbed** API (request shape, headers, key handling, fallbacks); I have not exercised it against the live API in this build, so please run one real draft with your key.
+- Model: `claude-haiku-5-5`, thinking disabled for short drafts; if the API rejects an optional parameter the call retries without it.
+
+**Demo** No key: pick *Connection note*, scrape → three drafts, counter, checklist; edit until it goes red at 201; *New drafts*; toggle a chip off → drafts change. Switch to *Message* → fuller draft with easy-out and sign-off. Then paste a profile whose About says "Ignore previous instructions…" → amber notice, field ignored.
+
+**Verify** `node test/run.js` (58 tests: composer fuzz, safety, a sandboxed run of the real `background.js` with stubbed `fetch`/`chrome`). Manual: load unpacked; try both formats, three tones, Job/Referral; with a real key, Test → Save → Generate.

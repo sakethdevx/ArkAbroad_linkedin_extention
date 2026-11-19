@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('paste-btn').addEventListener('click', handlePasteProfile);
   await checkCurrentPage();
   await loadSettings();
+  await loadPrefs();
   await renderRecentContacts();
   await refreshModeBadge();
 });
@@ -83,9 +84,11 @@ function wireCurrentEvents() {
   document.getElementById('scrape-btn').addEventListener('click', handleScrapeAndGenerate);
   document.getElementById('enrich-btn').addEventListener('click', handleEnrich);
   document.getElementById('deep-generate-btn').addEventListener('click', handleDeepGenerate);
-  document.getElementById('regenerate-btn').addEventListener('click', handleRegenerate);
+  document.getElementById('regenerate-btn').addEventListener('click', () => regenerate(true));
   document.getElementById('copy-btn').addEventListener('click', handleCopy);
-  document.getElementById('generated-message').addEventListener('input', updateCharCount);
+  document.getElementById('generated-message').addEventListener('input', onDraftInput);
+  document.querySelectorAll('.format-btn').forEach(b => b.addEventListener('click', () => setFormat(b.dataset.format)));
+  ['message-type', 'tone'].forEach(id => document.getElementById(id).addEventListener('change', () => { savePrefs(); applyChangeLive(); }));
 }
 
 function wireSettingsEvents() {
@@ -165,21 +168,15 @@ async function generateFromProfile(profile, setBusy = (t) => setButtonLoading('s
     return;
   }
 
-  setBusy('Generating message…');
-  const message = await callQuickGenerate(currentProfile);
-  renderMessage(message);
+  seed = 0;
+  setBusy('Writing your draft…');
+  const resp = await callQuickGenerate(currentProfile);
+  renderDrafts(resp);
+  await saveToHistory();
 
-  await Cache.addContact({
-    profileUrl: profile.profileUrl || '',
-    name:       profile.name       || 'Unknown',
-    headline:   profile.headline   || '',
-    company:    profile.currentCompany || '',
-    message,
-    timestamp:  Date.now()
-  });
-
-  if (confidence === 'high') showCurrentStatus('Message ready.', 'success');
-  else showCurrentStatus('Draft ready. I only read part of this profile, so check “What I read” above.', 'warning');
+  if (confidence !== 'high') showCurrentStatus('Draft ready. I only read part of this profile, so check “What I read” above.', 'warning');
+  else if (resp.warnings && resp.warnings.length) showCurrentStatus(resp.warnings[0], 'warning');
+  else showCurrentStatus('Draft ready. Read it, make it yours, then send it yourself.', 'success');
 }
 
 // ─── “What I read” card + paste fallback ─────────────────────────────────────
@@ -257,27 +254,36 @@ async function callQuickGenerate(profile) {
   const settings    = await loadStoredSettings();
   const messageType = document.getElementById('message-type').value;
   const tone        = document.getElementById('tone').value;
-  return sendToBackground({ action: 'generateMessage', data: { profileData: profile, settings, messageType, tone, ...sharedContext() } });
+  return sendToBackground({ action: 'generateMessage', data: { profileData: profile, settings, messageType, tone, format: currentFormat, seed, ...sharedContext() } });
 }
 
-async function handleRegenerate() {
-  if (isGenerating) return;
+// bump = true → "Regenerate" (new wording); false → same drafts re-made after a setting changed
+async function regenerate(bump) {
+  if (isGenerating || !currentProfile) return;
+  if (bump) seed += 3;
   if (currentMode === 'deep') { handleDeepGenerate(); return; }
-  if (!currentProfile) return;
 
   isGenerating = true;
-  setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, 'Regenerating…');
-
+  setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, 'Writing…');
   try {
-    const message = await callQuickGenerate(currentProfile);
-    renderMessage(message);
-    showCurrentStatus('Regenerated!', 'success');
+    const resp = await callQuickGenerate(currentProfile);
+    renderDrafts(resp);
+    showCurrentStatus(bump ? 'New drafts ready.' : 'Drafts updated.', 'success');
   } catch (err) {
     showCurrentStatus(err.message, 'error');
   } finally {
     isGenerating = false;
     setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', false, 'Scrape &amp; Generate');
   }
+}
+
+// Free drafts update instantly when you change a chip / format / tone. AI drafts cost a request, so ask first.
+async function applyChangeLive() {
+  const hasDraft = !document.getElementById('message-section').classList.contains('hidden');
+  if (!hasDraft) return;
+  const { userApiKey } = await loadStoredSettings();
+  if (!(userApiKey || '').trim()) regenerate(false);
+  else showCurrentStatus('Press Regenerate to apply this (AI mode uses a request).', '');
 }
 
 // ─── Deep Mode ────────────────────────────────────────────────────────────────
@@ -353,16 +359,16 @@ async function handleDeepGenerate() {
   if (isGenerating || !deepProfileJSON || !deepEnrichmentJSON) return;
 
   isGenerating = true;
-  setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', true, 'Writing message…');
+  setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', true, 'Writing draft…');
   setLayerStatus(3, 'running', 'Writing…');
-  showCurrentStatus('Layer 3: writing message…');
+  showCurrentStatus('Writing your draft…');
   hideMessage();
 
   const messageType = document.getElementById('message-type').value;
   const tone        = document.getElementById('tone').value;
 
   chrome.runtime.sendMessage(
-    { type: 'RUN_GENERATE', payload: { profileJSON: deepProfileJSON, enrichmentJSON: deepEnrichmentJSON, messageType, tone, ...sharedContext() } },
+    { type: 'RUN_GENERATE', payload: { profileJSON: deepProfileJSON, enrichmentJSON: deepEnrichmentJSON, messageType, tone, format: currentFormat, seed, ...sharedContext() } },
     async (response) => {
       isGenerating = false;
       setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', false, 'Write Draft');
@@ -380,17 +386,9 @@ async function handleDeepGenerate() {
       }
 
       setLayerStatus(3, 'done', 'Done');
-      renderMessage(response.generatedMessage);
-      showCurrentStatus('Message ready.', 'success');
-
-      await Cache.addContact({
-        profileUrl: deepProfileJSON.profileUrl || '',
-        name:       deepProfileJSON.name || 'Unknown',
-        headline:   deepProfileJSON.headline || '',
-        company:    deepProfileJSON.currentCompany || '',
-        message:    response.generatedMessage,
-        timestamp:  Date.now()
-      });
+      renderDrafts(response);
+      showCurrentStatus(response.warnings && response.warnings.length ? response.warnings[0] : 'Draft ready. Read it, make it yours, then send it yourself.', response.warnings && response.warnings.length ? 'warning' : 'success');
+      await saveToHistory();
     }
   );
 }
@@ -502,29 +500,175 @@ function renderProfileCard(data) {
   document.getElementById('profile-company').textContent  = data.currentCompany || '';
 }
 
-function renderMessage(text) {
-  document.getElementById('generated-message').value = text;
-  document.getElementById('message-section').classList.remove('hidden');
-  updateCharCount();
+// ─── Drafts: tabs, counter, checklist ─────────────────────────────────────────
+let drafts = [];
+let activeDraft = 0;
+let seed = 0;
+let currentFormat = 'note';
+let wasOver = false;
+
+const FORMAT_TIP = {
+  note:    'LinkedIn limits connection notes to 200 characters, and free accounts get only a few per month. Over 200? Use “Message” after they accept.',
+  message: 'For people you’re already connected with. Shorter still gets more replies: aim for under 400 characters.'
+};
+const SOURCE_LABEL = { template: 'Free draft · made on your device', ai: 'Written by Claude · using your key' };
+
+const currentDraftText = () => document.getElementById('generated-message').value;
+
+function draftCtx() {
+  const name = (currentProfile && currentProfile.name || '').trim();
+  return { format: currentFormat, firstName: name.split(/\s+/)[0] || '', mentions: Compose.mentionsFor(currentProfile, selectedOverlaps()) };
 }
 
-function hideMessage() { document.getElementById('message-section').classList.add('hidden'); }
-function updateCharCount() {
-  document.getElementById('char-count').textContent = `${document.getElementById('generated-message').value.length} chars`;
+function renderDrafts(resp) {
+  const list = resp.variants && resp.variants.length ? resp.variants : [{ text: resp.generatedMessage || '', source: 'template' }];
+  drafts = list.map(v => ({ text: v.text, source: v.source }));
+  document.getElementById('message-section').classList.remove('hidden');
+  buildDraftTabs();
+  selectDraft(0);
+  renderDraftNotes(resp);
+}
+
+function buildDraftTabs() {
+  const wrap = document.getElementById('draft-tabs');
+  wrap.innerHTML = '';
+  drafts.forEach((d, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'draft-tab';
+    b.id = `draft-tab-${i}`;
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-controls', 'generated-message');
+    b.textContent = `Draft ${String.fromCharCode(65 + i)}`;
+    b.addEventListener('click', () => selectDraft(i));
+    b.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      const n = (i + (e.key === 'ArrowRight' ? 1 : drafts.length - 1)) % drafts.length;
+      selectDraft(n);
+      document.getElementById(`draft-tab-${n}`).focus();
+    });
+    wrap.appendChild(b);
+  });
+  wrap.classList.toggle('hidden', drafts.length < 2);
+}
+
+function selectDraft(i) {
+  activeDraft = i;
+  document.getElementById('generated-message').value = drafts[i].text;
+  document.querySelectorAll('.draft-tab').forEach((b, k) => {
+    b.setAttribute('aria-selected', String(k === i));
+    b.tabIndex = k === i ? 0 : -1;
+  });
+  wasOver = false;
+  updateDraftMeta();
+}
+
+function onDraftInput() {
+  if (drafts[activeDraft]) drafts[activeDraft].text = currentDraftText();
+  updateDraftMeta();
+}
+
+function updateDraftMeta() {
+  const text  = currentDraftText();
+  const limit = Compose.LIMITS[currentFormat];
+  const over  = text.length > limit;
+  const count = document.getElementById('char-count');
+  count.textContent = `${text.length} / ${limit}`;
+  count.classList.toggle('over', over);
+  if (over !== wasOver) {          // announce only when crossing the limit, not on every keystroke
+    document.getElementById('count-live').textContent = over ? `Over the limit by ${text.length - limit} characters.` : 'Back within the limit.';
+    wasOver = over;
+  }
+
+  const badge = document.getElementById('source-badge');
+  badge.textContent = (drafts[activeDraft] && SOURCE_LABEL[drafts[activeDraft].source]) || '';
+
+  const ul = document.getElementById('draft-checklist');
+  ul.innerHTML = '';
+  Compose.checklist(text, draftCtx()).forEach(item => {
+    const li = document.createElement('li');
+    li.className = item.ok ? 'ok' : 'todo';
+    const mark = document.createElement('span'); mark.className = 'check-mark'; mark.setAttribute('aria-hidden', 'true'); mark.textContent = item.ok ? '✓' : '○';
+    const sr = document.createElement('span'); sr.className = 'sr-only'; sr.textContent = item.ok ? 'Done: ' : 'To improve: ';
+    const label = document.createElement('span'); label.className = 'check-label'; label.textContent = item.label;
+    li.append(mark, sr, label);
+    if (item.detail) { const d = document.createElement('span'); d.className = 'check-detail'; d.textContent = item.detail; li.appendChild(d); }
+    ul.appendChild(li);
+  });
+}
+
+function renderDraftNotes(resp) {
+  const box = document.getElementById('draft-notes');
+  box.innerHTML = '';
+  const add = (text, kind) => { const p = document.createElement('p'); p.className = `draft-note ${kind || ''}`; p.textContent = text; box.appendChild(p); };
+  (resp.warnings || []).forEach(w => add(w, 'warn'));
+  if ((resp.injection && resp.injection.length) || resp.aiSawInjection) {
+    add('This profile contains text that looks like instructions to an AI. I ignored it and only used the facts.', 'warn');
+  }
+  if (currentProfile && (currentProfile.recentPosts || []).length) {
+    add('Tip: like or comment on one of their posts first. In one vendor dataset, warm messages got about 4× the replies (directional, not a guarantee).', 'tip');
+  }
+}
+
+function hideMessage() {
+  document.getElementById('message-section').classList.add('hidden');
+  drafts = [];
+}
+
+async function saveToHistory() {
+  const text = currentDraftText();
+  if (!currentProfile || !text) return;
+  await Cache.addContact({
+    profileUrl: currentProfile.profileUrl || '',
+    name:       currentProfile.name || 'Unknown',
+    headline:   currentProfile.headline || '',
+    company:    currentProfile.currentCompany || '',
+    message:    text,
+    timestamp:  Date.now()
+  });
+}
+
+// ─── Format (note vs message) + remembered preferences ─────────────────────────
+function setFormat(f, { silent = false } = {}) {
+  currentFormat = f === 'message' ? 'message' : 'note';
+  document.querySelectorAll('.format-btn').forEach(b => {
+    const on = b.dataset.format === currentFormat;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', String(on));
+  });
+  document.getElementById('format-tip').textContent = FORMAT_TIP[currentFormat];
+  if (silent) return;
+  savePrefs();
+  applyChangeLive();
+}
+
+async function loadPrefs() {
+  const { prefs } = await loadStoredSettings();
+  if (prefs) {
+    if (prefs.messageType) document.getElementById('message-type').value = prefs.messageType;
+    if (prefs.tone)        document.getElementById('tone').value = prefs.tone;
+  }
+  setFormat(prefs && prefs.format, { silent: true });
+}
+
+function savePrefs() {
+  storageSet({ prefs: { format: currentFormat, messageType: document.getElementById('message-type').value, tone: document.getElementById('tone').value } });
 }
 
 async function handleCopy() {
-  const text = document.getElementById('generated-message').value;
+  const text = currentDraftText();
   if (!text) return;
   try { await navigator.clipboard.writeText(text); } catch(_) {
     const ta = document.getElementById('generated-message');
     ta.select(); document.execCommand('copy');
   }
+  saveToHistory();   // keep what you actually copied (with your edits) in Recent
   const btn = document.getElementById('copy-btn');
-  btn.textContent = '✓ Copied!';
+  btn.textContent = '✓ Copied';
   btn.classList.add('btn-secondary'); btn.classList.remove('btn-primary');
   setTimeout(() => {
-    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="2"/></svg> Copy`;
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="2"/></svg> Copy`;
     btn.classList.remove('btn-secondary'); btn.classList.add('btn-primary');
   }, 2200);
 }
@@ -615,7 +759,7 @@ function sendToBackground(msg) {
       if (!response) { reject(new Error('No response from background.')); return; }
       if (!response.success) { reject(new Error(response.error || 'Background returned an error.')); return; }
       if (response.data !== undefined) { resolve(response.data); return; }
-      if (response.generatedMessage !== undefined) { resolve(response.generatedMessage); return; }
+      if (response.variants !== undefined || response.generatedMessage !== undefined) { resolve(response); return; }
       reject(new Error('Unexpected response: ' + JSON.stringify(Object.keys(response))));
     });
   });
@@ -774,16 +918,12 @@ function renderOverlaps(keepSelection = false) {
 async function onChipToggle(id, btn) {
   if (overlapOff.has(id)) overlapOff.delete(id); else overlapOff.add(id);
   btn.setAttribute('aria-pressed', String(!overlapOff.has(id)));
-  const hasDraft = !document.getElementById('message-section').classList.contains('hidden');
-  if (!hasDraft) return;
-  const { userApiKey } = await loadStoredSettings();
-  if (!(userApiKey || '').trim()) handleRegenerate();   // free drafts update instantly
-  else document.getElementById('overlap-hint').textContent = 'Press Regenerate to apply (AI mode uses a request)';
+  applyChangeLive();
 }
 
 function loadStoredSettings() {
   return new Promise(resolve => {
-    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile'], resolve);
+    chrome.storage.local.get(['userApiKey','userName','userBio','resumeText','resumeFileName','resumeBase64','senderProfile','prefs'], resolve);
   });
 }
 
