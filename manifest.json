@@ -51,6 +51,7 @@
         "utils/person.js",
         "utils/cache.js",
         "utils/ondevice.js",
+        "utils/refine.js",
         "utils/pagecomposer.js",
         "utils/notefill.js"
       ],

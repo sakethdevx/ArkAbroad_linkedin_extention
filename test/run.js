@@ -225,6 +225,7 @@ test('regression: post text excludes author header, headline, time, counts and "
 (async () => {
   let failed = 0;
   for (const t of tests) {
+    if (process.env.TRACE) console.log('  ...  ' + t.name);   // TRACE=1 shows which test is running (to find a hang)
     try { await t.fn(); console.log('  ok   ' + t.name); }
     catch (e) { failed++; console.log('  FAIL ' + t.name + '\n       ' + (e.message || e).split('\n').join('\n       ')); }
   }

@@ -111,6 +111,7 @@
 
   const hasFreeEffect = (i) => !!(i.tone || i.shorter || i.purpose || i.mention || i.omit.length);
 
+  const SHORTER_ONLY = 'In Free mode a follow-up can only be made shorter. Switch on AI or on-device AI for other changes.';
   const FREE_LIMIT = 'Free mode can’t follow that wording. Pick a quick option, or switch on AI or on-device AI for free-form changes.';
 
   // deps: { send(msg) → Promise<response>, OnDevice? { polish() } }
@@ -142,11 +143,12 @@
       if (intent.unmatched) return { ok: false, message: 'On-device AI could not make that change this time. Your draft is unchanged.' };   // then the rules below if the wording was understood
     }
 
+    if (args.shorterOnly && (intent.tone || intent.purpose || intent.mention || intent.omit.length)) return { ok: false, message: SHORTER_ONLY };
     if (intent.unmatched) return { ok: false, message: intent.longer ? 'Free mode can’t make a draft longer. Pick “Add a question”, or switch on AI or on-device AI.' : FREE_LIMIT };
     const r = await deps.send({ action: 'refineDraft', data: { ...data, forceFree: true }, draft, comment, intent });
     if (r && r.success && r.text) return { ok: true, text: r.text, source: 'template', applied: r.applied && r.applied.length ? r.applied : intent.applied };
     return { ok: false, message: (r && (r.error || r.message)) || 'I could not make that change. Your draft is unchanged.' };
   }
 
-  return { CHIPS, SMART_CHIPS, chipsFor, MAX_COMMENT, cleanComment, parseIntent, dataFor, hasFreeEffect, run, FREE_LIMIT };
+  return { CHIPS, SMART_CHIPS, chipsFor, MAX_COMMENT, cleanComment, parseIntent, dataFor, hasFreeEffect, run, FREE_LIMIT, SHORTER_ONLY };
 });

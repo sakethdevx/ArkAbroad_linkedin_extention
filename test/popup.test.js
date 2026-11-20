@@ -306,6 +306,36 @@ module.exports = (test) => {
     assert.notStrictEqual(before, now);
   });
 
+  test('popup: a follow-up draft has the same "change something" row: free mode can only shorten it; an AI engine follows any wording; Undo restores it', async () => {
+    const DAY = 24 * 3600e3;
+    const rec = { profileUrl: 'https://www.linkedin.com/in/priya/', name: 'Priya Rao', headline: 'Data Scientist', message: 'Hi Priya', timestamp: Date.now() - 6 * DAY, sent: true, sentAt: Date.now() - 5 * DAY };
+    const t = await boot({ senderProfile: SENDER, userName: 'Saketh Jangala', recentContacts: [rec] }, { url: 'https://www.linkedin.com/feed/' });
+    t.w.document.querySelector('.tab-btn[data-tab="recent"]').click(); await tick(60);
+    await t.click('fu-write-0');
+    assert.deepStrictEqual([...t.w.document.querySelectorAll('#fu-chips-0 .refine-chip')].map(b => b.textContent), ['Shorter']);
+    const before = t.$('fu-text-0').value;
+    t.setRefine(() => ({ success: true, text: 'Hi Priya,\nQuick nudge on my note. Thanks!', applied: ['shorter'], source: 'template' }));
+    await t.click('fu-chips-0'.replace('fu-chips-0', 'fu-askgo-0'), 10);   // empty comment first: asks for one
+    assert.match(t.$('fu-askst-0').textContent, /Write what you would like changed/);
+    t.w.document.querySelector('#fu-chips-0 .refine-chip').click(); await tick(150);
+    assert.strictEqual(t.refines.length, 1);
+    assert.strictEqual(t.refines[0].data.format, 'message', 'a follow-up is a message, not a connection note');
+    assert.strictEqual(t.refines[0].draft, before); assert.strictEqual(t.refines[0].data.forceFree, true);
+    assert.strictEqual(t.$('fu-text-0').value, 'Hi Priya,\nQuick nudge on my note. Thanks!');
+    await t.click('fu-undo-0');
+    assert.strictEqual(t.$('fu-text-0').value, before);
+    t.$('fu-ask-0').value = 'make it more formal'; await t.click('fu-askgo-0');
+    assert.match(t.$('fu-askst-0').textContent, /In Free mode a follow-up can only be made shorter/);
+    assert.strictEqual(t.refines.length, 1, 'refused locally');
+    const ai = await boot({ userApiKey: 'k', mode: 'ai', aiConsent: { version: 2, ackAt: 1, provider: 'anthropic' }, senderProfile: SENDER, userName: 'Saketh Jangala', recentContacts: [rec] }, { url: 'https://www.linkedin.com/feed/' });
+    ai.w.document.querySelector('.tab-btn[data-tab="recent"]').click(); await tick(60);
+    await ai.click('fu-write-0');
+    assert.ok([...ai.w.document.querySelectorAll('#fu-chips-0 .refine-chip')].some(b => b.textContent === 'Add a question'));
+    ai.$('fu-ask-0').value = 'mention that I am still keen on the internship'; await ai.click('fu-askgo-0');
+    assert.ok(!ai.refines[0].data.forceFree, 'AI Mode: the AI rewrites the follow-up');
+    assert.match(ai.$('fu-text-0').value, /Revised text/);
+  });
+
   test('popup: switching Free ⇄ AI: AI asks once (names provider, host, model), the choice is remembered, and nothing asks per draft', async () => {
     const free = await boot({ senderProfile: SENDER });
     await free.click('scrape-btn');

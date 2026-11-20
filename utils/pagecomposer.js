@@ -57,6 +57,15 @@
     .ghost { background: #fff; color: #1a56db; border: 1px solid #b7c6ee; border-radius: 999px; padding: 8px 14px; font-weight: 600; font-size: 13px; }
     .ghost:hover { background: #eaf0ff; }
     .ghost[disabled] { opacity: .5; cursor: progress; }
+    .refine { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #c9d6f5; }
+    .rchips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+    .rchip { border: 1px solid #b7c6ee; background: #fff; color: #1f3a8a; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+    .rchip:hover:not([disabled]) { background: #eaf0ff; }
+    .rchip[disabled], .rgo[disabled], .rin[disabled] { opacity: .55; cursor: progress; }
+    .rrow { display: flex; gap: 8px; }
+    .rin { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 7px 10px; border: 1px solid #b7c6ee; border-radius: 999px; background: #fff; color: #1b1f23; }
+    .rin:focus-visible { outline: 2px solid #1a56db; outline-offset: 1px; }
+    .rgo { background: #fff; color: #1a56db; border: 1px solid #b7c6ee; border-radius: 999px; padding: 6px 14px; font-weight: 600; font-size: 13px; }
     .foot { margin: 8px 2px 0; font-size: 11.5px; color: #5b6472; }
     .skel { display: grid; gap: 8px; padding: 4px 0 2px; }
     .bar { height: 12px; border-radius: 6px; background: linear-gradient(90deg, #e3e9f8 25%, #f2f5fd 50%, #e3e9f8 75%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
@@ -111,7 +120,7 @@
       anchor.insertAdjacentElement('beforebegin', host);
 
       const S = { phase: 'loading', box, format: box.kind === 'textarea' ? 'note' : 'message', purpose: 'Networking', tone: 'Neutral', seed: 0, drafts: [], sel: 0,
-        profile: null, sender: null, stored: {}, shared: null, ai: null, aiBusy: false, aiNote: '', engine: 'free', preferFree: false, polishing: false, odStatus: '', loadingNote: '', status: '', statusKind: '', token: 0, lastFilled: '', confirm: false, hidden: false, panelDraft: '' };
+        profile: null, sender: null, stored: {}, shared: null, ai: null, aiBusy: false, aiNote: '', engine: 'free', preferFree: false, polishing: false, odStatus: '', loadingNote: '', refineOpen: false, refineBusy: false, refineText: '', refineStatus: null, stacks: new Map(), status: '', statusKind: '', token: 0, lastFilled: '', confirm: false, hidden: false, panelDraft: '' };
       const ui = { host, box, smart: true };
 
       const root = el('div', { class: 'card', role: 'group', 'aria-label': 'Outreach AI drafts' });
@@ -210,7 +219,11 @@
           sw.addEventListener('click', () => { S.preferFree = !S.preferFree; regenerate(true); });
           actions.appendChild(sw);
         }
+        const ask = el('button', { class: 'ghost', type: 'button', text: S.refineOpen ? '✎ Hide changes' : '✎ Ask for a change' });
+        ask.addEventListener('click', () => { S.refineOpen = !S.refineOpen; draw(); });
+        actions.appendChild(ask);
         root.appendChild(actions);
+        if (S.refineOpen && d) root.appendChild(drawRefine());
 
         const tip = !S.sender ? ' Tip: add your resume in the Outreach AI panel for sharper drafts.' : '';
         let lead = 'Free drafts are made on this device. ';
@@ -220,6 +233,68 @@
         else if (S.odWanted && S.engine === 'free' && S.odStatus !== 'available') lead = 'Free drafts. On-device AI is on, but Chrome does not offer it to this page. ';
         root.appendChild(el('p', { class: 'foot', text: lead + 'You press Send yourself.' + tip }));
         root.appendChild(live);
+      }
+
+      // ── "Ask for a change": tell it what to change and the selected draft is rewritten (rules in utils/refine.js) ──
+      const refineEngine = () => (smart() ? 'ai' : (S.engine === 'ondevice' && !S.preferFree ? 'ondevice' : 'free'));
+
+      function drawRefine() {
+        const box = el('div', { class: 'refine' });
+        const chipsRow = el('div', { class: 'rchips', role: 'group', 'aria-label': 'Quick changes' });
+        D.Refine.chipsFor(refineEngine()).forEach(c => {
+          const b = el('button', { class: 'rchip', type: 'button', text: c.label });
+          if (S.refineBusy) b.disabled = true;
+          b.addEventListener('click', () => rewrite(c.comment));
+          chipsRow.appendChild(b);
+        });
+        const input = el('input', { class: 'rin', type: 'text', maxlength: '300', placeholder: 'e.g. make it shorter and mention my Python project', 'aria-label': 'What should change in this draft?' });
+        input.value = S.refineText;
+        if (S.refineBusy) input.disabled = true;
+        // typing here must not trigger LinkedIn's own keyboard shortcuts (Escape closes its dialog, Enter submits it)
+        ['keydown', 'keyup', 'keypress'].forEach(t => input.addEventListener(t, (e) => { e.stopPropagation(); if (t === 'keydown' && e.key === 'Enter') { e.preventDefault(); rewrite(); } }));
+        input.addEventListener('input', () => { S.refineText = input.value; });
+        const go = el('button', { class: 'rgo', type: 'button', text: S.refineBusy ? 'Rewriting…' : 'Rewrite' });
+        if (S.refineBusy) go.disabled = true;
+        go.addEventListener('click', () => rewrite());
+        box.append(chipsRow, el('div', { class: 'rrow' }, [input, go]));
+        if (S.refineStatus) box.appendChild(el('p', { class: `note ${S.refineStatus.kind}`, text: S.refineStatus.text }));
+        if ((S.stacks.get(S.sel) || []).length) {
+          const undo = el('button', { class: 'link', type: 'button', text: 'Undo last change' });
+          undo.addEventListener('click', undoRewrite);
+          box.appendChild(undo);
+        }
+        return box;
+      }
+
+      async function rewrite(comment) {
+        const d = current();
+        if (!d || S.refineBusy) return;
+        const engine = refineEngine();
+        S.refineBusy = true; S.refineStatus = { text: engine === 'free' ? 'Rewriting…' : `Rewriting with ${engine === 'ai' ? (S.stored.ai ? S.stored.ai.name : 'AI') : 'on-device AI'}…`, kind: '' }; draw();
+        let res;
+        try {
+          res = await D.Refine.run({ send, OnDevice: D.OnDevice }, {
+            comment: comment !== undefined ? comment : S.refineText, draft: d.text, data: dataFor(false), senderProfile: S.senderRaw,
+            ai: engine === 'ai', onDevice: engine === 'ondevice'
+          });
+        } catch (_) { res = { ok: false, message: 'That did not work. Your draft is unchanged.' }; }
+        S.refineBusy = false;
+        if (!res.ok) { S.refineStatus = { text: res.message, kind: 'warn' }; draw(); return; }
+        const stack = S.stacks.get(S.sel) || [];
+        stack.push({ text: d.text, source: d.source, src: d.src });
+        S.stacks.set(S.sel, stack);
+        d.text = res.text; d.source = res.source;
+        d.src = res.source === 'ai' ? 'Written by AI' : res.source === 'ondevice' ? 'Polished on this device' : 'Revised on this device';
+        S.refineText = '';
+        S.refineStatus = { text: 'Revised: ' + (res.applied && res.applied.length ? res.applied.join(', ') : 'from your comment') + '. Read it, then press Use this draft.', kind: 'ok' };
+        S.status = ''; draw(); announce(S.refineStatus.text);
+      }
+
+      function undoRewrite() {
+        const stack = S.stacks.get(S.sel) || [], prev = stack.pop(), d = current();
+        if (!prev || !d) return;
+        d.text = prev.text; d.source = prev.source; d.src = prev.src;
+        S.refineStatus = { text: 'Back to the previous version.', kind: '' }; draw();
       }
 
       function drawPanelDraft() {
@@ -259,7 +334,7 @@
         if (!vs) return false;
         S.drafts = vs.slice(0, 3).map((v, i) => ({ text: v.text, source: v.source, label: String(i + 1), src: v.source === 'ai' ? 'Written by AI' : v.source === 'ondevice' ? 'Polished on this device' : (v.because ? `Built on: ${because(v.because)}` : '') }));
         if (S.panelDraft) S.drafts.push({ text: S.panelDraft, source: 'panel', label: 'Panel', src: 'From your side panel' });
-        S.sel = 0; S.confirm = false;
+        S.sel = 0; S.confirm = false; S.stacks.clear(); S.refineStatus = null;
         return true;
       }
 

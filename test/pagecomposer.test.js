@@ -5,10 +5,10 @@ const path = require('path');
 
 module.exports = (test, load) => {
   const SRC = fs.readFileSync(path.join(__dirname, '../utils/pagecomposer.js'), 'utf8').replace(/\/\/.*$/gm, '');
-  const ALLOWED = ['scrapeProfile', 'pageState', 'generateMessage', 'openPanel', 'BUILD_PROMPT', 'FINISH_DRAFTS'];
+  const ALLOWED = ['scrapeProfile', 'pageState', 'generateMessage', 'openPanel', 'BUILD_PROMPT', 'FINISH_DRAFTS', 'refineDraft', 'BUILD_REFINE_PROMPT'];
 
   test('pagecomposer: the card may only ask the background for six things, never touches the network, and has no way to click', () => {
-    const actions = [...SRC.matchAll(/(?:action|type):\s*'([A-Za-z_]+)'/g)].map(m => m[1]).filter(a => a !== 'button' && a !== 'tab');
+    const actions = [...SRC.matchAll(/(?:action|type):\s*'([A-Za-z_]+)'/g)].map(m => m[1]).filter(a => !['button', 'tab', 'text'].includes(a));   // element types, not messages
     assert.ok(actions.length >= 4);
     actions.forEach(a => assert.ok(ALLOWED.includes(a), 'unexpected message: ' + a));
     assert.ok(!/\bfetch\(|XMLHttpRequest|sendBeacon|WebSocket/.test(SRC), 'no network of its own');
@@ -18,7 +18,7 @@ module.exports = (test, load) => {
 
   let JSDOM; try { ({ JSDOM } = require('jsdom')); } catch (_) { /* jsdom missing: behaviour tests skipped like the popup tests */ }
   if (!JSDOM) return;
-  const N = load('utils/notefill.js'), PC = load('utils/pagecomposer.js'), R = load('utils/request.js'), A = load('utils/approach.js');
+  const N = load('utils/notefill.js'), PC = load('utils/pagecomposer.js'), R = load('utils/request.js'), A = load('utils/approach.js'), RF = load('utils/refine.js');
   const DIALOG = fs.readFileSync(path.join(__dirname, 'fixtures/linkedin_invite_dialog.html'), 'utf8');
   const tick = (ms = 30) => new Promise(r => setTimeout(r, ms));
   const J = (x) => JSON.parse(JSON.stringify(x));
@@ -27,7 +27,7 @@ module.exports = (test, load) => {
   const SENDER = { schools: ['Vellore Institute of Technology'], employers: [], skills: ['Python'], city: '', intro: 'final-year CS student', projects: [], experience: [], education: [] };
   const drafts = (tag) => ({ success: true, source: tag === 'ai' ? 'ai' : 'template', variants: [1, 2, 3].map(i => ({ text: `Hi Aryan, ${tag} draft ${i}. Open to a quick chat?`, source: tag === 'ai' ? 'ai' : 'template', because: { hook: { kind: 'school', label: 'Vellore Institute of Technology' }, credential: { kind: 'intro' } } })) });
 
-  function setup({ html = DIALOG, ai = false, scrape, generate, stored = {}, box, onDevice = null, build, finish, genDelay = 5 } = {}) {
+  function setup({ html = DIALOG, ai = false, scrape, generate, stored = {}, box, onDevice = null, build, finish, genDelay = 5, refine } = {}) {
     const dom = new JSDOM(`<body><div id="out">${html}</div></body>`, { runScripts: 'outside-only', url: 'https://www.linkedin.com/in/aryan/' });
     const w = dom.window, d = w.document, sent = [], clicks = [], added = [], store = { userName: 'Saketh Jangala', userBio: '', senderProfile: SENDER, prefs: { format: 'note' }, ...stored };
     d.querySelectorAll('button').forEach(b => b.addEventListener('click', () => clicks.push(b.getAttribute('aria-label') || b.textContent.trim())));
@@ -36,13 +36,14 @@ module.exports = (test, load) => {
         if (m.action === 'pageState') return cb({ success: true, aiReady: ai, providerName: 'Groq', host: 'api.groq.com' });
         if (m.action === 'scrapeProfile') return cb(scrape ? scrape() : { success: true, data: PROFILE });
         if (m.action === 'generateMessage') return cb(generate ? generate(m.data) : drafts(m.data.forceFree ? 'free' : 'ai'));
+        if (m.action === 'refineDraft') return cb(refine ? refine(m) : { success: true, text: 'Hi Aryan, revised draft. Open to a quick chat?', applied: (m.intent && m.intent.applied) || [], source: m.data.forceFree ? 'template' : 'ai' });
         if (m.type === 'BUILD_PROMPT') return cb(build ? build(m.payload) : { success: true, system: 'S', user: 'U', schema: {} });
         if (m.type === 'FINISH_DRAFTS') return cb(finish ? finish(m.payload) : { success: true, polished: 3, variants: [1, 2, 3].map(i => ({ text: `Hi Aryan, local draft ${i}. Open to a quick chat?`, source: 'ondevice' })) });
         cb({ success: true });
       }, m.action === 'generateMessage' ? genDelay : 5); } },
       storage: { local: { get: (k, cb) => cb({ ...store }), set: (o, cb) => { Object.assign(store, o); cb && cb(); } } }
     };
-    const deps = { chrome, Request: R, Approach: A, OnDevice: onDevice, Cache: { addContact: (c) => added.push(c) }, limitOf: N.limitOf, currentText: N.currentText, fillBox: N.fillBox };
+    const deps = { chrome, Request: R, Approach: A, Refine: RF, OnDevice: onDevice, Cache: { addContact: (c) => added.push(c) }, limitOf: N.limitOf, currentText: N.currentText, fillBox: N.fillBox };
     const ctl = N.create(w, { view: PC.factory(w, deps) });
     ctl.scan();
     const host = () => d.querySelector('[data-outreach-composer]');
@@ -278,5 +279,53 @@ module.exports = (test, load) => {
     other.chrome.runtime.sendMessage = other.chrome.runtime.sendMessage.bind(other.chrome.runtime);
     assert.match(await waitWarn(other), /Could not establish connection/);
     assert.ok(![...other.shadow().querySelectorAll('button')].some(b => b.textContent === 'Refresh this page'));
+  });
+
+  test('pagecomposer: "Ask for a change" rewrites the selected draft (free rules here), keeps Undo, and Use types the revised text; the other tabs are untouched', async () => {
+    const s = setup(); await s.until(() => s.$$('.tab').length === 3);
+    s.btn('Ask for a change').click();
+    assert.deepStrictEqual(s.$$('.rchip').map(b => b.textContent), ['Shorter', 'Warmer', 'More formal', 'Mention a project']);
+    s.$$('.tab')[1].click();
+    const before = s.$('.draft').textContent;
+    s.$$('.rchip').find(b => b.textContent === 'Shorter').click();
+    await s.until(() => /Revised: /.test((s.$('.refine .note') || {}).textContent || ''));
+    const sent = s.sent.find(m => m.action === 'refineDraft');
+    assert.strictEqual(sent.comment, 'Make it shorter'); assert.strictEqual(sent.data.forceFree, true); assert.strictEqual(sent.draft, before);
+    assert.match(s.$('.draft').textContent, /revised draft/);
+    s.$$('.tab')[0].click(); assert.match(s.$('.draft').textContent, /free draft 1/, 'only the selected draft changed');
+    s.$$('.tab')[1].click(); assert.match(s.$('.draft').textContent, /revised draft/);
+    s.btn('Undo last change').click();
+    assert.strictEqual(s.$('.draft').textContent, before);
+    s.$$('.rchip').find(b => b.textContent === 'Warmer').click();
+    await s.until(() => /revised draft/.test(s.$('.draft').textContent));
+    s.btn('Use this draft').click();
+    assert.match(s.d.getElementById('custom-message').value, /revised draft/);
+    assert.deepStrictEqual(s.clicks, []);
+  });
+
+  test('pagecomposer: "Ask for a change" in AI Mode asks the AI with your own words, offers the AI-only options, keeps LinkedIn\'s keyboard shortcuts out, and refuses wording free mode cannot follow without a request', async () => {
+    const s = setup({ ai: true }); await s.until(() => s.$$('.tab').length === 3);
+    s.btn('Ask for a change').click();
+    assert.ok(s.$$('.rchip').some(b => b.textContent === 'Add a question'));
+    let leaked = 0; s.d.addEventListener('keydown', () => { leaked++; });
+    const input = s.$('.rin');
+    input.value = 'mention that I want summer internships'; input.dispatchEvent(new s.w.Event('input'));
+    input.dispatchEvent(new s.w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true }));
+    await s.until(() => s.sent.some(m => m.action === 'refineDraft'));
+    assert.strictEqual(leaked, 0, 'Enter / Escape typed here never reach LinkedIn\'s own handlers');
+    const m = s.sent.find(x => x.action === 'refineDraft');
+    assert.strictEqual(m.comment, 'mention that I want summer internships'); assert.ok(!m.data.forceFree, 'AI Mode: the AI rewrites');
+    await s.until(() => /Revised: /.test((s.$('.refine .note') || {}).textContent || ''));
+    assert.match(s.$('.foot').textContent, /Written by Groq/);
+    const f = setup(); await f.until(() => f.$$('.tab').length === 3);
+    f.btn('Ask for a change').click();
+    const i2 = f.$('.rin'); i2.value = 'sound like Shakespeare'; i2.dispatchEvent(new f.w.Event('input')); f.$('.rgo').click();
+    await f.until(() => f.$('.refine .note.warn'));
+    assert.match(f.$('.refine .note.warn').textContent, /Free mode can.t follow that wording/);
+    assert.ok(!f.sent.some(x => x.action === 'refineDraft'), 'refused locally: nothing was sent');
+    const bad = setup({ ai: true, refine: () => ({ success: false, error: 'Groq is busy.' }) }); await bad.until(() => bad.$$('.tab').length === 3);
+    bad.btn('Ask for a change').click(); bad.$$('.rchip')[0].click();
+    await bad.until(() => bad.$('.refine .note.warn'));
+    assert.match(bad.$('.refine .note.warn').textContent, /Groq is busy/); assert.match(bad.$('.draft').textContent, /ai draft 1/);
   });
 };
