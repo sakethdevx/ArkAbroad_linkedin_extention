@@ -257,13 +257,28 @@
   }
 
   // ── Reply-ready checklist (live; also runs on text the user edits) ──────────
-  const CLICHES = [
-    /hope this (message |email |note )?finds you well/i, /i came across your profile and (was|am) impressed/i, /impressed by your (work|profile|background)/i,
-    /pick your brain/i, /touch base/i, /synerg/i, /i would love to connect and exchange ideas/i, /i'?d love to connect and exchange ideas/i,
-    /\bquick call\b/i, /reaching out because/i, /game[- ]chang/i,
-    /i came across your (profile|page)/i, /hope you(?:'|’)?(?:re| are) (?:doing )?(?:well|great|good)/i, /(?:expand|grow) my (?:professional )?network/i,
-    /add you to my (?:professional )?network/i, /to whom it may concern/i, /\bdear sir\b/i
+  // Stock phrases that make a message sound mass-produced. ONE list: the checklist matches the patterns and the AI prompts
+  // (utils/rules.js) show the readable phrase, so what we ask the model to avoid is exactly what we flag.   [pattern, phrase]
+  const STOCK = [
+    [/hope this (message |email |note )?finds you well/i, 'I hope this finds you well'],
+    [/hope you(?:'|’)?(?:re| are) (?:doing )?(?:well|great|good)/i, 'I hope you are doing well'],
+    [/i came across your (profile|page)/i, 'I came across your profile'],
+    [/impressed by your (work|profile|background)/i, 'I was impressed by your background'],
+    [/i(?:'|’)?m reaching out|i am reaching out|reaching out because/i, 'I am reaching out because'],
+    [/i was (?:so )?(?:thrilled|excited|delighted) to/i, 'I was thrilled to see'],
+    [/your impressive (?:journey|background|career|profile)/i, 'your impressive journey'],
+    [/pick your brain/i, 'pick your brain'],
+    [/touch base/i, 'touch base'],
+    [/synerg/i, 'synergy'],
+    [/\bleverag(?:e|ing)\b/i, 'leverage'],
+    [/i(?:'|’)?d love to connect and exchange ideas|i would love to connect and exchange ideas/i, 'I would love to connect and exchange ideas'],
+    [/(?:expand|grow) my (?:professional )?network|add you to my (?:professional )?network/i, 'expand my network'],
+    [/\bquick call\b/i, 'quick call'],
+    [/game[- ]chang/i, 'game-changing'],
+    [/to whom it may concern|\bdear sir\b/i, 'To whom it may concern']
   ];
+  const CLICHES = STOCK.map(x => x[0]);
+  const STOCK_PHRASES = STOCK.map(x => x[1]);
 
   function mentionsFor(profile, overlaps) {
     const m = [];
@@ -296,5 +311,5 @@
     ];
   }
 
-  return { LIMITS, SIGNOFF, compose, checklist, mentionsFor, wordClip, CLICHES };
+  return { LIMITS, SIGNOFF, compose, checklist, mentionsFor, wordClip, CLICHES, STOCK_PHRASES };
 });

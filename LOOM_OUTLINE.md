@@ -44,3 +44,5 @@ Show (on a computer that qualifies): Settings → On-device AI → Turn on (one-
 6. **No panel needed.** Open a profile, click Connect → Add a note: a card inside LinkedIn's box already shows 3 drafts. Change Goal / Tone, press **Use this draft**, read it, press Send yourself. Mention: free drafts are made on the device; the AI button is a separate, labelled click; the helper is inert off profile pages; Settings → On the LinkedIn page has Off.
 
 7. **Tell it what to change.** Under any draft (panel, LinkedIn card, follow-up): type "make it shorter and mention my Python project" or tap Warmer; the draft is rewritten and **Undo** brings it back. Free mode: a fixed set of requests, refused plainly otherwise; AI / on-device AI: any wording, same safety checks (no links, length, no invented facts).
+
+8. **The prompts are engineered, not improvised.** One rule list builds every prompt; show the priority order, the shared stock-phrase list, and `scripts/eval-prompts.js --dry`. Be honest: the structure is tested, the quality gain is measured by running the eval with a key.
