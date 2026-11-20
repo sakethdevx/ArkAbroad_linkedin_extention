@@ -20,10 +20,10 @@
   const HOOK_WORD = { school: 'shared school', employer: 'shared employer', skills: 'shared skills', city: 'shared city', post: 'their recent post', role: 'their role' };
 
   const CSS = `
-    :host { all: initial; display: block; margin: 0 0 12px; font-family: -apple-system, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    :host { all: initial; display: block; font-family: -apple-system, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
     * { box-sizing: border-box; }
-    .card { container-type: inline-size; background: #f5f8ff; border: 1px solid #c9d6f5; border-radius: 12px; padding: 12px 14px 10px; color: #1b1f23; font-size: 13px; line-height: 1.45; }
-    header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .card { container-type: inline-size; background: #f5f8ff; border: 1px solid #c9d6f5; border-radius: 12px; padding: 10px 14px 10px; color: #1b1f23; font-size: 13px; line-height: 1.45; }
+    header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
     .logo { width: 22px; height: 22px; border-radius: 7px; background: #1a56db; color: #fff; display: grid; place-items: center; font-size: 12px; flex: none; }
     .title { font-weight: 700; font-size: 13px; }
     .for { color: #4b5563; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -33,23 +33,23 @@
     .x { color: #4b5563; font-size: 14px; line-height: 1; }
     .link:hover, .x:hover { background: #e3ebff; }
     button:focus-visible { outline: 2px solid #1a56db; outline-offset: 2px; }
-    .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    .row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
     .lbl { width: 40px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #5b6472; flex: none; }
     .seg { display: flex; gap: 6px; flex-wrap: wrap; }
     .chip { border: 1px solid #b7c6ee; background: #fff; color: #1f3a8a; border-radius: 999px; padding: 4px 11px; font-size: 12px; font-weight: 600; transition: background .12s, color .12s; }
     .chip:hover { background: #eaf0ff; }
     .chip[aria-pressed="true"] { background: #1a56db; border-color: #1a56db; color: #fff; }
-    .tabs { display: flex; gap: 6px; margin: 10px 0 6px; flex-wrap: wrap; }
+    .tabs { display: flex; gap: 6px; margin: 8px 0 6px; flex-wrap: wrap; }
     .tab { border: 0; background: transparent; color: #4b5563; border-radius: 8px; padding: 4px 10px; font-size: 12px; font-weight: 600; }
     .tab[aria-selected="true"] { background: #fff; color: #1a56db; box-shadow: 0 0 0 1px #c9d6f5; }
-    .draft { background: #fff; border: 1px solid #d7e0f7; border-radius: 10px; padding: 10px 12px; max-height: 168px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 13.5px; line-height: 1.5; animation: pop .18s ease-out; }
+    .draft { background: #fff; border: 1px solid #d7e0f7; border-radius: 10px; padding: 10px 12px; max-height: 132px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 13.5px; line-height: 1.5; animation: pop .18s ease-out; }
     .meta { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; margin: 6px 2px 0; font-size: 11.5px; color: #5b6472; flex-wrap: wrap; }
     .count.over { color: #b42318; font-weight: 700; }
     .count.ok::after { content: ' ✓'; color: #137333; }
     .note { margin: 6px 2px 0; font-size: 12px; color: #374151; }
     .note.warn { color: #9a3412; }
     .note.ok { color: #137333; }
-    .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
     .primary { background: #1a56db; color: #fff; border: 1px solid #1a56db; border-radius: 999px; padding: 8px 18px; font-weight: 700; font-size: 13px; }
     .primary:hover { background: #1747b5; }
     .primary[disabled] { opacity: .5; cursor: not-allowed; }
@@ -94,6 +94,9 @@
       const host = doc.createElement('div');
       host.setAttribute('data-outreach-fill', '');
       host.setAttribute('data-outreach-composer', '');
+      // spacing set inline (and !important) because LinkedIn's own CSS can reset margins on any div, and it must keep a clear gap
+      // from the text above and the box below
+      [['display', 'block'], ['margin', '12px 0 16px'], ['clear', 'both']].forEach(([k, v]) => host.style.setProperty(k, v, 'important'));
       const shadow = host.attachShadow({ mode: 'open' });
       const anchor = box.kind === 'textarea' ? (box.el.closest('.relative') || box.el) : (box.el.parentElement || box.el);
       anchor.insertAdjacentElement('beforebegin', host);
@@ -174,7 +177,7 @@
         root.appendChild(meta);
 
         const move = S.profile && D.Approach ? D.Approach.approach({ isConnection: S.profile.isConnection, overlaps: (S.shared && S.shared.overlaps) || [], recentPosts: S.profile.recentPosts, purpose: S.purpose }) : null;
-        if (move) root.appendChild(el('p', { class: 'note', text: move }));
+        if (move) root.appendChild(el('p', { class: 'note', text: move.split(' In one vendor dataset')[0], title: move }));   // the statistic stays in the tooltip: the card is already tall
         if (over) root.appendChild(el('p', { class: 'note warn', text: `This draft is ${n} characters; the box allows ${lim}. Pick another, or press New ideas.` }));
         else if (S.status) root.appendChild(el('p', { class: `note ${S.statusKind}`, text: S.status }));
         if (S.aiNote) root.appendChild(el('p', { class: 'note warn', text: S.aiNote }));
