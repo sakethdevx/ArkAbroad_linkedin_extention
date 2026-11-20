@@ -158,6 +158,18 @@
         <ul class="checklist" id="draft-checklist" aria-label="Reply-ready checklist"></ul>
         <p class="draft-because" id="draft-because"></p>
 
+        <div class="refine" id="refine">
+          <label class="refine-label" for="refine-input">Want a change?</label>
+          <div class="refine-chips" id="refine-chips" role="group" aria-label="Quick changes"></div>
+          <div class="refine-row">
+            <input id="refine-input" class="field-input" type="text" maxlength="300" autocomplete="off" placeholder="e.g. make it shorter and mention my Python project" />
+            <button id="refine-go" class="btn btn-secondary" type="button">Rewrite</button>
+          </div>
+          <p class="refine-engine" id="refine-engine"></p>
+          <p class="refine-status" id="refine-status" role="status" aria-live="polite"></p>
+          <div class="refine-undo hidden" id="refine-undo-row"><button id="refine-undo" class="btn-link" type="button">Undo last change</button></div>
+        </div>
+
         <details class="translate-card hidden" id="translate-card">
           <summary><span class="tr-title">Write in another language</span><span class="set-chip" id="tr-hint"></span></summary>
           <div class="tr-body">
@@ -414,6 +426,7 @@
   <script src="utils/spotlight.js"></script>
   <script src="utils/approach.js"></script>
   <script src="utils/request.js"></script>
+  <script src="utils/refine.js"></script>
   <script src="utils/compose.js"></script>
   <script src="utils/followup.js"></script>
   <script src="utils/resume.js"></script>
@@ -428,6 +441,7 @@
   <script src="panel/drafts.js"></script>
   <script src="panel/followup_ui.js"></script>
   <script src="panel/notefill_ui.js"></script>
+  <script src="panel/refine_ui.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

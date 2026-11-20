@@ -107,6 +107,7 @@ function draftCtx() {
 }
 
 function renderDrafts(resp) {
+  resetRefine();   // new drafts: the old version history does not apply
   const wasHidden = document.getElementById('message-section').classList.contains('hidden');
   const list = resp.variants && resp.variants.length ? resp.variants : [{ text: resp.generatedMessage || '', source: 'template' }];
   drafts = list.map(v => ({ text: v.text, source: v.source, hookKind: v.hookKind, provider: v.provider || resp.provider, because: v.because || null, given: v.given || givenSummary(), edited: !!v.edited }));
@@ -166,6 +167,8 @@ function selectDraft(i) {
   wasOver = false;
   updateDraftMeta();
   renderBecause(drafts[i]);
+  setRefineStatus('');
+  refreshRefineUi();
 }
 
 function onDraftInput() {

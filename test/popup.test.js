@@ -11,7 +11,7 @@ module.exports = (test) => {
   const root = path.join(__dirname, '..');
   const PP = require(path.join(root, 'utils/profile_parse.js'));
   const tick = (n = 40) => new Promise(r => setTimeout(r, n));
-  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/approach.js', 'utils/request.js', 'utils/compose.js', 'utils/followup.js', 'utils/resume.js', 'utils/person.js', 'utils/cache.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'panel/followup_ui.js', 'panel/notefill_ui.js', 'popup.js'];
+  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/approach.js', 'utils/request.js', 'utils/refine.js', 'utils/compose.js', 'utils/followup.js', 'utils/resume.js', 'utils/person.js', 'utils/cache.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'panel/followup_ui.js', 'panel/notefill_ui.js', 'panel/refine_ui.js', 'popup.js'];
 
   const PRIYA = () => PP.buildProfile({
     name: 'Priya Rao', headline: 'Data Scientist at Globex', location: 'Chennai, India',
@@ -24,7 +24,7 @@ module.exports = (test) => {
     const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8').replace(/<script[^>]*src[^>]*><\/script>/g, '');
     const w = new JSDOM(html, { runScripts: 'outside-only', url: 'chrome-extension://x/popup.html' }).window;
     const errors = []; w.addEventListener('error', e => errors.push(e.message));
-    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; const resumeBuilds = []; let about = ''; const copied = []; const opened = []; const composers = []; const armed = []; let composerReply = { success: true, opened: 'message' }; const builds = [], finishes = []; let finishReply = null; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
+    const calls = [], scrapes = [], listeners = [], permCalls = [], resumeCalls = []; let resumeReply = null; let degree = ''; const resumeBuilds = []; let about = ''; const copied = []; const opened = []; const composers = []; const armed = []; const refines = []; let refineReply = (m) => ({ success: true, text: 'Hi Priya,\nRevised text. Open to a quick chat?', applied: m.intent && m.intent.applied || [], source: m.data && m.data.forceFree ? 'template' : 'ai' }); let composerReply = { success: true, opened: 'message' }; const builds = [], finishes = []; let finishReply = null; const detects = []; let signals = initialSignals || { lines: [], labels: [] }; let granted = new Set(); let allowRequests = true;
     let tabUrl = url;
     w.chrome = {
       tabs: { create: (o) => { opened.push(o.url); return Promise.resolve({}); }, query: async () => [{ id: 42, url: tabUrl, active: true }], onActivated: { addListener: f => listeners.push(f) }, onUpdated: { addListener: f => listeners.push(f) } },
@@ -45,6 +45,7 @@ module.exports = (test) => {
           experience: [{ title: 'Software Intern', company: 'Globex', years: '2024', detail: 'Built a forecasting API' }],
           projects: [{ name: 'CampusMap', summary: 'route planner' }], skills: ['Python', 'SQL'], certifications: ['AWS CP'], languages: [],
           schools: ['IIT Madras'], employers: ['Globex'] } }); }
+        if (m.action === 'refineDraft') { refines.push(m); return cb(refineReply(m)); }
         if (m.action === 'armNoteFill') { armed.push({ text: m.text, format: m.format, enabled: m.enabled, tabId: m.tabId }); return cb({ success: true }); }
         if (m.action === 'openComposer') { composers.push({ tabId: m.tabId, want: m.want }); return cb(composerReply); }
         if (m.action === 'detectConnection') { detects.push(m.tabId); return cb({ success: true, lines: signals.lines, labels: signals.labels }); }
@@ -74,7 +75,7 @@ module.exports = (test) => {
     else w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
     await tick();
     const $ = id => w.document.getElementById(id);
-    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, resumeBuilds, setAbout: a => { about = a; }, copied, opened, composers, armed, setComposer: r => { composerReply = r; }, builds, finishes, setFinish: f => { finishReply = f; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
+    return { w, $, errors, calls, scrapes, resumeCalls, setResumeReply: r => { resumeReply = r; }, setDegree: d => { degree = d; }, resumeBuilds, setAbout: a => { about = a; }, copied, opened, composers, armed, refines, setRefine: f => { refineReply = f; }, setComposer: r => { composerReply = r; }, builds, finishes, setFinish: f => { finishReply = f; }, setSignals: sg => { signals = sg; }, detects, store, listeners, permCalls, deny: () => { allowRequests = false; }, setUrl: u => { tabUrl = u; }, click: async (id, ms = 100) => { $(id).click(); await tick(ms); } };
   }
 
   const SENDER = { schools: ['IIT Madras'], skills: ['Python'], intro: 'CS student' };
@@ -256,6 +257,53 @@ module.exports = (test) => {
     d.$('pm-button').checked = true; d.$('pm-button').dispatchEvent(new d.w.Event('change')); await tick(100);
     assert.strictEqual(d.store.pageMode, 'button');
     assert.strictEqual(d.$('page-chip').textContent, 'Fill button only');
+  });
+
+  test('popup: "Want a change?" — free quick options rewrite the selected draft, Undo restores it exactly, and wording free mode cannot follow is refused without a request', async () => {
+    const t = await boot({ senderProfile: SENDER });
+    await t.click('scrape-btn');
+    assert.deepStrictEqual([...t.w.document.querySelectorAll('#refine-chips .refine-chip')].map(b => b.textContent), ['Shorter', 'Warmer', 'More formal', 'Mention a project']);
+    assert.match(t.$('refine-engine').textContent, /Free mode understands/);
+    const before = t.$('generated-message').value;
+    [...t.w.document.querySelectorAll('.refine-chip')].find(b => b.textContent === 'Shorter').click(); await tick(150);
+    assert.strictEqual(t.refines.length, 1);
+    assert.strictEqual(t.refines[0].comment, 'Make it shorter');
+    assert.strictEqual(t.refines[0].data.forceFree, true, 'Free Mode: nothing goes to an AI');
+    assert.strictEqual(t.refines[0].draft, before);
+    assert.strictEqual(t.$('generated-message').value, 'Hi Priya,\nRevised text. Open to a quick chat?');
+    assert.match(t.$('refine-status').textContent, /Revised: shorter/);
+    assert.ok(!t.$('refine-undo-row').classList.contains('hidden'));
+    assert.strictEqual(t.store.recentContacts[0].message, 'Hi Priya,\nRevised text. Open to a quick chat?', 'the revised draft is what Recent keeps');
+    await t.click('refine-undo');
+    assert.strictEqual(t.$('generated-message').value, before);
+    assert.ok(t.$('refine-undo-row').classList.contains('hidden'));
+    t.$('refine-input').value = 'sound like Shakespeare'; await t.click('refine-go');
+    assert.match(t.$('refine-status').textContent, /Free mode can.t follow that wording/);
+    assert.strictEqual(t.refines.length, 1, 'wording the free rules cannot follow is refused locally, with no request');
+    assert.strictEqual(t.$('generated-message').value, before);
+    t.$('refine-input').value = 'make it warmer and more casual';
+    t.$('refine-input').dispatchEvent(new t.w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await tick(150);
+    assert.strictEqual(t.refines.length, 2, 'Enter submits');
+    assert.strictEqual(t.refines[1].data.tone, 'Casual');
+  });
+
+  test('popup: "Want a change?" in AI Mode asks your AI directly, offers the extra AI-only quick options, and a failure leaves the draft alone', async () => {
+    const t = await boot({ userApiKey: 'k', mode: 'ai', aiConsent: { version: 2, ackAt: 1, provider: 'anthropic' }, senderProfile: SENDER });
+    await t.click('scrape-btn');
+    const chips = () => [...t.w.document.querySelectorAll('.refine-chip')].map(b => b.textContent);
+    assert.deepStrictEqual(chips(), ['Shorter', 'Warmer', 'More formal', 'Mention a project', 'Add a question', 'Less salesy']);
+    assert.match(t.$('refine-engine').textContent, /Your AI rewrites it/);
+    const before = t.$('generated-message').value;
+    t.$('refine-input').value = 'mention that I am looking for summer internships'; await t.click('refine-go');
+    assert.ok(!t.refines[0].data.forceFree, 'AI Mode asks the AI');
+    assert.strictEqual(t.refines[0].comment, 'mention that I am looking for summer internships');
+    assert.match(t.$('generated-message').value, /Revised text/);
+    t.setRefine(() => ({ success: false, error: 'Anthropic is busy.' }));
+    const now = t.$('generated-message').value;
+    t.$('refine-input').value = 'shorter'; await t.click('refine-go');
+    assert.match(t.$('refine-status').textContent, /Anthropic is busy/);
+    assert.strictEqual(t.$('generated-message').value, now, 'a failed rewrite never touches the draft');
+    assert.notStrictEqual(before, now);
   });
 
   test('popup: switching Free ⇄ AI: AI asks once (names provider, host, model), the choice is remembered, and nothing asks per draft', async () => {

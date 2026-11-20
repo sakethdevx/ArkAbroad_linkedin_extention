@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireProviderUi();
   wireOnDevice();
   wireNoteFill();
+  wireRefine();
   wireTranslate();
   wireModeSwitch();
   document.getElementById('resume-tip-go').addEventListener('click', () => { switchTab('settings'); document.getElementById('about-card').open = true; document.getElementById('file-upload-area').focus(); });
