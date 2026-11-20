@@ -9,14 +9,14 @@ let overlapAll    = [];
 const overlapOff  = new Set();
 const KIND_LABEL  = { school: 'School', employer: 'Employer', skills: 'Skills', city: 'City' };
 
-const hasResumeInfo = (sp) => !!sp && !!((sp.schools || []).length || (sp.employers || []).length || (sp.skills || []).length || (sp.projects || []).length || (sp.experience || []).length || (sp.education || []).length || sp.city || sp.goal);
+const hasResumeInfo = Request.hasResumeInfo;   // utils/request.js: the same rules build the request here and on the LinkedIn page
 const selectedOverlaps = () => overlapAll.filter(o => !overlapOff.has(o.id));
 // What we hand to the drafter: the kept overlaps and a compact, contact-free summary of the sender.
 const sharedContext = () => ({
   overlaps:  selectedOverlaps().map(({ kind, label, detail, line }) => ({ kind, label, detail, line })),
   sender:    hasResumeInfo(senderProfile) ? Overlap.senderSummary(senderProfile) : null,
   spotlight: keptSpotlight()
-});
+});   // same shape as Request.shared(); the panel keeps its own on/off state for each chip
 
 // The ONE most relevant project/role for this person (see utils/spotlight.js). Recomputed when you toggle a shared point,
 // because dropping a shared employer makes a role at that employer eligible again.
@@ -26,8 +26,7 @@ const keptSpotlight = () => (currentSpotlight && !spotlightOff ? currentSpotligh
 
 function refreshSpotlight() {
   const row = document.getElementById('spot-row');
-  const excl = selectedOverlaps().filter(o => o.kind === 'employer').map(o => o.label);
-  currentSpotlight = currentProfile && hasResumeInfo(senderProfile) ? Spotlight.spotlight(senderProfile, currentProfile, { excludeCompanies: excl }) : null;
+  currentSpotlight = Request.spotlightFor(senderProfile, currentProfile, selectedOverlaps());
   row.classList.toggle('hidden', !currentSpotlight);
   // say so when nothing matches, instead of silently showing nothing
   const none = document.getElementById('spot-none');

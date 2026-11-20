@@ -300,15 +300,12 @@ async function handlePasteProfile() {
 
 async function requestData(profile) {
   const stored = await loadStoredSettings();
-  return {
-    profileData: profile,
-    settings: { userName: stored.userName || '', userBio: stored.userBio || '' },   // not the key, not the resume text
-    messageType: document.getElementById('message-type').value,
+  return Request.generateData({   // utils/request.js: the same payload the LinkedIn page builds
+    profile, settings: stored,   // only userName and userBio are used: not the key, not the resume text
+    purpose: document.getElementById('message-type').value,
     tone: document.getElementById('tone').value,
-    format: currentFormat,
-    seed,
-    ...sharedContext()
-  };
+    format: currentFormat, seed, shared: sharedContext()
+  });
 }
 
 async function callQuickGenerate(profile) {
