@@ -76,8 +76,16 @@
       [].concat(kids).forEach(c => c && e.appendChild(c));
       return e;
     };
+    let lastSendError = '';   // why the last message to the background failed (shown instead of a vague error)
+    const STALE = /context invalidated|receiving end does not exist|message port closed/i;
     const send = (msg) => new Promise(res => {
-      try { D.chrome.runtime.sendMessage(msg, (r) => { try { void D.chrome.runtime.lastError; } catch (_) { /* gone */ } res(r || null); }); } catch (_) { res(null); }
+      lastSendError = '';
+      try {
+        D.chrome.runtime.sendMessage(msg, (r) => {
+          try { if (D.chrome.runtime.lastError) lastSendError = String(D.chrome.runtime.lastError.message || ''); } catch (e) { lastSendError = String((e && e.message) || 'Extension context invalidated'); }
+          res(r || null);
+        });
+      } catch (e) { lastSendError = String((e && e.message) || 'Extension context invalidated'); res(null); }
     });
     const getStored = () => new Promise(res => { try { D.chrome.storage.local.get(['userName', 'userBio', 'senderProfile', 'prefs'], r => res(r || {})); } catch (_) { res({}); } });
     const setPrefs = (patch) => { try { D.chrome.storage.local.get(['prefs'], r => D.chrome.storage.local.set({ prefs: { ...((r && r.prefs) || {}), ...patch } })); } catch (_) { /* a convenience */ } };
@@ -150,7 +158,13 @@
           root.appendChild(el('p', { class: 'note warn', text: S.error || 'I couldn’t read this profile here.' }));
           const retry = el('button', { class: 'ghost', type: 'button', text: 'Try again' });
           retry.addEventListener('click', () => start(true));
-          root.appendChild(el('div', { class: 'actions' }, [retry]));
+          const row = el('div', { class: 'actions' }, [retry]);
+          if (S.stale) {   // the extension was reloaded or updated while this page stayed open: only a page refresh reconnects it
+            const reload = el('button', { class: 'primary', type: 'button', text: 'Refresh this page' });
+            reload.addEventListener('click', () => { try { win.location.reload(); } catch (_) { /* nothing more to do */ } });
+            row.insertBefore(reload, retry);
+          }
+          root.appendChild(row);
           if (S.panelDraft) drawPanelDraft();
           root.appendChild(live);
           return;
@@ -271,8 +285,10 @@
 
       async function start(force) {
         S.phase = 'loading'; draw();
+        S.stale = false;
         const stored = await getStored();
         const page = await send({ action: 'pageState' });
+        if (!page && STALE.test(lastSendError)) { S.phase = 'error'; S.stale = true; S.error = 'Outreach AI was just reloaded or updated. Refresh this LinkedIn page to reconnect.'; draw(); return; }
         S.stored = { userName: stored.userName || '', userBio: stored.userBio || '',
           ai: page && page.success && page.aiReady ? { ready: true, name: page.providerName, host: page.host } : null };
         S.sender = stored.senderProfile && D.Request.hasResumeInfo(stored.senderProfile) ? stored.senderProfile : null;
@@ -285,7 +301,13 @@
         let profile = !force && profileCache.get(key);
         if (!profile) {
           const r = await send({ action: 'scrapeProfile' });
-          if (!r || !r.success || !r.data) { S.phase = 'error'; S.error = (r && r.error) || 'I couldn’t read this profile here. You can still use the Outreach AI side panel.'; draw(); return; }
+          if (!r || !r.success || !r.data) {
+            S.phase = 'error';
+            S.stale = !r && STALE.test(lastSendError);
+            S.error = S.stale ? 'Outreach AI was just reloaded or updated. Refresh this LinkedIn page to reconnect.'
+              : (r && r.error) || `I couldn’t read this profile here${lastSendError ? ' (' + lastSendError + ')' : ''}. You can still use the Outreach AI side panel.`;
+            draw(); return;
+          }
           profile = r.data; profileCache.set(key, profile);
         }
         S.profile = profile;

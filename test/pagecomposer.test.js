@@ -207,4 +207,23 @@ module.exports = (test, load) => {
     await tick(400);
     assert.strictEqual(feed.d.querySelectorAll('[data-outreach-fill]').length, 0, 'not a profile page: inert');
   });
+
+  test('pagecomposer: if the extension was reloaded while the page stayed open, the card says so and offers a page refresh (not a vague error); other failures show their reason', async () => {
+    const mk = (sendMessage) => {
+      const w = new JSDOM(`<body>${DIALOG}</body>`, { runScripts: 'outside-only', url: 'https://www.linkedin.com/in/aryan/' }).window;
+      const chrome = { runtime: { lastError: null, sendMessage }, storage: { local: { get: (k, cb) => cb({}), set() {} } } };
+      const ctl = N.create(w, { view: PC.factory(w, { chrome, Request: R, Approach: A, Cache: null, limitOf: N.limitOf, currentText: N.currentText, fillBox: N.fillBox }) });
+      ctl.scan();
+      return { shadow: () => w.document.querySelector('[data-outreach-composer]').shadowRoot, chrome };
+    };
+    const waitWarn = async (x) => { for (let i = 0; i < 100 && !x.shadow().querySelector('.note.warn'); i++) await tick(10); return x.shadow().querySelector('.note.warn').textContent; };
+    const orphan = mk(() => { throw new Error('Extension context invalidated.'); });
+    assert.match(await waitWarn(orphan), /reloaded or updated\. Refresh this LinkedIn page/);
+    const names = [...orphan.shadow().querySelectorAll('button')].map(b => b.textContent);
+    assert.ok(names.includes('Refresh this page') && names.includes('Try again'), names.join('|'));
+    const other = mk(function (m, cb) { this.lastError = { message: 'Could not establish connection.' }; setTimeout(() => cb(undefined), 1); });
+    other.chrome.runtime.sendMessage = other.chrome.runtime.sendMessage.bind(other.chrome.runtime);
+    assert.match(await waitWarn(other), /Could not establish connection/);
+    assert.ok(![...other.shadow().querySelectorAll('button')].some(b => b.textContent === 'Refresh this page'));
+  });
 };

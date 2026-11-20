@@ -13,6 +13,10 @@ _Slices land below as they ship._
 
 **What** What the panel hands the drafter (the overlaps you keep, the contact-free sender summary, the one spotlight, and the final `generateMessage` payload) is now built by a pure `Request` module, so the panel and the coming on-page composer ask for exactly the same thing. The panel was moved onto it with no behaviour change (every existing popup test still passes). **Why** the on-page composer must not drift from the panel. Tests: `request:` (3).
 
+### Fix 4 — a reloaded extension no longer shows a vague "couldn't read this profile"
+
+**What** After you reload the extension, a LinkedIn tab that was already open keeps the OLD helper, whose connection to the extension is gone; every request fails and the card showed only "I couldn't read this profile here". The card now recognises this ("Outreach AI was just reloaded or updated. Refresh this LinkedIn page to reconnect.") and offers a **Refresh this page** button next to **Try again**. Any other failure now shows its real reason in brackets, so it can be diagnosed from a screenshot. Test: `pagecomposer: if the extension was reloaded while the page stayed open…`.
+
 ### Fix 3 — spacing of the on-page card
 
 **What** On real LinkedIn the card touched the text box below it and sat tight under the intro line: LinkedIn's CSS overrides margins set inside the card's own stylesheet. The gap (12px above, 16px below) is now set inline with `!important` on the card's host, and a test page with a hostile `div { margin: 0 !important }` rule keeps it. The card is also a little more compact (tighter padding, shorter draft area) and the "Best next move" line drops the vendor statistic from the card (it stays in the tooltip), so less of LinkedIn's dialog is pushed down.
