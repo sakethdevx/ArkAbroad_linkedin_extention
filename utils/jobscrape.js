@@ -57,15 +57,9 @@
         if (flat(n.textContent).length >= 200) return n;
       }
     }
-    // last resort: the longest job-looking text block inside <main>
-    const main = q(doc, 'main') || doc.body;
-    if (!main) return null;
-    let best = null, bestLen = 0;
-    qa(main, 'section,article,div').forEach(e => {
-      const len = flat(e.textContent).length;
-      if (len >= 300 && len <= 20000 && len > bestLen && JOBISH.test(e.textContent) && e.querySelectorAll('section,article').length < 6) { best = e; bestLen = len; }
-    });
-    return best;
+    // no further guessing: on the Jobs home page and search results with no job picked there is nothing to read, and guessing from the
+    // longest block of text would mistake the whole page for a posting
+    return null;
   }
 
   function findPane(doc, desc) {
@@ -92,7 +86,7 @@
 
   function jobIdFrom(loc) {
     const href = String((loc && (loc.href || '')) || '');
-    const m = href.match(/[?&]currentJobId=(\d+)/) || href.match(/\/jobs\/view\/(?:[^/?#]*-)?(\d+)/);
+    const m = href.match(/[?&](?:currentJobId|jobId)=(\d+)/) || href.match(/\/jobs\/view\/(?:[^/?#]*-)?(\d+)/);
     return m ? m[1] : '';
   }
   const hash = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return String(h); };
@@ -100,8 +94,9 @@
   function scrape(doc, loc) {
     try {
       if (!doc || !doc.body) return { ok: false, reason: 'no-page', key: '' };
-      const desc = findDescription(doc);
       const id = jobIdFrom(loc);
+      if (!id) return { ok: false, reason: 'no-job-selected', key: '' };   // a job must be open: the address names it
+      const desc = findDescription(doc);
       if (!desc) return { ok: false, reason: 'no-description', key: id };
       const descLines = linesOf(desc).filter(l => !/^(?:about the job|show more|show less|see more|…\s*more)$/i.test(l));
       const description = descLines.join('\n');

@@ -19,7 +19,7 @@
   const CSS = `
     :host { all: initial; display: block; font-family: -apple-system, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
     * { box-sizing: border-box; }
-    .card { background: #f5f8ff; border: 1px solid #c9d6f5; border-radius: 12px; padding: 10px 14px 12px; color: #1b1f23; font-size: 13px; line-height: 1.45; }
+    .card { overflow-wrap: anywhere; background: #f5f8ff; border: 1px solid #c9d6f5; border-radius: 12px; padding: 10px 14px 12px; color: #1b1f23; font-size: 13px; line-height: 1.45; }
     header { display: flex; align-items: center; gap: 8px; }
     .logo { width: 22px; height: 22px; border-radius: 7px; background: #1a56db; color: #fff; display: grid; place-items: center; font-size: 12px; flex: none; }
     .title { font-weight: 700; font-size: 13px; }
@@ -85,7 +85,7 @@
     const card = el('div', { class: 'card', role: 'region', 'aria-label': 'Outreach AI job fit' });
     shadow.append(el('style', { text: CSS }), card);
 
-    const S = { state: { phase: 'loading' }, collapsed: false, how: false, hidden: false };
+    const S = { state: { phase: 'loading' }, collapsed: false, how: false, hidden: false, details: !!deps.details };
 
     const meter = (label, pct, text, tone) => el('div', { class: 'meter' }, [
       el('span', { text: label }),
@@ -130,6 +130,17 @@
         wrap.appendChild(el('p', { class: 'note', text: 'Add your resume in Outreach AI Settings to see your skills and level fit. The checks below come from the posting alone.' }));
       }
 
+      if (!S.details) {   // compact by default: the job page stays readable and scrollable; the rest is one tap away
+        const lows0 = (r.watchouts || []).filter(w => w.severity !== 'high');
+        const bits = [(r.eligibility || []).length && `${r.eligibility.length} eligibility ${r.eligibility.length === 1 ? 'check' : 'checks'}`, (sk.wanted || []).length && `${sk.wanted.length} ${sk.wanted.length === 1 ? 'skill' : 'skills'}`, lows0.length && `${lows0.length} ${lows0.length === 1 ? 'watch-out' : 'watch-outs'}`].filter(Boolean);
+        const more = el('button', { class: 'link more', type: 'button', 'aria-expanded': 'false', text: 'Show details' + (bits.length ? ' · ' + bits.join(' · ') : '') });
+        more.addEventListener('click', () => { S.details = true; draw(); });
+        wrap.appendChild(more);
+        if ((r.insights || []).length) wrap.appendChild(el('p', { class: 'note', text: r.insights.join(' ') }));
+        wrap.appendChild(el('p', { class: 'foot', text: 'Worked out on this device; nothing was sent anywhere. Outreach AI never clicks Apply or Save for you.' }));
+        return wrap;
+      }
+
       if ((r.eligibility || []).length) {
         wrap.appendChild(el('h4', { text: 'Eligibility check' }));
         wrap.appendChild(el('ul', {}, r.eligibility.map(e => el('li', { class: 'row' }, [
@@ -160,6 +171,9 @@
         wrap.appendChild(el('ul', {}, lows.map(w => el('li', { class: 'row' }, [el('span', { class: 'ic check', 'aria-hidden': 'true', text: '!' }), el('span', {}, [w.text, w.quote ? el('span', { class: 'q', text: '“' + w.quote + '”' }) : null])]))));
       }
       if ((r.insights || []).length) wrap.appendChild(el('p', { class: 'note', text: r.insights.join(' ') }));
+      const less = el('button', { class: 'link', type: 'button', 'aria-expanded': 'true', text: 'Hide details' });
+      less.addEventListener('click', () => { S.details = false; draw(); });
+      wrap.appendChild(less);
       wrap.appendChild(el('p', { class: 'foot', text: 'Worked out on this device from the posting and your resume; nothing was sent anywhere. You decide whether to apply: Outreach AI never clicks Apply or Save for you.' }));
       return wrap;
     }
@@ -199,7 +213,8 @@
       render(state) { S.state = state || { phase: 'loading' }; draw(); },
       isHidden: () => S.hidden,
       remove() { host.remove(); },
-      setCollapsed(v) { S.collapsed = !!v; draw(); }
+      setCollapsed(v) { S.collapsed = !!v; draw(); },
+      setDetails(v) { S.details = !!v; draw(); }
     };
     draw();
     return ui;

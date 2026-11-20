@@ -38,16 +38,15 @@
 
     function removeUi() { if (st.ui) { st.ui.remove(); st.ui = null; } st.key = ''; st.anchorEl = null; }
 
-    // the card goes just above the "About the job" section, so it is the first thing read under the title
-    function anchorFor(s) {
-      let a = s.el;
-      for (let i = 0; i < 4 && a && a.parentElement && a.parentElement !== s.pane; i++) {
-        if (/^(SECTION|ARTICLE)$/.test(a.tagName) || /(?:^|\s)jobs-description(?:\s|$)/.test(a.className || '')) break;
-        a = a.parentElement;
-      }
-      return a || s.el;
+    // The card goes inside the description area, in the normal flow of the page, right above the text: never in a sticky or fixed header
+    // (a tall card there would take over the screen and block scrolling) and never at the top of the page.
+    function place(s) {
+      const el = s.el;
+      if (!el || !el.parentNode) return;
+      if (/^(SECTION|ARTICLE)$/.test(el.tagName)) el.insertBefore(st.ui.host, el.children[1] || el.firstChild);   // after its "About the job" heading
+      else el.insertAdjacentElement('beforebegin', st.ui.host);
+      st.anchorEl = el;
     }
-    function place(anchor) { if (anchor && anchor.parentNode) anchor.insertAdjacentElement('beforebegin', st.ui.host); st.anchorEl = anchor; }
 
     async function check(s, token) {
       const r = await send({ action: 'analyzeJob', job: s.job });
@@ -65,7 +64,7 @@
         if (!s.key) { removeUi(); st.fails = 0; return; }
         if (++st.fails >= 3 && (!st.ui || st.key !== 'unreadable:' + s.key)) {
           removeUi();
-          const pane = doc.querySelector('.jobs-search__job-details--container, .job-view-layout, main');
+          const pane = doc.querySelector('.jobs-search__job-details--container, .job-view-layout');   // only a known job pane: never guess a spot
           if (pane) { st.ui = JobCard.create(win, { onPanel: () => send({ action: 'openPanel' }) }); pane.insertAdjacentElement('afterbegin', st.ui.host); st.key = 'unreadable:' + s.key; st.ui.render({ phase: 'unreadable', reason: s.reason }); }
         }
         return;
@@ -73,13 +72,13 @@
       st.fails = 0;
       const key = s.key + ':' + Math.round(s.job.description.length / 200);
       if (st.ui && st.key === key) {   // same job: just put the card back if LinkedIn redrew the page without it
-        if (!st.ui.host.isConnected) place(anchorFor(s));
+        if (!st.ui.host.isConnected) place(s);
         return;
       }
       removeUi();
       st.key = key;
       st.ui = JobCard.create(win, { onPanel: () => send({ action: 'openPanel' }) });
-      place(anchorFor(s));
+      place(s);
       st.ui.render({ phase: 'loading' });
       check(s, ++st.token);
     }

@@ -15,7 +15,7 @@ function wireJobCheck() {
     ui = null;
     if (text.length < 40) { out.textContent = 'Paste the job description first (a few lines at least).'; out.className = 'field-hint'; return; }
     out.className = '';
-    ui = JobCard.create(window, { onPanel: () => {} });
+    ui = JobCard.create(window, { onPanel: () => {}, details: true });   // the panel has the room: show everything
     out.appendChild(ui.host);
     ui.render({ phase: 'loading' });
     const mine = ui;

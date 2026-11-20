@@ -64,6 +64,13 @@ module.exports = (test, load) => {
     dom.window.document.getElementById('x').appendChild(ui.host);
     ui.render({ phase: 'result', data: { result: JF.analyze(JP.parse(job), me, { now: new Date('2026-03-01') }), job } });
     const root = ui.host.shadowRoot;
+    assert.ok(/Show details · /.test(root.textContent) && !/Eligibility check/.test(root.textContent), 'compact by default: the page stays readable');
+    assert.strictEqual(root.querySelectorAll('.meter').length, 3);
+    root.querySelector('button.more').click();
+    assert.ok(/Eligibility check/.test(root.textContent) && /Hide details/.test(root.textContent));
+    root.querySelector('button[aria-expanded="true"]:not(.x)').click();
+    assert.ok(!/Eligibility check/.test(root.textContent));
+    ui.setDetails(true);
     assert.match(root.querySelector('.pill').textContent, /fit|applying/i);
     assert.strictEqual(root.querySelectorAll('.meter').length, 3);
     assert.ok(root.textContent.includes('Eligibility check') && /2026 graduates/.test(root.textContent) && root.querySelector('.q'));
@@ -95,7 +102,9 @@ module.exports = (test, load) => {
     const t = setup();
     t.ctl.tick(); await tick(40);
     assert.ok(t.host(), 'card present');
-    assert.strictEqual(t.host().nextElementSibling.tagName, 'SECTION', 'it sits right above the description section');
+    assert.strictEqual(t.host().parentElement.tagName, 'SECTION', 'it sits inside the description area, in the normal page flow');
+    assert.strictEqual(t.host().nextElementSibling.id, 'job-details', 'right above the description text');
+    assert.ok(!t.host().closest('header, [style*="sticky"], [style*="fixed"]'), 'never inside a sticky or fixed header');
     assert.deepStrictEqual(t.sent.map(m => m.action), ['analyzeJob']);
     assert.ok(t.sent[0].job.description.includes('Python, SQL and Excel'));
     assert.match(t.host().shadowRoot.textContent, /Add your resume|fit|applying/i);
@@ -125,7 +134,7 @@ module.exports = (test, load) => {
     const none = setup({ html: '<main><p>Search results</p></main>', url: 'https://www.linkedin.com/jobs/search/' });
     none.ctl.tick(); none.ctl.tick(); none.ctl.tick(); none.ctl.tick();
     assert.strictEqual(none.host(), null);
-    const bad = setup({ html: '<main><p>Loading…</p></main>', url: 'https://www.linkedin.com/jobs/view/123/' });
+    const bad = setup({ html: '<main><div class="jobs-search__job-details--container"><p>Loading…</p></div></main>', url: 'https://www.linkedin.com/jobs/view/123/' });
     bad.ctl.tick(); bad.ctl.tick(); assert.strictEqual(bad.host(), null, 'not yet: the page may still be loading');
     bad.ctl.tick(); assert.ok(bad.host()); assert.match(bad.host().shadowRoot.textContent, /could not read this job/);
     assert.strictEqual(bad.sent.length, 0);
@@ -146,5 +155,20 @@ module.exports = (test, load) => {
     const btn = [...t.host().shadowRoot.querySelectorAll('button')].find(b => /Panel/.test(b.textContent));
     btn.click(); await tick(10);
     assert.deepStrictEqual(t.sent.map(m => m.action), ['analyzeJob', 'openPanel']);
+  });
+
+  test('jobwatch: the Jobs home page and search results with NO job open get nothing, even when the page is full of job-like words', async () => {
+    const feed = '<main><h1>Jobs based on your preferences</h1><p>Edit preferences to include industries, skills and experience to see more relevant jobs. Responsibilities, requirements and qualifications vary. ' + 'Software Engineer at Apple, Hyderabad. 4 connections work here. '.repeat(20) + '</p></main>';
+    for (const url of ['https://www.linkedin.com/jobs/', 'https://www.linkedin.com/jobs/search/?keywords=python', 'https://www.linkedin.com/jobs/collections/recommended/']) {
+      const t = setup({ html: feed, url });
+      assert.strictEqual(JS.scrape(t.d, t.w.location).ok, false, url);
+      for (let i = 0; i < 5; i++) t.ctl.tick();
+      await tick(20);
+      assert.strictEqual(t.host(), null, url + ': no card');
+      assert.strictEqual(t.sent.length, 0, url + ': nothing was analysed');
+    }
+    const sel = setup({ html: PAGE, url: 'https://www.linkedin.com/jobs/collections/recommended/?currentJobId=4012345678' });
+    assert.strictEqual(JS.scrape(sel.d, sel.w.location).ok, true, 'a job picked in the list is in the address');
+    assert.strictEqual(JS.scrape(mk(PAGE, 'https://www.linkedin.com/jobs/search-results/?jobId=777').window.document, { href: 'https://www.linkedin.com/jobs/search-results/?jobId=777' }).key, '777');
   });
 };
