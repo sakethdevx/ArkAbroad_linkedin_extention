@@ -231,7 +231,7 @@
     win.__outreachNoteFill = { version: VERSION, ctl };
 
     const view = (win.PageComposer && win.DraftRequest)
-      ? win.PageComposer.factory(win, { chrome: win.chrome, Request: win.DraftRequest, Approach: win.Approach, Cache: typeof Cache !== 'undefined' ? Cache : null, limitOf, currentText, fillBox })
+      ? win.PageComposer.factory(win, { chrome: win.chrome, Request: win.DraftRequest, Approach: win.Approach, OnDevice: win.OnDevice, Cache: typeof Cache !== 'undefined' ? Cache : null, limitOf, currentText, fillBox })
       : null;
     const modeFrom = (r) => (['smart', 'button', 'off'].includes(r.pageMode) ? r.pageMode : (r.noteFill === false ? 'off' : 'smart'));   // older installs only had the on/off switch
     const apply = (next) => {

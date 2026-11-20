@@ -50,6 +50,7 @@
         "utils/request.js",
         "utils/person.js",
         "utils/cache.js",
+        "utils/ondevice.js",
         "utils/pagecomposer.js",
         "utils/notefill.js"
       ],

@@ -5,10 +5,10 @@ const path = require('path');
 
 module.exports = (test, load) => {
   const SRC = fs.readFileSync(path.join(__dirname, '../utils/pagecomposer.js'), 'utf8').replace(/\/\/.*$/gm, '');
-  const ALLOWED = ['scrapeProfile', 'pageState', 'generateMessage', 'openPanel'];
+  const ALLOWED = ['scrapeProfile', 'pageState', 'generateMessage', 'openPanel', 'BUILD_PROMPT', 'FINISH_DRAFTS'];
 
-  test('pagecomposer: the card may only ask the background for four things, never touches the network, and has no way to click', () => {
-    const actions = [...SRC.matchAll(/action:\s*'([A-Za-z]+)'/g)].map(m => m[1]);
+  test('pagecomposer: the card may only ask the background for six things, never touches the network, and has no way to click', () => {
+    const actions = [...SRC.matchAll(/(?:action|type):\s*'([A-Za-z_]+)'/g)].map(m => m[1]).filter(a => a !== 'button' && a !== 'tab');
     assert.ok(actions.length >= 4);
     actions.forEach(a => assert.ok(ALLOWED.includes(a), 'unexpected message: ' + a));
     assert.ok(!/\bfetch\(|XMLHttpRequest|sendBeacon|WebSocket/.test(SRC), 'no network of its own');
@@ -27,7 +27,7 @@ module.exports = (test, load) => {
   const SENDER = { schools: ['Vellore Institute of Technology'], employers: [], skills: ['Python'], city: '', intro: 'final-year CS student', projects: [], experience: [], education: [] };
   const drafts = (tag) => ({ success: true, source: tag === 'ai' ? 'ai' : 'template', variants: [1, 2, 3].map(i => ({ text: `Hi Aryan, ${tag} draft ${i}. Open to a quick chat?`, source: tag === 'ai' ? 'ai' : 'template', because: { hook: { kind: 'school', label: 'Vellore Institute of Technology' }, credential: { kind: 'intro' } } })) });
 
-  function setup({ html = DIALOG, ai = false, scrape, generate, stored = {}, box } = {}) {
+  function setup({ html = DIALOG, ai = false, scrape, generate, stored = {}, box, onDevice = null, build, finish, genDelay = 5 } = {}) {
     const dom = new JSDOM(`<body><div id="out">${html}</div></body>`, { runScripts: 'outside-only', url: 'https://www.linkedin.com/in/aryan/' });
     const w = dom.window, d = w.document, sent = [], clicks = [], added = [], store = { userName: 'Saketh Jangala', userBio: '', senderProfile: SENDER, prefs: { format: 'note' }, ...stored };
     d.querySelectorAll('button').forEach(b => b.addEventListener('click', () => clicks.push(b.getAttribute('aria-label') || b.textContent.trim())));
@@ -36,11 +36,13 @@ module.exports = (test, load) => {
         if (m.action === 'pageState') return cb({ success: true, aiReady: ai, providerName: 'Groq', host: 'api.groq.com' });
         if (m.action === 'scrapeProfile') return cb(scrape ? scrape() : { success: true, data: PROFILE });
         if (m.action === 'generateMessage') return cb(generate ? generate(m.data) : drafts(m.data.forceFree ? 'free' : 'ai'));
+        if (m.type === 'BUILD_PROMPT') return cb(build ? build(m.payload) : { success: true, system: 'S', user: 'U', schema: {} });
+        if (m.type === 'FINISH_DRAFTS') return cb(finish ? finish(m.payload) : { success: true, polished: 3, variants: [1, 2, 3].map(i => ({ text: `Hi Aryan, local draft ${i}. Open to a quick chat?`, source: 'ondevice' })) });
         cb({ success: true });
-      }, 5); } },
+      }, m.action === 'generateMessage' ? genDelay : 5); } },
       storage: { local: { get: (k, cb) => cb({ ...store }), set: (o, cb) => { Object.assign(store, o); cb && cb(); } } }
     };
-    const deps = { chrome, Request: R, Approach: A, Cache: { addContact: (c) => added.push(c) }, limitOf: N.limitOf, currentText: N.currentText, fillBox: N.fillBox };
+    const deps = { chrome, Request: R, Approach: A, OnDevice: onDevice, Cache: { addContact: (c) => added.push(c) }, limitOf: N.limitOf, currentText: N.currentText, fillBox: N.fillBox };
     const ctl = N.create(w, { view: PC.factory(w, deps) });
     ctl.scan();
     const host = () => d.querySelector('[data-outreach-composer]');
@@ -120,21 +122,72 @@ module.exports = (test, load) => {
     assert.deepStrictEqual(t.clicks, []);
   });
 
-  test('pagecomposer: the AI button exists only when AI is ready, names the provider, sends only when pressed, and a failure keeps the free drafts', async () => {
-    const s = setup({ ai: true }); await s.until(() => s.$$('.tab').length === 3);
-    const ai = s.btn('Write with AI');
-    assert.ok(ai); assert.match(ai.textContent, /Groq/); assert.match(ai.title, /api\.groq\.com/);
-    assert.strictEqual(s.sent.filter(m => m.action === 'generateMessage' && !m.data.forceFree).length, 0, 'nothing went to an AI until the button was pressed');
-    ai.click();
-    await s.until(() => /ai draft 1/.test((s.$('.draft') || {}).textContent || ''));
-    assert.ok(!s.sent.filter(m => m.action === 'generateMessage').at(-1).data.forceFree);
-    assert.match(s.$('.foot').textContent, /Written by Groq/);
-    const f = setup({ ai: true, generate: (d) => (d.forceFree ? drafts('free') : { success: true, variants: drafts('free').variants, source: 'template', aiError: 'Groq is busy.' }) });
-    await f.until(() => f.$$('.tab').length === 3);
-    f.btn('Write with AI').click();
+  test('pagecomposer: in AI mode the AI writes the drafts directly (no free pass first, no extra click); chips ask the AI again; a failure falls back to free drafts with the reason', async () => {
+    const s = setup({ ai: true, genDelay: 150 });
+    assert.ok(await s.until(() => /Writing with Groq from a short summary/.test((s.$('.foot') || {}).textContent || ''), 800), 'the card says which AI is writing');
+    await s.until(() => s.$$('.tab').length === 3);
+    const gens = () => s.sent.filter(m => m.action === 'generateMessage');
+    assert.strictEqual(gens().length, 1);
+    assert.ok(!gens()[0].data.forceFree, 'AI mode: the AI is asked directly');
+    assert.match(s.$('.draft').textContent, /ai draft 1/);
+    assert.match(s.$('.foot').textContent, /Written by Groq from a short summary of this profile/);
+    assert.ok(!s.btn('Write with AI'), 'there is no AI button to press: it is already on');
+    s.$$('.chip').find(b => b.textContent === 'Job').click();
+    assert.match(s.$('.foot').textContent, /Writing with Groq/, 'the card shows it is asking again');
+    await s.until(() => gens().length === 2, 2000);
+    assert.strictEqual(gens().at(-1).data.messageType, 'Job');
+    assert.ok(!gens().at(-1).data.forceFree);
+    await s.until(() => s.$$('.tab').length === 3);
+    s.btn('Free drafts instead').click();
+    await s.until(() => gens().length === 3);
+    assert.strictEqual(gens().at(-1).data.forceFree, true, 'one click returns to on-device-only free drafts');
+    await s.until(() => /free draft 1/.test((s.$('.draft') || {}).textContent || ''));
+    assert.match(s.$('.foot').textContent, /Free drafts are made on this device/);
+    assert.ok(s.btn('Use Groq again'));
+    const f = setup({ ai: true, generate: (d) => (d.forceFree ? drafts('free') : { success: true, source: 'template', variants: drafts('free').variants, aiError: 'Groq is busy.' }) });
     await f.until(() => f.$('.note.warn'));
     assert.match(f.$('.note.warn').textContent, /Groq is busy\. Showing free drafts/);
     assert.match(f.$('.draft').textContent, /free draft 1/);
+    assert.deepStrictEqual(f.clicks, []);
+  });
+
+  const LOCAL = (over = {}) => ({ status: async () => 'available', polish: async () => ['a', 'b', 'c'], ...over });
+
+  test('pagecomposer: Free mode + on-device AI on → free drafts at once, then the built-in AI polishes them in place; nothing is sent to any cloud', async () => {
+    const s = setup({ stored: { onDevice: true }, onDevice: LOCAL() });
+    await s.until(() => s.$$('.tab').length === 3);
+    assert.ok(s.sent.filter(m => m.action === 'generateMessage').every(m => m.data.forceFree === true), 'no cloud AI in Free mode');
+    await s.until(() => /local draft 1/.test((s.$('.draft') || {}).textContent || ''));
+    assert.match(s.$('.draft').textContent, /local draft 1/);
+    assert.match(s.$('.foot').textContent, /Polished on this device by Chrome.s built-in AI; nothing left your computer/);
+    assert.ok(s.sent.some(m => m.type === 'BUILD_PROMPT') && s.sent.some(m => m.type === 'FINISH_DRAFTS'));
+    assert.ok(s.btn('Free drafts instead'));
+    s.btn('Use this draft').click();
+    assert.match(s.d.getElementById('custom-message').value, /local draft 1/);
+    assert.deepStrictEqual(s.clicks, []);
+  });
+
+  test('pagecomposer: on-device polish never blocks or breaks: a failure keeps the free drafts; a newer choice makes an old result stale; an unreachable model says so', async () => {
+    const bad = setup({ stored: { onDevice: true }, onDevice: LOCAL({ polish: async () => null }) });
+    await bad.until(() => bad.$$('.tab').length === 3);
+    await tick(80);
+    assert.match(bad.$('.draft').textContent, /free draft 1/);
+    assert.ok(!/Polishing/.test(bad.$('.foot').textContent), 'the polishing state ends');
+    let release; const gate = new Promise(r => { release = r; });
+    const slow = setup({ stored: { onDevice: true }, onDevice: LOCAL({ polish: async () => { await gate; return ['a']; } }) });
+    await slow.until(() => /Polishing it on this device/.test((slow.$('.foot') || {}).textContent || ''));
+    slow.$$('.chip').find(b => b.textContent === 'Job').click();       // the user changes the goal while the model is thinking
+    release(); await tick(80);
+    await slow.until(() => slow.$$('.tab').length === 3);
+    assert.ok(!/local draft/.test(slow.$('.draft').textContent), 'the old polish must not replace drafts for a different goal');
+    const none = setup({ stored: { onDevice: true }, onDevice: LOCAL({ status: async () => 'unsupported' }) });
+    await none.until(() => none.$$('.tab').length === 3);
+    assert.match(none.$('.draft').textContent, /free draft 1/);
+    assert.match(none.$('.foot').textContent, /On-device AI is on, but Chrome does not offer it to this page/);
+    assert.ok(!none.sent.some(m => m.type === 'BUILD_PROMPT'));
+    const off = setup({ onDevice: LOCAL() });      // the setting is off: the model is never touched
+    await off.until(() => off.$$('.tab').length === 3);
+    assert.ok(!off.sent.some(m => m.type === 'BUILD_PROMPT'));
   });
 
   test('pagecomposer: when the profile cannot be read it says so, offers Try again, and still offers the draft from the side panel', async () => {

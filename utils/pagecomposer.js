@@ -6,7 +6,8 @@
 //   • asks the background worker for drafts (free drafts are made on this device; the AI button is a separate, labelled click);
 //   • types a draft into the box when YOU press "Use this draft".
 // It never clicks anything on the page: not Send, not Cancel, not "Add a note". You read the text and press Send yourself.
-// Messages it may send to the background worker: scrapeProfile, pageState, generateMessage, openPanel (and nothing else).
+// Messages it may send to the background worker: scrapeProfile, pageState, generateMessage, openPanel, BUILD_PROMPT, FINISH_DRAFTS (nothing else).
+// The engine is the best one the user switched on: their AI (AI mode) → Chrome's on-device AI (Free mode + Free+) → free drafts, which are always the fallback.
 //   PageComposer.factory(win, deps) → (box, ctl) => ui      (deps are injectable so this can be tested without LinkedIn)
 
 (function (root, factory) {
@@ -87,7 +88,7 @@
         });
       } catch (e) { lastSendError = String((e && e.message) || 'Extension context invalidated'); res(null); }
     });
-    const getStored = () => new Promise(res => { try { D.chrome.storage.local.get(['userName', 'userBio', 'senderProfile', 'prefs'], r => res(r || {})); } catch (_) { res({}); } });
+    const getStored = () => new Promise(res => { try { D.chrome.storage.local.get(['userName', 'userBio', 'senderProfile', 'prefs', 'onDevice'], r => res(r || {})); } catch (_) { res({}); } });
     const setPrefs = (patch) => { try { D.chrome.storage.local.get(['prefs'], r => D.chrome.storage.local.set({ prefs: { ...((r && r.prefs) || {}), ...patch } })); } catch (_) { /* a convenience */ } };
 
     const because = (b) => {
@@ -110,7 +111,7 @@
       anchor.insertAdjacentElement('beforebegin', host);
 
       const S = { phase: 'loading', box, format: box.kind === 'textarea' ? 'note' : 'message', purpose: 'Networking', tone: 'Neutral', seed: 0, drafts: [], sel: 0,
-        profile: null, sender: null, stored: {}, shared: null, ai: null, aiBusy: false, aiNote: '', status: '', statusKind: '', token: 0, lastFilled: '', confirm: false, hidden: false, panelDraft: '' };
+        profile: null, sender: null, stored: {}, shared: null, ai: null, aiBusy: false, aiNote: '', engine: 'free', preferFree: false, polishing: false, odStatus: '', loadingNote: '', status: '', statusKind: '', token: 0, lastFilled: '', confirm: false, hidden: false, panelDraft: '' };
       const ui = { host, box, smart: true };
 
       const root = el('div', { class: 'card', role: 'group', 'aria-label': 'Outreach AI drafts' });
@@ -147,12 +148,12 @@
 
         if (S.phase === 'loading') {
           root.append(el('div', { class: 'skel', 'aria-hidden': 'true' }, [el('div', { class: 'bar' }), el('div', { class: 'bar' }), el('div', { class: 'bar' })]),
-            el('p', { class: 'foot', text: first ? `Reading ${first}’s profile on this device…` : 'Reading this profile on this device…' }), live);
+            el('p', { class: 'foot', text: S.loadingNote || (first ? `Reading ${first}’s profile on this device…` : 'Reading this profile on this device…') }), live);
           return;
         }
 
-        root.appendChild(chips('Goal', PURPOSES, S.purpose, (v) => { S.purpose = v; S.ai = null; setPrefs({ messageType: v }); regenerate(); }));
-        root.appendChild(chips('Tone', TONES, S.tone, (v) => { S.tone = v; S.ai = null; setPrefs({ tone: v }); regenerate(); }));
+        root.appendChild(chips('Goal', PURPOSES, S.purpose, (v) => { S.purpose = v; setPrefs({ messageType: v }); regenerate(); }));
+        root.appendChild(chips('Tone', TONES, S.tone, (v) => { S.tone = v; setPrefs({ tone: v }); regenerate(); }));
 
         if (S.phase === 'error') {
           root.appendChild(el('p', { class: 'note warn', text: S.error || 'I couldn’t read this profile here.' }));
@@ -201,18 +202,23 @@
         use.addEventListener('click', onUse);
         const actions = el('div', { class: 'actions' }, [use]);
         const more = el('button', { class: 'ghost', type: 'button', text: 'New ideas ↻' });
-        more.addEventListener('click', () => { S.seed += 3; S.ai = null; regenerate(); });
+        more.addEventListener('click', () => { S.seed += 3; regenerate(); });
         actions.appendChild(more);
-        if (S.stored.ai && S.stored.ai.ready) {
-          const ai = el('button', { class: 'ghost', type: 'button', text: S.aiBusy ? 'Writing with AI…' : `✨ Write with AI · ${S.stored.ai.name}`, title: `Sends a short summary of this profile and your details to ${S.stored.ai.host}. Your key stays in the extension.` });
-          if (S.aiBusy) ai.disabled = true;
-          ai.addEventListener('click', onAi);
-          actions.appendChild(ai);
+        if (S.engine !== 'free') {   // the smart engine runs by itself; this switches it off or on for this box
+          const label = S.preferFree ? (S.engine === 'ai' ? `✨ Use ${S.stored.ai.name} again` : '✨ Polish on this device') : 'Free drafts instead';
+          const sw = el('button', { class: 'ghost', type: 'button', text: label, title: S.engine === 'ai' ? `AI drafts send a short summary of this profile and your details to ${S.stored.ai.host}. Free drafts stay on this device.` : 'On-device AI runs inside Chrome; nothing leaves this computer.' });
+          sw.addEventListener('click', () => { S.preferFree = !S.preferFree; regenerate(true); });
+          actions.appendChild(sw);
         }
         root.appendChild(actions);
 
         const tip = !S.sender ? ' Tip: add your resume in the Outreach AI panel for sharper drafts.' : '';
-        root.appendChild(el('p', { class: 'foot', text: (d && d.source === 'ai' ? `Written by ${S.stored.ai ? S.stored.ai.name : 'AI'} from a short summary. ` : 'Free drafts are made on this device. ') + 'You press Send yourself.' + tip }));
+        let lead = 'Free drafts are made on this device. ';
+        if (d && d.source === 'ai') lead = `Written by ${S.stored.ai ? S.stored.ai.name : 'AI'} from a short summary of this profile. `;
+        else if (d && d.source === 'ondevice') lead = 'Polished on this device by Chrome’s built-in AI; nothing left your computer. ';
+        else if (S.polishing) lead = 'Free draft ready. Polishing it on this device… ';
+        else if (S.odWanted && S.engine === 'free' && S.odStatus !== 'available') lead = 'Free drafts. On-device AI is on, but Chrome does not offer it to this page. ';
+        root.appendChild(el('p', { class: 'foot', text: lead + 'You press Send yourself.' + tip }));
         root.appendChild(live);
       }
 
@@ -251,36 +257,58 @@
       function applyResp(resp, source) {
         const vs = resp && resp.variants && resp.variants.length ? resp.variants : null;
         if (!vs) return false;
-        S.drafts = vs.slice(0, 3).map((v, i) => ({ text: v.text, source: v.source, label: String(i + 1), src: v.source === 'ai' ? 'Written by AI' : (v.because ? `Built on: ${because(v.because)}` : '') }));
-        if (S.panelDraft && source !== 'ai') S.drafts.push({ text: S.panelDraft, source: 'panel', label: 'Panel', src: 'From your side panel' });
+        S.drafts = vs.slice(0, 3).map((v, i) => ({ text: v.text, source: v.source, label: String(i + 1), src: v.source === 'ai' ? 'Written by AI' : v.source === 'ondevice' ? 'Polished on this device' : (v.because ? `Built on: ${because(v.because)}` : '') }));
+        if (S.panelDraft) S.drafts.push({ text: S.panelDraft, source: 'panel', label: 'Panel', src: 'From your side panel' });
         S.sel = 0; S.confirm = false;
         return true;
       }
 
       let regenTimer = null;
-      function regenerate() { S.status = ''; clearTimeout(regenTimer); regenTimer = setTimeout(generateFree, 120); draw(); }
-
-      async function generateFree() {
-        const my = ++S.token;
-        S.shared = D.Request.shared(S.sender, S.profile);
-        const data = D.Request.generateData({ profile: S.profile, settings: S.stored, purpose: S.purpose, tone: S.tone, format: S.format, seed: S.seed, shared: S.shared, forceFree: true });
-        const resp = await send({ action: 'generateMessage', data });
-        if (my !== S.token) return;   // a newer choice replaced this one
-        if (!applyResp(resp, 'free')) { S.phase = 'error'; S.error = 'I couldn’t write drafts just now.'; } else S.phase = 'ready';
-        draw(); if (S.phase === 'ready') announce(`${S.drafts.length} drafts ready`);
+      const smart = () => S.engine === 'ai' && !S.preferFree;
+      // a free draft is instant (120 ms); an AI request costs something, so a quick run of clicks is sent once
+      function regenerate(now) {
+        S.status = ''; S.aiNote = ''; clearTimeout(regenTimer);
+        S.phase = 'loading'; S.loadingNote = smart() ? `Writing with ${S.stored.ai.name} from a short summary…` : '';
+        regenTimer = setTimeout(generate, now ? 0 : (smart() ? 450 : 120));
+        draw();
       }
 
-      async function onAi() {
-        if (S.aiBusy) return;
-        S.aiBusy = true; S.aiNote = ''; draw();
+      const dataFor = (forceFree) => D.Request.generateData({ profile: S.profile, settings: S.stored, purpose: S.purpose, tone: S.tone, format: S.format, seed: S.seed, shared: S.shared, forceFree });
+
+      // Best output the user has chosen: their AI (AI mode) → on-device AI (Free mode + Free+) → free drafts. Free drafts are always the fallback.
+      async function generate() {
         const my = ++S.token;
-        const data = D.Request.generateData({ profile: S.profile, settings: S.stored, purpose: S.purpose, tone: S.tone, format: S.format, seed: S.seed, shared: S.shared });
+        S.polishing = false; S.loadingNote = smart() ? `Writing with ${S.stored.ai.name} from a short summary…` : '';
+        S.shared = D.Request.shared(S.sender, S.profile);
+        if (S.phase === 'loading') draw();   // say which engine is working ("Writing with Groq…")
+        const data = dataFor(!smart());
         const resp = await send({ action: 'generateMessage', data });
-        if (my !== S.token) { S.aiBusy = false; return; }
-        S.aiBusy = false;
-        if (resp && resp.source === 'ai' && applyResp(resp, 'ai')) { S.ai = true; announce('AI drafts ready'); }
-        else S.aiNote = (resp && resp.aiError) ? `${resp.aiError} Showing free drafts.` : 'AI didn’t answer this time. Showing free drafts.';
-        draw();
+        if (my !== S.token) return;   // a newer choice replaced this one
+        if (!applyResp(resp, 'free')) { S.phase = 'error'; S.error = 'I couldn’t write drafts just now.'; draw(); return; }
+        S.phase = 'ready'; S.loadingNote = '';
+        if (smart() && !(resp.source === 'ai')) S.aiNote = resp.aiError ? `${resp.aiError} Showing free drafts.` : 'AI didn’t answer this time. Showing free drafts.';
+        const polish = S.engine === 'ondevice' && !S.preferFree && resp.source === 'template';
+        S.polishing = polish;
+        draw(); announce(`${S.drafts.length} drafts ready`);
+        if (polish) polishLocal(my, dataFor(false));
+      }
+
+      // on-device AI (Chrome's built-in model) polishes the instant free drafts in place; any failure keeps the free ones
+      async function polishLocal(my, data) {
+        const done = () => { if (my === S.token) { S.polishing = false; draw(); } };
+        const built = await send({ type: 'BUILD_PROMPT', payload: data });
+        if (my !== S.token) return;
+        if (!built || !built.success) return done();
+        const raw = await D.OnDevice.polish({ system: built.system, user: built.user, schema: built.schema }, { timeoutMs: 25000 });
+        if (my !== S.token) return;
+        if (!raw) return done();
+        const fin = await send({ type: 'FINISH_DRAFTS', payload: { data, raw } });
+        if (my !== S.token) return;
+        if (!fin || !fin.success || !fin.polished) return done();
+        const keep = S.sel;
+        applyResp(fin, 'ondevice');
+        if (keep < S.drafts.length) S.sel = keep;
+        S.polishing = false; draw(); announce('Polished on this device');
       }
 
       async function start(force) {
@@ -291,6 +319,9 @@
         if (!page && STALE.test(lastSendError)) { S.phase = 'error'; S.stale = true; S.error = 'Outreach AI was just reloaded or updated. Refresh this LinkedIn page to reconnect.'; draw(); return; }
         S.stored = { userName: stored.userName || '', userBio: stored.userBio || '',
           ai: page && page.success && page.aiReady ? { ready: true, name: page.providerName, host: page.host } : null };
+        S.odWanted = !!stored.onDevice;
+        S.odStatus = S.odWanted && D.OnDevice ? await D.OnDevice.status() : 'unsupported';
+        S.engine = S.stored.ai ? 'ai' : (S.odStatus === 'available' ? 'ondevice' : 'free');
         S.sender = stored.senderProfile && D.Request.hasResumeInfo(stored.senderProfile) ? stored.senderProfile : null;
         S.senderRaw = stored.senderProfile || null;
         const prefs = stored.prefs || {};
@@ -311,13 +342,13 @@
           profile = r.data; profileCache.set(key, profile);
         }
         S.profile = profile;
-        await generateFree();
+        await generate();
       }
 
       ui.onPanelDraft = (d) => {
         S.panelDraft = d && d.text ? d.text : '';
         S.drafts = S.drafts.filter(x => x.source !== 'panel');
-        if (S.panelDraft && S.phase === 'ready' && S.ai === null) S.drafts.push({ text: S.panelDraft, source: 'panel', label: 'Panel', src: 'From your side panel' });
+        if (S.panelDraft && S.phase === 'ready') S.drafts.push({ text: S.panelDraft, source: 'panel', label: 'Panel', src: 'From your side panel' });
         if (S.sel >= S.drafts.length) S.sel = 0;
         if (S.phase !== 'loading') draw();
       };
