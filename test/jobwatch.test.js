@@ -144,6 +144,20 @@ module.exports = (test, load) => {
     t.ctl.destroy();
   });
 
+  test('jobwatch: on the search layout the same title also sits in the job list on the left; the card still goes in the details pane under the top card', async () => {
+    const list = '<ul class="results"><li class="job-card"><a href="/jobs/view/4012345678/">Data Analyst Intern</a><p>Initech</p><p>Chennai</p></li><li class="job-card"><a href="/jobs/view/1/">Other job</a></li></ul>';
+    const html = '<main><div class="two-pane">' + list + '<div class="detail">' + PAGE.replace(/^<main>|<\/main>$/g, '') + '</div></div></main>';
+    const t = setup({ html, url: 'https://www.linkedin.com/jobs/search/?currentJobId=4012345678' });
+    t.ctl.tick(); await tick(30);
+    assert.ok(t.host(), 'card present');
+    assert.ok(!t.host().closest('ul, li'), 'never inside the job list');
+    assert.ok(t.host().closest('.detail'), 'inside the details pane');
+    assert.ok(t.host().previousElementSibling.querySelector('h1.job-details-jobs-unified-top-card__job-title'), 'right under the top card');
+    assert.ok(t.host().nextElementSibling.classList.contains('premium'), 'above the Premium box');
+    assert.ok(!/Other job/.test(t.sent[0].job.rawText), 'the top-card text does not include the job list');
+    t.ctl.destroy();
+  });
+
   test('jobwatch: a sticky copy of the title (LinkedIn\'s collapsed header) is skipped; the card still goes under the real top card', async () => {
     const html = PAGE.replace('<div class="feedback">', '<div class="sticky-copy" style="position:sticky;top:0"><span>Data Analyst Intern</span></div><div class="feedback">');
     const t = setup({ html });

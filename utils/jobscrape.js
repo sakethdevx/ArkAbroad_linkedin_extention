@@ -95,11 +95,18 @@
     return parts.length >= 3 && !/linkedin/i.test(parts[1]) ? parts[1] : '';
   }
 
-  // every element whose whole text is the title (the deepest ones only), so the card can be placed right under the top card
-  function titleElement(pane, title) {
-    if (!title) return [];
-    const same = qa(pane, '*').filter(e => e.textContent && flat(e.textContent) === title);
-    return same.filter(e => !same.some(o => o !== e && e.contains(o)));
+  const lca = (a, b) => { const up = new Set(); for (let n = a; n; n = n.parentElement) up.add(n); for (let n = b; n; n = n.parentElement) if (up.has(n)) return n; return null; };
+  const depthOf = (n) => { let d = 0; for (; n && n.parentElement; n = n.parentElement) d++; return d; };
+  // Elements that show the title as a whole, for placing the card under the top card. On the search layout the SAME title also appears in the
+  // list of jobs on the left, so list items are ignored, only copies before the description count, and the copy closest to the description
+  // (the deepest shared ancestor) comes first.
+  function titleElements(doc, title, desc) {
+    if (!title || !doc.body) return [];
+    const small = qa(doc.body, 'a,h1,h2,h3,p,span,div,strong').filter(e => e.children.length <= 3 && (e.textContent || '').length <= title.length + 40 && flat(e.textContent) === title);
+    const deepest = small.filter(e => !small.some(o => o !== e && e.contains(o)));
+    return deepest
+      .filter(e => !desc.contains(e) && (e.compareDocumentPosition(desc) & 4) && !(e.closest && e.closest('li, [data-job-id], [class*="job-card"], [class*="results-list"], [class*="search-results"], [class*="jobs-search-results"]')))
+      .sort((x, y) => depthOf(lca(y, desc)) - depthOf(lca(x, desc)));
   }
 
   function jobIdFrom(loc) {
@@ -124,13 +131,16 @@
       const company = companyFrom(doc, pane);
       const title = titleFrom(doc, pane, id, company, paneLines);
       // the top-card lines ("City, State · 2 days ago · Over 100 applicants", "On-site", "Full-time", "Entry level"), up to LinkedIn's own Premium / About boxes
-      const stop = paneLines.findIndex(l => /^(?:premium|job match|see how you compare|meet the hiring team|about the job)\b/i.test(l));
-      const top = (stop > 0 ? paneLines.slice(0, stop) : paneLines.slice(0, 25)).join('\n').slice(0, 1500);
+      const titleEls = titleElements(doc, title, desc);
+      const tight = titleEls.length ? (lca(titleEls[0], desc) || pane) : pane;   // the details pane itself, not the whole results layout
+      const tightLines = tight === pane ? paneLines : linesOf(tight, 8000);
+      const stop = tightLines.findIndex(l => /^(?:premium|job match|see how you compare|meet the hiring team|about the job)\b/i.test(l));
+      const top = (stop > 0 ? tightLines.slice(0, stop) : tightLines.slice(0, 25)).join('\n').slice(0, 1500);
       const tl = top.split('\n');
       const metaLine = tl.find(l => /\s[·•]\s/.test(l) && /\bago\b|applicants?|clicked apply/i.test(l));   // "India · 4 hours ago · 22 people clicked apply"
       const loc1 = (metaLine ? metaLine.split(/\s[·•]\s/)[0] : '') || (tl.map(l => l.split(/\s[·•]\s/)[0]).find(l => /,\s*[A-Z]/.test(l) && l.length < 80 && l !== title) || '');
       return {
-        ok: true, el: desc, pane, titleEls: titleElement(pane, title), key: id || hash(title + '|' + description.slice(0, 400)),
+        ok: true, el: desc, pane: tight, titleEls, key: id || hash(title + '|' + description.slice(0, 400)),
         job: { title, company, location: flat(loc1), rawText: top, chips: [], description, url: String((loc && loc.href) || '').split('#')[0].slice(0, 300) }
       };
     } catch (e) {
