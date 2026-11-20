@@ -34,6 +34,7 @@
   // a message signs off with the FULL name; if the model used only one part of it (e.g. just the surname), complete it
   function fixSignoff(t, { format, nameWords, senderName }) {
     if (format !== 'message' || !nameWords.length) return t;
+    if (senderName && TAIL_SIGNOFF.test(t.replace(/\s+$/, ''))) return t.replace(/\s+$/, '') + '\n' + senderName;   // "Kind regards," alone: add the name
     const lines = t.split('\n');
     const last = lines[lines.length - 1].trim();
     const words = last.toLowerCase().replace(/[^\p{L}\s'-]/gu, ' ').split(/\s+/).filter(Boolean);

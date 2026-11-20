@@ -117,6 +117,13 @@ module.exports = (test, load) => {
     assert.strictEqual(C.checklist('Hi Jane, would you be open to a quick chat?', ctx).find(i => i.id === 'cliche').ok, true);
   });
 
+  test('a role line scraped as a "post" is never quoted, and gives no "like their post" hint', () => {
+    const A = load('utils/approach.js');
+    const ctx = { profile: { firstName: 'Kumesh', currentCompany: 'ZeroDrift', recentPosts: ['Founding Principal PM at ZeroDrift'] }, sender: { intro: 'a B.Tech student' }, overlaps: [], messageType: 'Networking', tone: 'Neutral', format: 'note' };
+    for (let seed = 0; seed < 6; seed++) C.compose(ctx, { seed }).variants.forEach(v => assert.ok(!/recent post|Founding Principal/.test(v.text), v.text));
+    assert.ok(!/recent posts/.test(A.approach({ isConnection: false, overlaps: [], recentPosts: ['Founding Principal PM at ZeroDrift'], purpose: 'Networking' }) || ''));
+  });
+
   test('checklist: mentionsFor collects labels, company, school, skills', () => {
     const m = C.mentionsFor({ currentCompany: 'Globex', currentTitle: 'Analyst', educationEntries: [{ school: 'IIT Madras' }], skills: ['Python', 'SQL'] },
       [{ label: 'Python and SQL' }]);

@@ -331,6 +331,16 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
     return { connected: null, degree: '', signal: '' };
   }
 
+  // A short line with no sentence punctuation that reads "<role> at <company>", or that is just their current title/company,
+  // is a profile-card subtitle, not something they wrote ("Founding Principal PM at ZeroDrift"). Real posts are sentences.
+  function looksLikeRoleLine(text, p = {}) {
+    const t = clean(text);
+    if (!t || t.length > 90 || /[.!?]/.test(t.replace(/\.{3}|…/g, ''))) return false;
+    const low = t.toLowerCase();
+    const has = (v) => { const x = clean(v).toLowerCase(); return x.length >= 3 && low.includes(x); };
+    return /^(?:\S+\s+){0,5}\S+\s(?:at|@)\s(?:\S+\s*){1,5}$/i.test(t) || has(p.currentCompany) || has(p.currentTitle) || /\s[·•]\s/.test(t);
+  }
+
   function buildProfile(parts = {}) {
     const experience = Array.isArray(parts.experience) ? parts.experience : [];
     const fromHeadline = titleCompanyFromHeadline(parts.headline);
@@ -360,7 +370,7 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
       currentCompany,
       location:          clean(parts.location),
       about:             clean(parts.about),
-      recentPosts:       (parts.recentPosts || []).slice(0, 3),
+      recentPosts:       (parts.recentPosts || []).filter(x => !looksLikeRoleLine(x, { currentTitle, currentCompany })).slice(0, 3),
       experienceEntries: experience.slice(0, 6),
       pastCompanies:     pastCompanies.slice(0, 4),
       educationEntries:  (parts.education || []).slice(0, 3),
@@ -448,6 +458,6 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
     parseRoleLines, parseExperienceBlocks, parseExperienceLines,
     parseEducationBlocks, parseEducationLines, parseSkills,
     titleCompanyFromHeadline, nameFromPageTitle, nameFromUrl,
-    isLinkedInImage, pickProfilePhoto, parseConnectionDegree, detectConnection, buildProfile, assessQuality, parseProfileText, headingKey, plausibleLabel, extractPostText
+    isLinkedInImage, pickProfilePhoto, parseConnectionDegree, detectConnection, buildProfile, assessQuality, parseProfileText, headingKey, plausibleLabel, extractPostText, looksLikeRoleLine
   };
 });

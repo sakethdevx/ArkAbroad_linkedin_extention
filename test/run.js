@@ -212,6 +212,10 @@ test('regression: post text excludes author header, headline, time, counts and "
   assert.strictEqual(PP.extractPostText(card('Proud to have contributed as a Volunteer at Microsoft... more'), ctx), 'Proud to have contributed as a Volunteer at Microsoft');
   assert.strictEqual(PP.extractPostText(['Saketh Jangala', 'Amazon ML Summer School ’26 Mentee | AI/ML Intern | Google…'], ctx), '');
   assert.strictEqual(PP.extractPostText(['Saketh Jangala', 'Founder & CEO, ZeroDrift · The…'], ctx), '', 'a card subtitle with a middle dot is not a post');
+  const roleCtx = { currentCompany: 'ZeroDrift', currentTitle: 'Founder & CEO' };
+  assert.ok(PP.looksLikeRoleLine('Founding Principal PM at ZeroDrift', roleCtx) && PP.looksLikeRoleLine('Founder & CEO, ZeroDrift', roleCtx), 'a role line is not a post');
+  assert.ok(!PP.looksLikeRoleLine('Excited to share that our team shipped a new release of the product today.', roleCtx), 'a real post stays');
+  assert.deepStrictEqual(PP.buildProfile({ name: 'Kumesh', headline: 'Founder & CEO, ZeroDrift', recentPosts: ['Founding Principal PM at ZeroDrift', 'We just shipped our first public release today, thank you all.'] }).recentPosts, ['We just shipped our first public release today, thank you all.']);
   assert.strictEqual(PP.extractPostText(['Saketh Jangala', '2,291 followers', 'Posts', 'Create a post'], ctx), '');
   assert.strictEqual(PP.extractPostText(null, ctx), '');
   assert.strictEqual(PP.extractPostText(card('A | B | C | D headline-like line that must not count'), ctx), '');

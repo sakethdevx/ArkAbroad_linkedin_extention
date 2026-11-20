@@ -74,8 +74,12 @@
     }
   }
 
+  // "Founding Principal PM at ZeroDrift" is a profile-card subtitle, never a post (see profile_parse.looksLikeRoleLine)
+  const roleLine = (x, p) => { const t = clean(x); if (!t || t.length > 90 || /[.!?]/.test(t.replace(/\.{3}|…/g, ''))) return false; const low = t.toLowerCase();
+    return /^(?:\S+\s+){0,5}\S+\s(?:at|@)\s(?:\S+\s*){1,5}$/i.test(t) || [p.currentCompany, p.currentTitle].some(v => { const q = clean(v).toLowerCase(); return q.length >= 3 && low.includes(q); }); };
+
   function postHook(p, n, short) {
-    const post = (p.recentPosts || []).find(x => typeof x === 'string' && x.trim() && (x.match(/\s\|\s/g) || []).length < 2 && !/\s[·•]\s/.test(x));   // not a headline or a card subtitle
+    const post = (p.recentPosts || []).find(x => typeof x === 'string' && x.trim() && (x.match(/\s\|\s/g) || []).length < 2 && !/\s[·•]\s/.test(x) && !roleLine(x, p));   // not a headline or a card subtitle
     if (!post) return null;
     const snip = wordClip(post, short ? 40 : 60);
     const dot = /[….!?]$/.test(snip) ? '' : '.';   // no "…”." pile-up when the quote was truncated

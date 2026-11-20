@@ -73,4 +73,9 @@ module.exports = (test, load) => {
     const both = fin(['Hi Priya,\nWould you chat with me?'], { requireAsk: ask.concat([{ re: /\brefer/i, problem: 'does not ask for a referral' }]) });
     assert.deepStrictEqual(both.bad[0].problems, ['does not ask for a referral']);
   });
+
+  test('a message that ends with a bare sign-off gets the sender\'s full name after it', () => {
+    const r = fin(['Hi Priya,\nCould we chat?\nKind regards,'], { format: 'message', maxChars: 500 }).good[0];
+    assert.ok(r.endsWith('Kind regards,\nAsha Menon'), r);
+  });
 };
