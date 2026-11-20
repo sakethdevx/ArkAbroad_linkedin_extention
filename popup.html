@@ -221,6 +221,17 @@
         </div>
       </details>
 
+      <details class="paste-card" id="job-check-card">
+        <summary>Check a job description</summary>
+        <div class="paste-body">
+          <label class="field-label" for="job-paste">Job description</label>
+          <textarea id="job-paste" class="field-textarea" rows="5" spellcheck="false" maxlength="20000"
+            placeholder="Paste a job description from any site (title on the first line works best). It is compared with your resume on this device. Nothing is sent anywhere."></textarea>
+          <button id="job-check-btn" class="btn btn-secondary btn-full" type="button">Check this job</button>
+          <div id="job-check-result" aria-live="polite"></div>
+        </div>
+      </details>
+
     </section>
 
     <!-- ── RECENT tab ── -->
@@ -445,6 +456,7 @@
   <script src="utils/resume.js"></script>
   <script src="utils/person.js"></script>
   <script src="utils/cache.js"></script>
+  <script src="utils/jobcard.js"></script>
   <script src="panel/providers.js"></script>
   <script src="panel/ondevice_ui.js"></script>
   <script src="panel/overlap_ui.js"></script>
@@ -455,6 +467,7 @@
   <script src="panel/followup_ui.js"></script>
   <script src="panel/notefill_ui.js"></script>
   <script src="panel/refine_ui.js"></script>
+  <script src="panel/job_ui.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

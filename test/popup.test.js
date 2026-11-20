@@ -11,7 +11,7 @@ module.exports = (test) => {
   const root = path.join(__dirname, '..');
   const PP = require(path.join(root, 'utils/profile_parse.js'));
   const tick = (n = 40) => new Promise(r => setTimeout(r, n));
-  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/approach.js', 'utils/request.js', 'utils/refine.js', 'utils/compose.js', 'utils/followup.js', 'utils/skills.js', 'utils/resume.js', 'utils/person.js', 'utils/cache.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'panel/followup_ui.js', 'panel/notefill_ui.js', 'panel/refine_ui.js', 'popup.js'];
+  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/approach.js', 'utils/request.js', 'utils/refine.js', 'utils/compose.js', 'utils/followup.js', 'utils/skills.js', 'utils/resume.js', 'utils/person.js', 'utils/cache.js', 'utils/jobcard.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'panel/followup_ui.js', 'panel/notefill_ui.js', 'panel/refine_ui.js', 'panel/job_ui.js', 'popup.js'];
 
   const PRIYA = () => PP.buildProfile({
     name: 'Priya Rao', headline: 'Data Scientist at Globex', location: 'Chennai, India',
@@ -62,6 +62,10 @@ module.exports = (test) => {
             { text: `Hi Priya, we both went to IIT Madras (${m.data.format} #${n}). Open to a chat?`, source: m.data.forceFree ? 'template' : (store.userApiKey ? 'ai' : 'template'), provider: store.userApiKey ? ((store.aiProvider === 'groq' || /^gsk_/.test(store.userApiKey)) ? 'groq' : 'anthropic') : undefined,
               because: { hook: { kind: (m.data.overlaps[0] || {}).kind || 'role', label: (m.data.overlaps[0] || {}).label || '' }, credential: m.data.spotlight ? { kind: 'spotlight', label: m.data.spotlight.title, matches: m.data.spotlight.matches } : { kind: 'intro', label: 'x', matches: [] } } },
             { text: `Draft B #${n}`, source: 'template' }, { text: `Draft C #${n}`, source: 'template' }] });
+        }
+        if (m.action === 'analyzeJob') {
+          (w.__jobAsks = w.__jobAsks || []).push(m);
+          return cb({ success: true, job: { title: 'Backend Intern' }, result: { hasProfile: false, fit: { band: 'Add your resume to see your fit', reason: 'This looks open to freshers.', parts: { skills: 60, level: 70, education: 100 } }, level: { score: 70 }, keyword: { pct: null, formula: 'F. Not an ATS score.' }, eligibility: [{ id: 'experience', status: 'ok', label: 'This is open to freshers.', quote: '' }], skills: { wanted: [{ skill: 'Python' }], matched: [], missingRequired: [{ skill: 'Python' }], missingNice: [] }, tailor: { steps: [], reminder: '' }, watchouts: [], insights: [] } });
         }
         cb({});
       } }
@@ -1054,5 +1058,20 @@ module.exports = (test) => {
     assert.strictEqual(t.$('resume-ai-btn').textContent, 'Re-read my resume with on-device AI');
     await t.click('resume-ai-btn', 400);
     assert.strictEqual(t.resumeBuilds.length, 2);
+  });
+
+  test('popup: Check a job description sends the pasted text to the background only, and draws the Job fit card; too little text is refused', async () => {
+    const t = await boot();
+    t.$('job-check-btn').click(); await tick();
+    assert.match(t.$('job-check-result').textContent, /Paste the job description first/);
+    assert.ok(!(t.w.__jobAsks || []).length);
+    t.$('job-paste').value = 'Backend Intern\n\nWe are hiring freshers who know Python and SQL. 0-1 years experience.';
+    t.$('job-check-btn').click(); await tick(40);
+    assert.strictEqual(t.w.__jobAsks.length, 1);
+    assert.strictEqual(t.w.__jobAsks[0].action, 'analyzeJob'); assert.match(t.w.__jobAsks[0].pasted, /Backend Intern/);
+    const host = t.$('job-check-result').querySelector('[data-outreach-jobfit]');
+    assert.ok(host && /open to freshers/.test(host.shadowRoot.textContent));
+    assert.strictEqual(t.$('job-check-btn').disabled, false);
+    assert.deepStrictEqual(t.errors, []);
   });
 };
