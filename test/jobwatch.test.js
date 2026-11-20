@@ -32,7 +32,9 @@ module.exports = (test, load) => {
     assert.strictEqual(s.ok, true); assert.strictEqual(s.key, '4012345678');
     assert.strictEqual(s.job.title, 'Data Analyst Intern'); assert.strictEqual(s.job.company, 'Initech');
     assert.strictEqual(s.job.location, 'Chennai, Tamil Nadu, India');
-    assert.match(s.job.rawText, /Hybrid/); assert.match(s.job.rawText, /Over 100 applicants/); assert.match(s.job.rawText, /2 days ago/);
+    assert.match(s.job.rawText, /Hybrid/); assert.match(s.job.rawText, /Over 100 people clicked apply/); assert.match(s.job.rawText, /2 days ago/);
+    assert.ok(!/Job match is medium|See how you compare/.test(s.job.rawText), 'only the top card, not LinkedIn\'s own boxes');
+    assert.strictEqual(s.job.title, 'Data Analyst Intern', 'a feedback box heading ("Are these results helpful?") is not the title');
     assert.match(s.job.description, /Requirements\nPursuing B\.Tech/); assert.ok(!/Show less|Easy Apply/.test(s.job.description));
     assert.ok(!/Meet the hiring team/.test(s.job.description), 'only the description, not the rest of the pane');
     assert.deepStrictEqual(clicks, [], 'reading never clicks');
@@ -44,6 +46,15 @@ module.exports = (test, load) => {
     assert.strictEqual(s.ok, true);
     assert.strictEqual(s.job.title, 'Data Analyst Intern'); assert.strictEqual(s.job.company, 'Initech');
     assert.match(s.job.description, /Python, SQL and Excel/);
+  });
+
+  test('jobscrape: with no link and no class names, the title is the line next to the company name, not a stray heading', () => {
+    const html = bare(PAGE).replace('<a href="/jobs/view/4012345678/">Data Analyst Intern</a>', 'Data Analyst Intern');
+    const dom = mk(html);
+    const s = JS.scrape(dom.window.document, dom.window.location);
+    assert.strictEqual(s.ok, true);
+    assert.strictEqual(s.job.title, 'Data Analyst Intern'); assert.strictEqual(s.job.company, 'Initech');
+    assert.ok(s.titleEls.length >= 1, 'the title element is known, so the card can sit right under it');
   });
 
   test('jobscrape: the search layout (currentJobId in the address) gives the job id; an empty page fails calmly', () => {
@@ -102,14 +113,23 @@ module.exports = (test, load) => {
     const t = setup();
     t.ctl.tick(); await tick(40);
     assert.ok(t.host(), 'card present');
-    assert.strictEqual(t.host().parentElement.tagName, 'SECTION', 'it sits inside the description area, in the normal page flow');
-    assert.strictEqual(t.host().nextElementSibling.id, 'job-details', 'right above the description text');
+    assert.ok(t.host().previousElementSibling.querySelector('h1.job-details-jobs-unified-top-card__job-title'), 'right under the top card (title, chips, Apply)');
+    assert.ok(t.host().nextElementSibling.classList.contains('premium'), 'above LinkedIn\'s own Premium boxes, so it is on screen without scrolling');
     assert.ok(!t.host().closest('header, [style*="sticky"], [style*="fixed"]'), 'never inside a sticky or fixed header');
     assert.deepStrictEqual(t.sent.map(m => m.action), ['analyzeJob']);
     assert.ok(t.sent[0].job.description.includes('Python, SQL and Excel'));
     assert.match(t.host().shadowRoot.textContent, /Add your resume|fit|applying/i);
     t.ctl.tick(); await tick(20);
     assert.strictEqual(t.sent.length, 1, 'the same job is not analysed twice');
+    t.ctl.destroy();
+  });
+
+  test('jobwatch: a sticky copy of the title (LinkedIn\'s collapsed header) is skipped; the card still goes under the real top card', async () => {
+    const html = PAGE.replace('<div class="feedback">', '<div class="sticky-copy" style="position:sticky;top:0"><span>Data Analyst Intern</span></div><div class="feedback">');
+    const t = setup({ html });
+    t.ctl.tick(); await tick(30);
+    assert.ok(t.host().previousElementSibling.querySelector('h1.job-details-jobs-unified-top-card__job-title'), 'not placed after the pinned header');
+    assert.ok(!t.host().previousElementSibling.classList.contains('sticky-copy'));
     t.ctl.destroy();
   });
 

@@ -38,11 +38,29 @@
 
     function removeUi() { if (st.ui) { st.ui.remove(); st.ui = null; } st.key = ''; st.anchorEl = null; }
 
-    // The card goes inside the description area, in the normal flow of the page, right above the text: never in a sticky or fixed header
-    // (a tall card there would take over the screen and block scrolling) and never at the top of the page.
+    // Where the card goes: right under the top card (title, place, chips, Apply / Save) and above LinkedIn's own boxes (Premium match, "how you
+    // compare", "people you can reach out to"), so it is on screen without scrolling. It is always in the normal flow of the page, never in a sticky
+    // or fixed header (a tall card there would take over the screen and block scrolling). If the layout is not recognised it goes just above the
+    // description text instead.
+    const isPinned = (n) => { try { const p = win.getComputedStyle(n).position; return p === 'sticky' || p === 'fixed'; } catch (_) { return false; } };
+    function column(from, pane) {   // the nearest ancestor that holds the page's sections side by side
+      for (let n = from.parentElement, i = 0; n && i < 10; n = n.parentElement, i++) { if (n.children.length >= 4) return n; if (n === pane) break; }
+      return null;
+    }
     function place(s) {
       const el = s.el;
       if (!el || !el.parentNode) return;
+      const col = column(el, s.pane);
+      if (col) {
+        for (const t of s.titleEls || []) {
+          if (!col.contains(t)) continue;
+          let top = t, pinned = false;
+          for (; top && top.parentElement && top.parentElement !== col; top = top.parentElement) if (isPinned(top)) pinned = true;
+          if (top && isPinned(top)) pinned = true;
+          if (pinned || !top || top.parentElement !== col || top.contains(el)) continue;   // a sticky copy of the title, or the title is inside the description block
+          top.insertAdjacentElement('afterend', st.ui.host); st.anchorEl = top; return;
+        }
+      }
       if (/^(SECTION|ARTICLE)$/.test(el.tagName)) el.insertBefore(st.ui.host, el.children[1] || el.firstChild);   // after its "About the job" heading
       else el.insertAdjacentElement('beforebegin', st.ui.host);
       st.anchorEl = el;

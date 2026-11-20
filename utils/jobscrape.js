@@ -67,21 +67,38 @@
     return (desc && (desc.closest('main') || desc.parentElement)) || doc.body;
   }
 
-  function titleFrom(doc, pane) {
-    const h1 = q(pane, 'h1') || q(doc, 'h1');
-    if (h1 && flat(h1.textContent)) return flat(h1.textContent);
-    const el = q(pane, '[class*="job-title"]') || q(pane, 'h2');
-    if (el && flat(el.textContent)) return flat(el.textContent);
+  const META = /\s[·•]\s|\bago\b|applicants?\b|clicked apply|responses managed|\bpromoted\b|\bviewed\b/i;
+  const GENERIC = /^(?:are these results helpful\??|jobs?|search results|jobs based on.*|top job picks.*|recommended.*|people you can reach out to|about the job|premium|job match.*)$/i;
+  const NOT_TITLE = /^(?:apply|easy apply|save|saved|share|report|show more|show less|follow|message|…)$/i;
+
+  // The company name sits right next to the job title ("Technoidentity" above "AI/ML Engineer - DevOps"), so the title is found from the
+  // company first; LinkedIn's headings are not reliable (a feedback box can be the first <h1> in the pane).
+  function titleFrom(doc, pane, id, company, paneLines) {
+    const good = (t) => { t = flat(t); return t.length >= 3 && t.length <= 140 && !NOT_TITLE.test(t) && !GENERIC.test(t) && !META.test(t) ? t : ''; };
+    if (id) { const a = qa(pane, `a[href*="/jobs/view/${id}"]`).map(x => good(x.textContent)).find(Boolean); if (a) return a; }
+    const byClass = qa(pane, '[class*="job-title"]').map(x => good(x.textContent)).find(Boolean);
+    if (byClass) return byClass;
+    if (company) {
+      const i = paneLines.findIndex(l => l === company);
+      if (i >= 0) { const next = good(paneLines[i + 1] || ''); if (next && next !== company) return next; const prev = good(paneLines[i - 1] || ''); if (prev && prev !== company) return prev; }
+    }
+    const h = qa(pane, 'h1,h2').map(x => good(x.textContent)).find(Boolean);
+    if (h) return h;
     const t = flat(doc.title || '').replace(/^\(\d+\)\s*/, '');
-    return flat(t.split(/\s[|–-]\s/)[0]);
+    return good(t.split(/\s[|–-]\s/)[0]);
   }
 
-  function companyFrom(doc, pane, title) {
+  function companyFrom(doc, pane) {
     const a = qa(pane, 'a[href*="/company/"]').map(x => flat(x.textContent)).find(t => t && t.length < 80);
     if (a) return a;
     const parts = flat(doc.title || '').replace(/^\(\d+\)\s*/, '').split(/\s[|–-]\s/).map(flat);
-    const i = parts.findIndex(p => p === title);
-    return i >= 0 && parts[i + 1] && !/linkedin/i.test(parts[i + 1]) ? parts[i + 1] : '';
+    return parts.length >= 3 && !/linkedin/i.test(parts[1]) ? parts[1] : '';
+  }
+
+  // the element that shows the title text in the top card (so the card can be placed right under the title and the Apply buttons)
+  function titleElement(pane, title) {
+    if (!title) return [];
+    return qa(pane, 'h1,h2,h3,a,p,span,div').filter(e => e.children.length === 0 && flat(e.textContent) === title);
   }
 
   function jobIdFrom(loc) {
@@ -102,15 +119,15 @@
       const description = descLines.join('\n');
       if (description.length < 80) return { ok: false, reason: 'too-short', key: id };
       const pane = findPane(doc, desc);
-      const title = titleFrom(doc, pane);
-      const company = companyFrom(doc, pane, title);
-      // the lines above the description in the pane ("City, State · 2 days ago · Over 100 applicants", "On-site", "Full-time", "Entry level")
-      const paneLines = linesOf(pane, 6000);
-      const at = paneLines.findIndex(l => /^about the job$/i.test(l));
-      const top = (at > 0 ? paneLines.slice(0, at) : paneLines.slice(0, 25)).join('\n').slice(0, 1500);
+      const paneLines = linesOf(pane, 8000);
+      const company = companyFrom(doc, pane);
+      const title = titleFrom(doc, pane, id, company, paneLines);
+      // the top-card lines ("City, State · 2 days ago · Over 100 applicants", "On-site", "Full-time", "Entry level"), up to LinkedIn's own Premium / About boxes
+      const stop = paneLines.findIndex(l => /^(?:premium|job match|see how you compare|meet the hiring team|about the job)\b/i.test(l));
+      const top = (stop > 0 ? paneLines.slice(0, stop) : paneLines.slice(0, 25)).join('\n').slice(0, 1500);
       const loc1 = (top.split('\n').map(l => l.split(/\s[·•]\s/)[0]).find(l => /,\s*[A-Z]/.test(l) && l.length < 80 && l !== title) || '');
       return {
-        ok: true, el: desc, pane, key: id || hash(title + '|' + description.slice(0, 400)),
+        ok: true, el: desc, pane, titleEls: titleElement(pane, title), key: id || hash(title + '|' + description.slice(0, 400)),
         job: { title, company, location: flat(loc1), rawText: top, chips: [], description, url: String((loc && loc.href) || '').split('#')[0].slice(0, 300) }
       };
     } catch (e) {
