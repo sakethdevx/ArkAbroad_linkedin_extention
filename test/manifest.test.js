@@ -19,7 +19,10 @@ module.exports = (test) => {
     assert.strictEqual(cs.run_at, 'document_idle');
     assert.ok(!cs.all_frames, 'top frame only');
     assert.ok(!cs.js.includes('content_script.js') && !cs.js.includes('utils/profile_parse.js') && !cs.js.includes('utils/page_scroll.js'), 'the page reader is not declared: it runs only when you ask');
-    assert.deepStrictEqual(cs.js.slice(-2), ['utils/pagecomposer.js', 'utils/notefill.js'], 'the composer loads before the helper that starts it');
+    const at = (f) => cs.js.indexOf(f);
+    assert.ok(at('utils/pagecomposer.js') >= 0 && at('utils/pagecomposer.js') < at('utils/notefill.js'), 'the composer loads before the helper that starts it');
+    assert.ok(at('utils/skills.js') < at('utils/jobscrape.js') && at('utils/jobscrape.js') < at('utils/jobcard.js') && at('utils/jobcard.js') < at('utils/jobwatch.js'), 'the job card and scraper load before the watcher that starts them');
+    assert.strictEqual(cs.js[cs.js.length - 1], 'utils/jobwatch.js');
     cs.js.forEach(f => assert.ok(fs.existsSync(path.join(root, f)), f));
     assert.ok(!m.permissions.includes('tabs') && !m.permissions.includes('activeTab'));
     assert.ok(!('web_accessible_resources' in m) && !('externally_connectable' in m));
@@ -31,7 +34,7 @@ module.exports = (test) => {
   });
 
   test('network: the only remote origins in extension code are api.anthropic.com and linkedin.com', () => {
-    const code = ['background.js', 'popup.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'utils/rules.js', 'utils/person.js', 'utils/approach.js', 'utils/composer.js', 'utils/notefill.js', 'utils/pagecomposer.js', 'utils/request.js', 'utils/refine.js', 'utils/followup.js', 'panel/followup_ui.js', 'panel/notefill_ui.js', 'panel/refine_ui.js', 'content_script.js', 'utils/compose.js', 'utils/overlap.js', 'utils/skills.js', 'utils/resume.js', 'utils/safety.js', 'utils/profile_parse.js', 'utils/page_scroll.js', 'utils/spotlight.js', 'utils/draftcheck.js', 'utils/ondevice.js', 'utils/translate.js', 'popup.html']
+    const code = ['background.js', 'popup.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'utils/rules.js', 'utils/person.js', 'utils/approach.js', 'utils/composer.js', 'utils/notefill.js', 'utils/pagecomposer.js', 'utils/request.js', 'utils/refine.js', 'utils/followup.js', 'panel/followup_ui.js', 'panel/notefill_ui.js', 'panel/refine_ui.js', 'content_script.js', 'utils/compose.js', 'utils/overlap.js', 'utils/skills.js', 'utils/resume.js', 'utils/safety.js', 'utils/profile_parse.js', 'utils/page_scroll.js', 'utils/spotlight.js', 'utils/draftcheck.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/job_parse.js', 'utils/jobfit.js', 'utils/jobscrape.js', 'utils/jobcard.js', 'utils/jobwatch.js', 'popup.html']
       .map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
     const origins = [...new Set((code.match(/https?:\/\/[a-z0-9.-]+/gi) || []).map(x => x.toLowerCase()))];
     // API hosts we talk to, plus two documentation links shown in Settings (never fetched)
@@ -39,7 +42,7 @@ module.exports = (test) => {
     const extra = origins.filter(o => !allowed.some(a => o.startsWith(a)));
     assert.deepStrictEqual(extra, [], 'unexpected origins: ' + extra.join(', '));
     // only the background worker may make network requests
-    ['popup.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'utils/rules.js', 'utils/person.js', 'content_script.js', 'utils/compose.js', 'utils/overlap.js', 'utils/skills.js', 'utils/resume.js', 'utils/safety.js', 'utils/profile_parse.js', 'utils/page_scroll.js', 'utils/spotlight.js', 'utils/draftcheck.js', 'utils/ondevice.js', 'utils/translate.js']
+    ['popup.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'utils/rules.js', 'utils/person.js', 'content_script.js', 'utils/compose.js', 'utils/overlap.js', 'utils/skills.js', 'utils/resume.js', 'utils/safety.js', 'utils/profile_parse.js', 'utils/page_scroll.js', 'utils/spotlight.js', 'utils/draftcheck.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/job_parse.js', 'utils/jobfit.js', 'utils/jobscrape.js', 'utils/jobcard.js', 'utils/jobwatch.js']
       .forEach(f => assert.ok(!/\bfetch\(|XMLHttpRequest|sendBeacon|WebSocket/.test(fs.readFileSync(path.join(root, f), 'utf8')), f + ' must not make network calls'));
   });
 

@@ -177,9 +177,10 @@
     // CGPA / percentage cut-off
     const c = firstMatch(t, /(?:(?:min(?:imum)?|at least|above|>=?)\s*(?:of\s*)?(?:cgpa|gpa|percentage|aggregate)?\s*(?:of\s*)?(\d{1,2}(?:\.\d{1,2})?)\s*(%|cgpa|gpa)?)|(?:(\d{1,2}(?:\.\d{1,2})?)\s*(%|cgpa|gpa)\s*(?:and above|or above|or more|\+|throughout|aggregate|minimum))/i);
     if (c && /\b(cgpa|gpa|percentage|aggregate|marks|academic|%)\b/i.test(c.quote)) {
-      const val = Number(c.m[1] || c.m[3]);
+      const rawVal = c.m[1] || c.m[3];
+      const val = Number(rawVal);
       const pct = /%/.test(c.m[2] || c.m[4] || '') || val > 10;
-      const label = pct ? `${val}%` : `${val} CGPA`;
+      const label = pct ? `${rawVal}%` : `${rawVal} CGPA`;
       if (you.cgpa != null && !pct && you.cgpa <= 10) push('cgpa', you.cgpa >= val ? 'ok' : 'blocker', `Asks for ${label}; your resume shows ${you.cgpa}.`, c.quote);
       else push('cgpa', 'check', `Asks for a minimum of ${label}. Check yours.`, c.quote);
     }

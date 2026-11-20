@@ -767,4 +767,29 @@ module.exports = (test) => {
     assert.strictEqual(short.success, false);
     assert.strictEqual(b.calls.length, 0);
   });
+
+  test('bg: analyzeJob compares a posting with the stored profile on the device: no network, no key, a verdict a student can read', async () => {
+    const b = boot({ store: { senderProfile: { intro: 'final-year student', city: 'Chennai', skills: ['Python', 'SQL'], education: [{ degree: 'B.Tech', years: '2022 – 2026' }], experience: [], projects: [] }, resumeText: 'Python SQL' },
+      fetchImpl: () => { throw new Error('network must not be used'); } });
+    const job = { title: 'Senior Data Engineer', company: 'Acme', description: 'Requirements\n6+ years of experience in data engineering\nPython, SQL, Spark and AWS', chips: ['On-site'] };
+    const r = await b.send({ action: 'analyzeJob', job });
+    assert.strictEqual(r.success, true);
+    assert.strictEqual(r.result.fit.band, 'Probably not a fit');
+    assert.match(r.result.fit.reason, /6\+ years.*student/i);
+    assert.strictEqual(r.result.skills.matched.map(x => x.skill).sort().join(), 'Python,SQL');
+    assert.strictEqual(b.calls.length, 0, 'no network');
+    assert.ok(!JSON.stringify(r).includes('resumeText'), 'the resume text is not echoed back to the page');
+  });
+
+  test('bg: analyzeJob works on pasted text, refuses nearly-empty input, and survives garbage', async () => {
+    const b = boot({ store: {}, fetchImpl: () => { throw new Error('network must not be used'); } });
+    const ok1 = await b.send({ action: 'analyzeJob', pasted: 'Backend Intern\n\nWe are hiring freshers. Requirements: Python and SQL. 0-1 years experience.' });
+    assert.strictEqual(ok1.success, true); assert.strictEqual(ok1.result.hasProfile, false);
+    assert.strictEqual(ok1.job.title, 'Backend Intern');
+    assert.strictEqual((await b.send({ action: 'analyzeJob', pasted: 'hi' })).success, false);
+    assert.strictEqual((await b.send({ action: 'analyzeJob', job: null })).success, false);
+    assert.strictEqual((await b.send({ action: 'analyzeJob', job: 'x'.repeat(10) })).success, false);
+    assert.strictEqual((await b.send({ action: 'analyzeJob', job: { description: { a: 1 } } })).success, false);
+    assert.strictEqual((await b.send({ action: 'analyzeJob', job: { title: 'x', description: 'z'.repeat(40) } }, 'someone-else')), '__no_response__', 'only our own pages may ask');
+  });
 };

@@ -7,7 +7,7 @@
 //    are sent (see PREVIEW_PAYLOAD).
 //  • Profile, pasted and resume text are untrusted input; see utils/safety.js and SYSTEM_PROMPT below.
 
-importScripts('utils/compose.js', 'utils/safety.js', 'utils/draftcheck.js', 'utils/rules.js', 'utils/composer.js');
+importScripts('utils/compose.js', 'utils/safety.js', 'utils/draftcheck.js', 'utils/rules.js', 'utils/composer.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/skills.js', 'utils/job_parse.js', 'utils/jobfit.js');
 
 const ANTHROPIC_URL   = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_MODEL = 'claude-haiku-5-5';
@@ -50,6 +50,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'openComposer') { handleOpenComposer(message.tabId, message.want, sendResponse); return true; }
   if (message.action === 'scrapeProfile')  { handleScrapeProfile(Number.isInteger(message.tabId) ? message.tabId : (sender.tab && sender.tab.id), sendResponse); return true; }
   if (message.action === 'pageState')      { handlePageState(sendResponse); return true; }
+  if (message.action === 'analyzeJob')     { handleAnalyzeJob(message, sendResponse); return true; }
   if (message.action === 'openPanel')      { handleOpenPanel(sender, sendResponse); return true; }
   if (message.action === 'generateMessage') { handleQuickGenerate(message.data, sendResponse); return true; }
   if (message.type === 'TEST_API_KEY')     { handleTestKey(message.payload, sendResponse); return true; }
@@ -133,6 +134,19 @@ async function handlePageState(sendResponse) {
     const { apiKey, provider } = await getAiConfig();
     sendResponse({ success: true, aiReady: !!apiKey, providerName: provider.name, host: provider.host });
   } catch (_) { sendResponse({ success: false }); }
+}
+
+// ─── Job Fit: compare a job posting with the user's own profile, on this device ──
+// The posting arrives from the LinkedIn tab (or from a description the user pasted); the profile and resume text are read here, so they
+// never travel into the page. Nothing in this handler uses the network or a model.
+async function handleAnalyzeJob(message, sendResponse) {
+  try {
+    const raw = message.pasted != null ? JobParse.fromPasted(String(message.pasted).slice(0, 20000)) : JobParse.parse(message.job && typeof message.job === 'object' ? message.job : {});
+    if (!raw.description || raw.description.length < 40) { sendResponse({ success: false, error: 'There is not enough text to check. Open the full job posting, or paste its description.' }); return; }
+    const st = await new Promise(res => chrome.storage.local.get(['senderProfile', 'resumeText'], r => res(r || {})));
+    const result = JobFit.analyze(raw, { senderProfile: st.senderProfile || null, resumeText: st.resumeText || '' });
+    sendResponse({ success: true, result, job: { title: raw.title, company: raw.company, location: raw.location, url: raw.url } });
+  } catch (_) { sendResponse({ success: false, error: 'I could not check this job. Nothing was changed.' }); }
 }
 
 // "Panel ↗" on the page. Chrome only opens a side panel from a user gesture, so this is best-effort.

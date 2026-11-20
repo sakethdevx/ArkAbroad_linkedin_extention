@@ -46,3 +46,5 @@ Show (on a computer that qualifies): Settings → On-device AI → Turn on (one-
 7. **Tell it what to change.** Under any draft (panel, LinkedIn card, follow-up): type "make it shorter and mention my Python project" or tap Warmer; the draft is rewritten and **Undo** brings it back. Free mode: a fixed set of requests, refused plainly otherwise; AI / on-device AI: any wording, same safety checks (no links, length, no invented facts).
 
 8. **The prompts are engineered, not improvised.** One rule list builds every prompt; show the priority order, the shared stock-phrase list, and `scripts/eval-prompts.js --dry`. Be honest: the structure is tested, the quality gain is measured by running the eval with a key.
+
+9. **Job fit on LinkedIn Jobs.** Open a senior role as a student: the card says so plainly and quotes the sentence. Open an internship for your batch: green rows, matched skills, the project to lead with. Show a fake "pay a registration fee" posting: red warning, no friendly scores. Say it is on-device, no AI, keyword match is not an ATS score, and nothing is clicked for you.

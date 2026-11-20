@@ -380,12 +380,24 @@
           </div>
         </details>
 
+        <details class="set-card" id="job-card-setting">
+          <summary><span class="set-title">On LinkedIn job pages</span><span class="set-chip" id="job-chip">Job fit card</span></summary>
+          <div class="set-body">
+            <div class="radio-list" role="radiogroup" aria-label="Job fit on LinkedIn job pages">
+              <div class="switch-row"><input type="radio" name="jobmode" id="jm-card" value="card" /> <label for="jm-card"><b>Job fit card</b> <span class="radio-sub">When you open a job, a card above its description shows how it matches your resume: level, eligibility, skills and watch-outs.</span></label></div>
+              <div class="switch-row"><input type="radio" name="jobmode" id="jm-off" value="off" /> <label for="jm-off"><b>Off</b> <span class="radio-sub">Nothing is added to job pages.</span></label></div>
+            </div>
+            <p class="field-hint">The card reads the job posting you are looking at and compares it with your resume and profile inside this extension, on your computer. Nothing is sent anywhere and no AI is used. It is a guide, not a prediction, and the keyword match is not an ATS score. Outreach AI never clicks Apply, Easy Apply or Save for you.</p>
+          </div>
+        </details>
+
         <details class="set-card settings-note" id="privacy-note">
           <summary><span class="set-title">What leaves your device</span></summary>
           <div class="set-body">
             <ul>
               <li><b>Free Mode</b>: nothing. Profiles are read, matched and drafted on this device.</li>
               <li><b>AI Mode</b> (your own key): a short, cleaned-up summary of the profile and your details, and your resume text when you upload one, go to the provider you chose (<b>api.anthropic.com</b> or <b>api.groq.com</b>). You say yes once when you turn AI on, and “What’s sent?” always shows the exact data. Your key goes only to that provider.</li>
+              <li><b>Job fit</b> (job pages): the posting and your resume are compared inside this extension on your computer. Nothing is sent and no AI is used.</li>
               <li><b>Never sent</b>: your resume PDF, emails, phone numbers, or anything else on the page.</li>
               <li><b>Never automatic</b>: nothing is ever sent or clicked on LinkedIn for you. The only thing typed for you is a draft, into LinkedIn’s note box, and only when you press “Use this draft”. You press Send. “Want a change?” rewrites a draft from your comment with your chosen engine (in AI Mode your provider receives the draft, your comment and the same short summary; free and on-device edits stay on this computer). Inside the note box the card uses your chosen engine: free drafts on this device, Chrome’s on-device AI, or (AI Mode only) your own AI provider, which receives the same short summary as from the panel.</li>
             </ul>

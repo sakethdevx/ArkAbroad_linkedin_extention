@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await refreshModeBadge();
   await refreshOnDeviceCard();
   await refreshNoteFillCard();
+  await refreshJobModeCard();
   pushDraftToPage();   // panel opened on a LinkedIn tab: start the helper so its button can appear (with or without a draft)
   await refreshResumeTip();
   await onTabContextChanged();

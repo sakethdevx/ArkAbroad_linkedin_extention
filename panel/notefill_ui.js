@@ -39,7 +39,22 @@ async function refreshNoteFillCard() {
   if (chip) chip.textContent = PAGE_MODES[mode];
 }
 
+// Job fit card on LinkedIn job pages: 'card' (default) | 'off'. The helper in the LinkedIn tab watches this setting and switches by itself.
+const JOB_MODES = { card: 'Job fit card', off: 'Off' };
+async function jobMode() { const r = await storageGet(['jobMode']); return r.jobMode === 'off' ? 'off' : 'card'; }
+async function refreshJobModeCard() {
+  const mode = await jobMode();
+  document.querySelectorAll('input[name="jobmode"]').forEach(r => { r.checked = r.value === mode; });
+  const chip = document.getElementById('job-chip');
+  if (chip) chip.textContent = JOB_MODES[mode];
+}
+
 function wireNoteFill() {
+  document.querySelectorAll('input[name="jobmode"]').forEach(r => r.addEventListener('change', async () => {
+    if (!r.checked) return;
+    await storageSet({ jobMode: r.value });
+    await refreshJobModeCard();
+  }));
   document.querySelectorAll('input[name="pagemode"]').forEach(r => r.addEventListener('change', async () => {
     if (!r.checked) return;
     await storageSet({ pageMode: r.value });   // the helper in the LinkedIn tab watches this and switches by itself
