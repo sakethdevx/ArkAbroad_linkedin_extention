@@ -14,7 +14,7 @@
 
   function approach({ isConnection = null, overlaps = [], recentPosts = [], purpose = 'Networking' } = {}) {
     const shared = arr(overlaps).filter(o => o && o.label);
-    const posts = arr(recentPosts).filter(Boolean);
+    const posts = arr(recentPosts).filter(x => x && !/\s[·•]\s/.test(x));   // a card subtitle is not a post
 
     if (isConnection === true) {
       return 'Best next move: you are already connected, so a short, friendly message is enough. No note needed.';

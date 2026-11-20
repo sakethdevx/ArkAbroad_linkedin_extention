@@ -248,6 +248,7 @@ const ABBREV = /^(?:dr|mr|mrs|ms|prof|sr|jr|st|mt|inc|ltd|llc|co|corp|pvt|plc|gm
       if (POST_CHROME.test(l) || POST_TIME.test(l)) continue;
       if (headKey.length >= 12 && (low.startsWith(headKey) || head.startsWith(low.replace(/[….]+$/, '').slice(0, 30)) && low.length >= 12 && head.includes(low.replace(/[….]+$/, '').slice(0, 24)))) continue;   // the author's headline, often truncated
       if ((l.match(/\s\|\s/g) || []).length >= 2) continue;                      // looks like a headline ("A | B | C")
+      if (/\s[·•]\s/.test(l) && (l.length < 90 || /…$/.test(l))) continue;          // a card subtitle ("Role, Company · Following"), not post text
       if (/^[\d\s,.·•]+(?:reactions?|likes?|comments?|reposts?)?$/i.test(l)) continue;
       const body = stripPostTail(l.replace(/^[^\p{L}\p{N}"“'‘(]+/u, ''));              // drop leading emoji/bullets
       if (body.length >= 25 && !/^(?:https?:\/\/|www\.)/i.test(body)) return body;

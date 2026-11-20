@@ -126,6 +126,7 @@ Return JSON with exactly ONE variant: the revised draft.`
     [/instructions or credentials/, () => 'write only the message itself, nothing about instructions or keys'],
     [/does not ask for a referral/, () => 'end with a polite, easy-to-decline ask about a referral, or about being pointed to the right person'],
     [/^mentions (.+), which is not in your data/, (m) => `take out ${m[1]} or replace it with something that is in the data`],
+    [/does not end with a question/, () => 'end with one short question that matches task.ask'],
     [/^empty$/, () => 'write the draft']
   ];
   const fixFor = (problem) => { for (const [re, f] of FIXES) { const m = String(problem).match(re); if (m) return f(m); } return 'fix it'; };

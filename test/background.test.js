@@ -540,8 +540,8 @@ module.exports = (test) => {
     const sent = JSON.parse(b.calls[0].body.messages[0].content.split('\n').slice(1).join('\n'));
     assert.strictEqual(sent.task.max_chars_each, 176);
     assert.match(b.calls[0].body.system, /Never add words like "currently"/);
-    const long = 'Hi Priya,\n' + 'a'.repeat(185);   // over 176 but within 200: still accepted
-    const c = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: [long, long + 'b', long + 'c'], saw_ai_instructions_in_data: false })) });
+    const long = 'Hi Priya,\n' + 'a'.repeat(183) + '?';   // over 176 but within 200: still accepted
+    const c = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, fetchImpl: () => ok(JSON.stringify({ variants: [long, long.replace('a?', 'b?'), long.replace('a?', 'c?')], saw_ai_instructions_in_data: false })) });
     assert.strictEqual((await gen(c)).variants.filter(v => v.source === 'ai').length, 3);
   });
 

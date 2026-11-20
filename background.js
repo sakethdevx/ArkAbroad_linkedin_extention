@@ -283,7 +283,7 @@ function checkOptions(ctx, req, { onDevice = false, extra = '' } = {}) {
     format: ctx.format, maxChars: req.limit, firstName: recipientFirst(ctx), senderName: ctx.senderName,
     allowedText: [ctx.bio, ctx.sender && ctx.sender.intro, extra].filter(Boolean).join(' '),
     facts: req.facts + (extra ? ' ' + extra : ''), requireGrounded: onDevice,
-    requireAsk: ctx.messageType === 'Referral' ? { re: /\brefer/i, problem: 'does not ask for a referral' } : null
+    requireAsk: [{ re: /\?/, problem: 'does not end with a question' }].concat(ctx.messageType === 'Referral' ? [{ re: /\brefer/i, problem: 'does not ask for a referral' }] : [])
   };
 }
 

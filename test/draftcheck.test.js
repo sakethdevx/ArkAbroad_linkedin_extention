@@ -53,4 +53,24 @@ module.exports = (test, load) => {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(D.finishDrafts([5, null, {}]))), { good: [], bad: [] });
     D.groundedness(undefined, undefined);
   });
+
+  test('a connection note never ends with a sign-off word, even with no name after it (the "Kind regards," bug)', () => {
+    ['Kind regards,', 'Cheers,', 'Best regards,', 'Warmly,', 'Best,'].forEach(sign => {
+      const r = fin(['Hi Priya,\nWe both studied at IIT Madras. Would you be open to a quick chat? ' + sign]);
+      assert.strictEqual(r.good.length, 1, sign);
+      assert.ok(!/regards|cheers|warmly|best,?$/i.test(r.good[0].replace(/best/i, 'x').slice(-12)) && r.good[0].endsWith('chat?'), sign + ' → ' + r.good[0]);
+    });
+    assert.strictEqual(fin(['Hi Priya,\nSaw we both studied at IIT Madras. Open to a quick chat?\nCheers,']).good[0].endsWith('chat?'), true);
+    const msg = fin(['Hi Priya,\nWould you be open to a chat?\nBest regards,\nAsha Menon'], { format: 'message', maxChars: 500 }).good[0];
+    assert.ok(msg.endsWith('Asha Menon'), 'a message keeps its sign-off');
+    assert.ok(/Best|best/.test(fin(['Hi Priya,\nI use the best tools. Would you chat?']).good[0]), 'the word best inside a sentence is untouched');
+  });
+
+  test('requireAsk can be several requirements; a draft with no question is rejected with a plain reason', () => {
+    const ask = [{ re: /\?/, problem: 'does not end with a question' }];
+    const r = fin(['Hi Priya,\nI saw your work at Globex. I am a student exploring cloud hosting.', 'Hi Priya,\nI saw your work at Globex. Would you be open to a quick chat?'], { requireAsk: ask, facts: 'Globex' });
+    assert.strictEqual(r.good.length, 1); assert.deepStrictEqual(r.bad[0].problems, ['does not end with a question']);
+    const both = fin(['Hi Priya,\nWould you chat with me?'], { requireAsk: ask.concat([{ re: /\brefer/i, problem: 'does not ask for a referral' }]) });
+    assert.deepStrictEqual(both.bad[0].problems, ['does not ask for a referral']);
+  });
 };

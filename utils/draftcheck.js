@@ -18,7 +18,12 @@
   const FILLER = ['thanks', 'thank', 'you', 'best', 'regards', 'cheers', 'sincerely', 'warmly'];
 
   // a connection note has no sign-off: drop a trailing line that is only the sender's name (models love adding one)
+  const TAIL_SIGNOFF = /(^|[.!?…]\s+|\n)\s*(?:kind regards|best regards|warm regards|warmest regards|with regards|regards|best wishes|warm wishes|warmly|cheers|sincerely|yours truly|best)\s*[,;:]?\s*$/i;
   function stripSignoff(t, { format, nameWords }) {
+    if (format === 'note') {   // a note has no sign-off at all: drop a trailing "Kind regards," (models add one even without a name)
+      const cut = t.replace(TAIL_SIGNOFF, (_, lead) => lead.trim());
+      if (cut !== t && cut.trim().length >= 20) t = cut.replace(/[\s,;:]+$/, '').trim();
+    }
     if (format !== 'note' || !nameWords.length) return t;
     const lines = t.replace(/\s+$/, '').split('\n');
     if (lines.length < 2) return t;
@@ -102,7 +107,7 @@
       const checked = Safety.validateOutput(t, { maxChars, allowedText });
       const problems = checked.problems.slice();
       if (requireGrounded && checked.ok) problems.push(...groundedness(checked.text, facts));
-      if (requireAsk && checked.ok && !requireAsk.re.test(checked.text)) problems.push(requireAsk.problem);
+      if (checked.ok) for (const need of [].concat(requireAsk || [])) if (!need.re.test(checked.text)) problems.push(need.problem);
       if (!problems.length) good.push(checked.text); else bad.push({ draft: String(v).slice(0, 700), problems });
     }
     return { good, bad };
