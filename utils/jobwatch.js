@@ -68,6 +68,36 @@
       st.anchorEl = el;
     }
 
+    // Match the width of LinkedIn's own boxes. LinkedIn's cards sit inside side padding that the card's parent does not have, so left alone the
+    // card would be wider than the Premium box right below it. Measure the neighbouring card (the first bordered or shadowed box in the
+    // block after ours, else in the block before) and use its left and right edges.
+    const cardLike = (n) => { try { const c = win.getComputedStyle(n); const r = n.getBoundingClientRect(); return r.width > 200 && r.height > 50 && ((c.borderTopStyle && c.borderTopStyle !== 'none' && parseFloat(c.borderTopWidth) > 0) || (c.boxShadow && c.boxShadow !== 'none')); } catch (_) { return false; } };
+    function referenceBox(from) {
+      const queue = [from]; let seen = 0;
+      while (queue.length && seen < 250) {
+        const n = queue.shift(); seen++;
+        if (n.nodeType === 1 && n !== from && cardLike(n)) return n;
+        if (n.children) for (const c of n.children) queue.push(c);
+      }
+      return null;
+    }
+    function align() {
+      const host = st.ui && st.ui.host;
+      if (!host || !host.isConnected) return;
+      try {
+        const set = (l, r) => { host.style.setProperty('margin-left', l + 'px', 'important'); host.style.setProperty('margin-right', r + 'px', 'important'); };
+        set(0, 0);
+        const own = host.getBoundingClientRect();
+        if (!own.width) return;   // not laid out (or not a real browser): leave the default
+        const ref = (host.nextElementSibling && referenceBox(host.nextElementSibling)) || (host.previousElementSibling && referenceBox(host.previousElementSibling));
+        if (!ref) return;
+        const rr = ref.getBoundingClientRect();
+        const l = Math.round(rr.left - own.left), r = Math.round(own.right - rr.right);
+        if (l >= 0 && r >= 0 && l + r < own.width / 2) set(l, r);
+      } catch (_) { /* the default width is fine */ }
+    }
+    const alignSoon = () => { [60, 400, 1500].forEach(ms => setTimeout(align, ms)); };   // LinkedIn lays its own boxes out a little later
+
     async function check(s, token) {
       const r = await send({ action: 'analyzeJob', job: s.job });
       if (token !== st.token || !st.ui) return;
@@ -92,13 +122,14 @@
       st.fails = 0;
       const key = s.key + ':' + Math.round(s.job.description.length / 200);
       if (st.ui && st.key === key) {   // same job: just put the card back if LinkedIn redrew the page without it
-        if (!st.ui.host.isConnected) place(s);
+        if (!st.ui.host.isConnected) { place(s); alignSoon(); } else align();
         return;
       }
       removeUi();
       st.key = key;
       st.ui = JobCard.create(win, { onPanel: () => send({ action: 'openPanel' }) });
       place(s);
+      alignSoon();
       st.ui.render({ phase: 'loading' });
       check(s, ++st.token);
     }
@@ -107,7 +138,7 @@
 
     const ctl = {
       state: st,
-      tick,
+      tick, align,
       setMode(mode) { st.mode = mode === 'off' ? 'off' : 'card'; if (st.mode === 'off') removeUi(); else schedule(50); },
       watch() {
         if (st.mo || !win.MutationObserver) return;
@@ -116,6 +147,7 @@
           schedule(600);
         });
         st.mo.observe(doc.documentElement, { childList: true, subtree: true });
+        win.addEventListener('resize', () => schedule(250));
         st.poll = win.setInterval(() => { if (win.location.href !== st.lastHref) { st.lastHref = win.location.href; schedule(300); } }, 1000);
         schedule(300);
       },

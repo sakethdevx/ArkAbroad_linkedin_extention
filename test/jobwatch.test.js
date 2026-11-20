@@ -158,6 +158,24 @@ module.exports = (test, load) => {
     t.ctl.destroy();
   });
 
+  test('jobwatch: the card takes the left and right edges of the LinkedIn box next to it, so the boxes line up', async () => {
+    const html = PAGE.replace('<div class="premium">', '<div class="premium"><div class="premium-card" style="border:1px solid #ccc;border-radius:8px">').replace('review match details</h2><p>Your profile and resume match several of the required qualifications.</p></div>', 'review match details</h2><p>Your profile and resume match several of the required qualifications.</p></div></div>');
+    const t = setup({ html });
+    t.ctl.tick(); await tick(30);
+    const rect = (l, r, h = 120) => ({ left: l, right: r, width: r - l, top: 0, bottom: h, height: h, x: l, y: 0 });
+    const card = t.d.querySelector('.premium-card');
+    card.getBoundingClientRect = () => rect(140, 960);              // LinkedIn's box: padded in from both sides
+    t.host().getBoundingClientRect = () => rect(100, 1000, 300);    // our card: the full width of its parent
+    t.ctl.align();
+    assert.strictEqual(t.host().style.getPropertyValue('margin-left'), '40px');
+    assert.strictEqual(t.host().style.getPropertyValue('margin-right'), '40px');
+    assert.strictEqual(t.host().style.getPropertyPriority('margin-left'), 'important', 'LinkedIn\'s CSS cannot reset it');
+    t.host().getBoundingClientRect = () => rect(0, 0, 0);            // not laid out: the default stays
+    t.ctl.align();
+    assert.strictEqual(t.host().style.getPropertyValue('margin-left'), '0px');
+    t.ctl.destroy();
+  });
+
   test('jobwatch: a sticky copy of the title (LinkedIn\'s collapsed header) is skipped; the card still goes under the real top card', async () => {
     const html = PAGE.replace('<div class="feedback">', '<div class="sticky-copy" style="position:sticky;top:0"><span>Data Analyst Intern</span></div><div class="feedback">');
     const t = setup({ html });
