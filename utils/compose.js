@@ -260,7 +260,9 @@
   const CLICHES = [
     /hope this (message |email |note )?finds you well/i, /i came across your profile and (was|am) impressed/i, /impressed by your (work|profile|background)/i,
     /pick your brain/i, /touch base/i, /synerg/i, /i would love to connect and exchange ideas/i, /i'?d love to connect and exchange ideas/i,
-    /\bquick call\b/i, /reaching out because/i, /game[- ]chang/i
+    /\bquick call\b/i, /reaching out because/i, /game[- ]chang/i,
+    /i came across your (profile|page)/i, /hope you(?:'|’)?(?:re| are) (?:doing )?(?:well|great|good)/i, /(?:expand|grow) my (?:professional )?network/i,
+    /add you to my (?:professional )?network/i, /to whom it may concern/i, /\bdear sir\b/i
   ];
 
   function mentionsFor(profile, overlaps) {
@@ -288,7 +290,8 @@
       { id: 'specific', ok: !!mention, label: 'Mentions something specific to them', detail: mention ? `“${mention}”` : 'Name a shared school, employer, skill, or their work.' },
       { id: 'ask',      ok: qCount <= 1 && t.trim().length > 0, label: 'One clear ask', detail: qCount > 1 ? 'You ask more than one question; pick one.' : '' },
       { id: 'length',   ok: t.length <= limit, label: ctx.format === 'note' ? 'Fits a 200-character note' : 'Short enough to read quickly', detail: t.length <= limit ? '' : `${t.length - limit} over: trim a sentence` },
-      { id: 'cliche',   ok: clichesFound.length === 0, label: 'No stock phrases', detail: clichesFound.length ? `Try rewording: “${clichesFound[0]}”` : '' },
+      { id: 'cliche',   ok: clichesFound.length === 0, label: 'No stock phrases', detail: clichesFound.length ? `Try rewording: “${clichesFound[0]}”` : '',
+        fix: clichesFound.length ? `Reword the stock phrase “${clichesFound[0]}” in plain, natural words. Keep everything else.` : '' },
       { id: 'named',    ok: named, label: 'Uses their first name', detail: named ? '' : 'Add their first name so it feels written for them.' }
     ];
   }

@@ -206,6 +206,12 @@ function updateDraftMeta() {
     const label = document.createElement('span'); label.className = 'check-label'; label.textContent = item.label;
     li.append(mark, sr, label);
     if (item.detail) { const d = document.createElement('span'); d.className = 'check-detail'; d.textContent = item.detail; li.appendChild(d); }
+    // "Fix it" uses the same engine as Want a change?; Free mode cannot follow free wording, so it is not offered there
+    if (!item.ok && item.fix && typeof refineEngineNow !== 'undefined' && refineEngineNow !== 'free') {
+      const fx = document.createElement('button'); fx.type = 'button'; fx.className = 'btn-link check-fix'; fx.textContent = 'Fix it';
+      fx.addEventListener('click', () => runRefine(item.fix));
+      li.appendChild(fx);
+    }
     ul.appendChild(li);
   });
 }

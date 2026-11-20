@@ -107,6 +107,16 @@ module.exports = (test, load) => {
     assert.strictEqual(Object.fromEntries(C.checklist('x'.repeat(250), { format: 'message', firstName: 'A' }).map(i => [i.id, i.ok])).length, true);
   });
 
+  test('checklist: more stock phrases are caught and offer a fix wording', () => {
+    const ctx = { format: 'message', firstName: 'Jane', mentions: [] };
+    ['I came across your profile last week.', 'Hope you are doing well.', 'I want to expand my network.', 'To whom it may concern,'].forEach(s => {
+      const c = C.checklist('Hi Jane, ' + s, ctx).find(i => i.id === 'cliche');
+      assert.strictEqual(c.ok, false, s);
+      assert.ok(/Reword the stock phrase/.test(c.fix), s);
+    });
+    assert.strictEqual(C.checklist('Hi Jane, would you be open to a quick chat?', ctx).find(i => i.id === 'cliche').ok, true);
+  });
+
   test('checklist: mentionsFor collects labels, company, school, skills', () => {
     const m = C.mentionsFor({ currentCompany: 'Globex', currentTitle: 'Analyst', educationEntries: [{ school: 'IIT Madras' }], skills: ['Python', 'SQL'] },
       [{ label: 'Python and SQL' }]);

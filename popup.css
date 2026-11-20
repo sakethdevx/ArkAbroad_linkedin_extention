@@ -917,6 +917,7 @@ dialog#consent-dialog::backdrop { background: rgba(26, 23, 18, 0.45); }
 .api-key-label { display: block; }
 
 .checklist li.ok .check-detail { flex-basis: auto; padding-left: 0; }
+.checklist .check-fix { font-size: 11px; margin-left: 20px; }
 .checklist li.ok .check-detail::before { content: '· '; }
 .message-textarea { min-height: 0; }
 .message-textarea.over { border-color: var(--error); }

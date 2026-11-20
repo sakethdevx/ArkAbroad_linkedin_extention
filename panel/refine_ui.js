@@ -7,6 +7,7 @@
 const refineStacks = new Map();   // draft index → the earlier texts of that draft (newest last)
 let refineBusy = false;
 let refineNote = '';
+let refineEngineNow = 'free';   // last engine seen; lets the checklist offer "Fix it" only when the engine can follow free wording
 
 function resetRefine() { refineStacks.clear(); refineBusy = false; refineNote = ''; setRefineStatus(''); }
 
@@ -28,6 +29,7 @@ async function refreshRefineUi() {
   if (!box) return;
   const wrap = document.getElementById('refine-chips');
   const engine = await refineEngine();
+  const changed = engine !== refineEngineNow; refineEngineNow = engine;
   wrap.textContent = '';
   Refine.chipsFor(engine).forEach(c => {
     const b = document.createElement('button');
@@ -39,6 +41,7 @@ async function refreshRefineUi() {
   document.getElementById('refine-undo-row').classList.toggle('hidden', !stack.length);
   const who = engine === 'ai' ? 'Your AI rewrites it.' : engine === 'ondevice' ? 'Chrome’s on-device AI rewrites it; nothing leaves this computer.' : 'Free mode understands the quick options and simple requests, on this device.';
   document.getElementById('refine-engine').textContent = who;
+  if (changed && typeof drafts !== 'undefined' && drafts.length) updateDraftMeta();
 }
 
 async function runRefine(comment) {
