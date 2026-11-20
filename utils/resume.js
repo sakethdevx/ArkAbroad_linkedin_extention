@@ -8,10 +8,11 @@
 
 (function (root, factory) {
   const PP = (typeof module === 'object' && module.exports) ? require('./profile_parse.js') : root.ProfileParse;
-  const api = factory(PP);
+  const SK = (typeof module === 'object' && module.exports) ? require('./skills.js') : root.Skills;
+  const api = factory(PP, SK);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.Resume = api;
-})(typeof self !== 'undefined' ? self : this, function (PP) {
+})(typeof self !== 'undefined' ? self : this, function (PP, Skills) {
 
   const MAX_CHARS = 30000;
 
@@ -32,22 +33,7 @@
   }
 
   // ── Vocabulary ──────────────────────────────────────────────────────────────
-  const SKILL_VOCAB = [
-    'Python', 'Java', 'JavaScript', 'TypeScript', 'C++', 'C#', 'C', 'Go', 'Rust', 'Kotlin', 'Swift', 'PHP', 'Ruby', 'R', 'MATLAB', 'Scala',
-    'SQL', 'MySQL', 'PostgreSQL', 'MongoDB', 'Redis', 'Firebase', 'NoSQL', 'Snowflake', 'BigQuery',
-    'React', 'Next.js', 'Angular', 'Vue', 'Node.js', 'Express', 'Django', 'Flask', 'FastAPI', 'Spring', 'Flutter', 'Android', 'iOS',
-    'HTML', 'CSS', 'Tailwind', 'REST', 'GraphQL',
-    'AWS', 'Azure', 'GCP', 'Docker', 'Kubernetes', 'Git', 'Linux', 'CI/CD', 'Terraform', 'Jenkins',
-    'Machine Learning', 'Deep Learning', 'NLP', 'Computer Vision', 'TensorFlow', 'PyTorch', 'scikit-learn', 'Pandas', 'NumPy', 'Spark', 'Hadoop',
-    'Data Analysis', 'Data Science', 'Data Visualization', 'Statistics', 'A/B Testing', 'ETL',
-    'Tableau', 'Power BI', 'Excel', 'Looker', 'Google Analytics',
-    'Figma', 'Photoshop', 'Illustrator', 'Canva', 'UI/UX', 'User Research', 'Prototyping',
-    'SEO', 'SEM', 'Content Marketing', 'Social Media', 'Copywriting', 'Email Marketing', 'Digital Marketing', 'Brand Strategy', 'Market Research',
-    'Product Management', 'Agile', 'Scrum', 'Jira', 'Roadmapping',
-    'Financial Modeling', 'Accounting', 'Valuation', 'Bloomberg', 'Salesforce', 'CRM',
-    'Project Management', 'Operations', 'Supply Chain', 'Consulting', 'Public Speaking', 'Research', 'Teaching',
-    'Embedded Systems', 'Arduino', 'CAD', 'SolidWorks', 'AutoCAD', 'IoT', 'VLSI', 'Verilog'
-  ];
+  const SKILL_VOCAB = Skills.SKILL_VOCAB;   // one vocabulary, shared with the job-fit check (utils/skills.js)
   const SKILL_CANON = new Map(SKILL_VOCAB.map(s => [s.toLowerCase(), s]));
   const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
   const SKILL_RE = SKILL_VOCAB

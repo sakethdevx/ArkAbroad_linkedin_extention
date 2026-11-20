@@ -11,7 +11,7 @@ module.exports = (test) => {
   const root = path.join(__dirname, '..');
   const PP = require(path.join(root, 'utils/profile_parse.js'));
   const tick = (n = 40) => new Promise(r => setTimeout(r, n));
-  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/approach.js', 'utils/request.js', 'utils/refine.js', 'utils/compose.js', 'utils/followup.js', 'utils/resume.js', 'utils/person.js', 'utils/cache.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'panel/followup_ui.js', 'panel/notefill_ui.js', 'panel/refine_ui.js', 'popup.js'];
+  const SCRIPTS = ['utils/safety.js', 'utils/ondevice.js', 'utils/translate.js', 'utils/profile_parse.js', 'utils/overlap.js', 'utils/spotlight.js', 'utils/approach.js', 'utils/request.js', 'utils/refine.js', 'utils/compose.js', 'utils/followup.js', 'utils/skills.js', 'utils/resume.js', 'utils/person.js', 'utils/cache.js', 'panel/providers.js', 'panel/ondevice_ui.js', 'panel/overlap_ui.js', 'panel/settings.js', 'panel/resume_ui.js', 'panel/consent.js', 'panel/drafts.js', 'panel/followup_ui.js', 'panel/notefill_ui.js', 'panel/refine_ui.js', 'popup.js'];
 
   const PRIYA = () => PP.buildProfile({
     name: 'Priya Rao', headline: 'Data Scientist at Globex', location: 'Chennai, India',
