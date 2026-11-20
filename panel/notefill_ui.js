@@ -7,7 +7,13 @@
 let pushTimer = null;
 let pushedOnce = false;   // so an empty draft only clears the page when something was handed over before
 
-const noteFillEnabled = async () => (await storageGet('noteFill')).noteFill !== false;   // on unless you turned it off
+// how Outreach AI helps on the LinkedIn page: 'smart' (default) | 'button' | 'off'. Older installs only had an on/off switch.
+const PAGE_MODES = { smart: 'Smart composer', button: 'Fill button only', off: 'Off' };
+async function pageMode() {
+  const r = await storageGet(['pageMode', 'noteFill']);
+  return PAGE_MODES[r.pageMode] ? r.pageMode : (r.noteFill === false ? 'off' : 'smart');
+}
+const noteFillEnabled = async () => (await pageMode()) !== 'off';
 
 function pushDraftToPage() {
   clearTimeout(pushTimer);
@@ -27,20 +33,18 @@ async function doPush() {
 }
 
 async function refreshNoteFillCard() {
-  const on = await noteFillEnabled();
-  const box = document.getElementById('notefill-on');
-  if (box) box.checked = on;
+  const mode = await pageMode();
+  document.querySelectorAll('input[name="pagemode"]').forEach(r => { r.checked = r.value === mode; });
   const chip = document.getElementById('page-chip');
-  if (chip) chip.textContent = on ? 'On' : 'Off';
+  if (chip) chip.textContent = PAGE_MODES[mode];
 }
 
 function wireNoteFill() {
-  const box = document.getElementById('notefill-on');
-  if (!box) return;
-  box.addEventListener('change', async () => {
-    await storageSet({ noteFill: box.checked });
+  document.querySelectorAll('input[name="pagemode"]').forEach(r => r.addEventListener('change', async () => {
+    if (!r.checked) return;
+    await storageSet({ pageMode: r.value });   // the helper in the LinkedIn tab watches this and switches by itself
     await refreshNoteFillCard();
-    pushedOnce = true;     // turning it off must also switch the helper off in the open tab
+    pushedOnce = true;
     pushDraftToPage();
-  });
+  }));
 }

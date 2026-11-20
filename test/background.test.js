@@ -26,7 +26,12 @@ module.exports = (test) => {
       const ret = listener(message, { id: senderId }, resolve);
       if (ret !== true) setTimeout(() => resolve('__no_response__'), 30);
     });
-    return { send, calls };
+    // a message from a content script: same extension, but with the tab it came from
+    const sendFrom = (message, extra) => new Promise((resolve) => {
+      const ret = listener(message, { id: 'ext-id', ...extra }, resolve);
+      if (ret !== true) setTimeout(() => resolve('__no_response__'), 30);
+    });
+    return { send, sendFrom, calls, chrome: ctx.chrome };
   }
 
   const ok = (content) => ({ ok: true, status: 200, json: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: content }] }) });
@@ -574,30 +579,40 @@ module.exports = (test) => {
     assert.strictEqual(b.calls.length, 0);
   });
 
-  test('bg: armNoteFill only talks to LinkedIn profile/messaging tabs, injects the helper once, and hands over just the text and format', async () => {
-    const injected = [], sent = []; let ready = false;
+  test('bg: armNoteFill only talks to LinkedIn profile/messaging tabs, never injects anything, and hands over just the text and format', async () => {
+    const injected = [], sent = []; let present = true;
     const b = boot({ tabs: { get: async (id) => ({ id, url: id === 1 ? 'https://www.linkedin.com/in/aryan/' : id === 3 ? 'https://www.linkedin.com/messaging/thread/1/' : 'https://www.google.com/' }),
-        sendMessage: async (id, m) => { sent.push(m); if (m.action === 'noteFillPing') { if (!ready) throw new Error('no receiver'); return { ok: true, version: 'notefill-3' }; } return { ok: true }; } },
-      scripting: { executeScript: async (o) => { injected.push(o); ready = true; return []; } }, fetchImpl: () => { throw new Error('no network'); } });
+        sendMessage: async (id, m) => { sent.push(m); if (!present) throw new Error('no receiver'); return m.action === 'noteFillPing' ? { ok: true, version: 'notefill-4' } : { ok: true }; } },
+      scripting: { executeScript: async (o) => { injected.push(o); return []; } }, fetchImpl: () => { throw new Error('no network'); } });
     const r = await b.send({ action: 'armNoteFill', tabId: 1, text: 'Hi Aryan, hello.', format: 'note', enabled: true, extra: 'ignored' });
     assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { success: true });
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(injected[0].files)), ['utils/notefill.js']);
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sent.at(-1))), { action: 'noteFillDraft', text: 'Hi Aryan, hello.', format: 'note', enabled: true });
-    await b.send({ action: 'armNoteFill', tabId: 1, text: 'Updated.', format: 'message', enabled: true });
-    assert.strictEqual(injected.length, 1, 'already running: not injected twice');
     assert.strictEqual((await b.send({ action: 'armNoteFill', tabId: 3, text: 'x', format: 'message', enabled: true })).success, true);
     const off = await b.send({ action: 'armNoteFill', tabId: 2, text: 'x', format: 'note', enabled: true });
     assert.deepStrictEqual(JSON.parse(JSON.stringify(off)), { success: false, reason: 'not-linkedin' });
-    assert.strictEqual(injected.length, 1, 'never touches other sites');
+    present = false;   // a tab opened before the extension was installed has no helper: nothing is injected, nothing breaks
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(await b.send({ action: 'armNoteFill', tabId: 1, text: 'x', format: 'note', enabled: true }))), { success: true, idle: true });
+    assert.strictEqual(injected.length, 0, 'the helper is declared in the manifest; nothing is injected from here');
     assert.strictEqual(b.calls.length, 0);
-    // switched OFF and not running yet: it does not inject at all; switched on with no draft yet: it starts so the box can explain
-    const fresh = []; const idle = boot({ tabs: { get: async (id) => ({ id, url: 'https://www.linkedin.com/in/a/' }), sendMessage: async () => { throw new Error('no receiver'); } },
-      scripting: { executeScript: async (o) => { fresh.push(o); return []; } }, fetchImpl: () => { throw new Error('no network'); } });
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(await idle.send({ action: 'armNoteFill', tabId: 1, text: '', format: 'note', enabled: false }))), { success: true, idle: true });
-    assert.strictEqual(fresh.length, 0);
-    await idle.send({ action: 'armNoteFill', tabId: 1, text: '', format: 'note', enabled: true });
-    assert.strictEqual(fresh.length, 1, 'on, with no draft yet: the helper starts');
-    assert.strictEqual(require(path.join(root, 'utils/notefill.js')).VERSION, 'notefill-3', 'keep the background version in step with the helper');
+    assert.strictEqual(require(path.join(root, 'utils/notefill.js')).VERSION, 'notefill-4', 'keep the background version in step with the helper');
+  });
+
+  test('bg: pageState tells the page only whether AI is ready and where it would send (never the key); openPanel and the page scrape use the sender tab', async () => {
+    const opened = [], scraped = [];
+    const b = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'ai' }, tabs: { get: async (id) => ({ id, url: 'https://www.linkedin.com/in/aryan/' }), sendMessage: async (id, m) => { scraped.push([id, m.action]); return m.action === 'ping' ? { ok: true, version: 'scroll-5' } : { success: true, data: { name: 'Aryan' } }; } },
+      scripting: { executeScript: async () => [] }, fetchImpl: () => { throw new Error('no network'); } });
+    b.chrome.sidePanel = { open: async (o) => { opened.push(o.tabId); } };
+    const st = await b.send({ action: 'pageState' });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(st)), { success: true, aiReady: true, providerName: 'Anthropic', host: 'api.anthropic.com' });
+    assert.ok(!JSON.stringify(st).includes('SECRET'));
+    const free = boot({ store: { userApiKey: 'sk-ant-SECRET', mode: 'free' }, fetchImpl: () => { throw new Error('no network'); } });
+    assert.strictEqual((await free.send({ action: 'pageState' })).aiReady, false, 'Free mode: the AI button must not appear');
+    const sc = await b.sendFrom({ action: 'scrapeProfile' }, { tab: { id: 77 } });
+    assert.strictEqual(sc.success, true);
+    assert.ok(scraped.some(([id, a]) => id === 77 && a === 'scrapeProfile'), 'the page is read through ITS OWN tab, not whichever tab is active');
+    const op = await b.sendFrom({ action: 'openPanel' }, { tab: { id: 77 } });
+    assert.strictEqual(op.success, true);
+    assert.deepStrictEqual(opened, [77]);
   });
 
   test('bg: openComposer only runs on /in/ profiles, injects the self-contained opener with just the word note/message, and never touches the network', async () => {

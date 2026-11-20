@@ -237,14 +237,25 @@ module.exports = (test) => {
     t.setUrl('https://www.linkedin.com/in/someone-else/'); t.listeners.forEach(f => f()); await tick(700);
     assert.strictEqual(last().text, '', 'a new person: the page forgets the old draft');
     // setting off: nothing is handed over, and the open page is told to switch the helper off
-    const off = await boot({ senderProfile: SENDER, noteFill: false });
+    const off = await boot({ senderProfile: SENDER, pageMode: 'off' });
     await off.click('scrape-btn', 700);
     assert.ok(off.armed.length === 0 || off.armed.every(a => a.enabled === false && a.text === ''), JSON.stringify(off.armed));
-    assert.strictEqual(off.$('notefill-on').checked, false);
+    assert.strictEqual(off.$('pm-off').checked, true);
     assert.strictEqual(off.$('page-chip').textContent, 'Off');
-    off.$('notefill-on').checked = true; off.$('notefill-on').dispatchEvent(new off.w.Event('change')); await tick(700);
-    assert.strictEqual(off.store.noteFill, true);
+    off.$('pm-smart').checked = true; off.$('pm-smart').dispatchEvent(new off.w.Event('change')); await tick(700);
+    assert.strictEqual(off.store.pageMode, 'smart');
+    assert.strictEqual(off.$('page-chip').textContent, 'Smart composer');
     assert.ok(off.armed.at(-1).enabled === true && off.armed.at(-1).text.length > 20);
+  });
+
+  test('popup: Settings → On the LinkedIn page offers three choices; an older on/off switch maps to them; the choice is saved for the helper to follow', async () => {
+    const d = await boot({ senderProfile: SENDER });
+    assert.strictEqual(d.$('pm-smart').checked, true, 'Smart composer is the default');
+    const old = await boot({ senderProfile: SENDER, noteFill: false });
+    assert.strictEqual(old.$('pm-off').checked, true, 'an install that had switched the old option off stays off');
+    d.$('pm-button').checked = true; d.$('pm-button').dispatchEvent(new d.w.Event('change')); await tick(100);
+    assert.strictEqual(d.store.pageMode, 'button');
+    assert.strictEqual(d.$('page-chip').textContent, 'Fill button only');
   });
 
   test('popup: switching Free ⇄ AI: AI asks once (names provider, host, model), the choice is remembered, and nothing asks per draft', async () => {

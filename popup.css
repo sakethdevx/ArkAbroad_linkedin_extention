@@ -349,7 +349,9 @@ body {
   background: var(--surface-2);
 }
 
-.switch-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.switch-row { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; margin-bottom: 8px; }
+.switch-row input { margin-top: 3px; }
+.radio-sub { display: block; color: var(--text-2); font-size: 12px; font-weight: 400; line-height: 1.4; }
 .switch-row input { flex: none; width: auto; margin: 0; }
 #copy-open-btn { flex: 1 1 auto; }
 

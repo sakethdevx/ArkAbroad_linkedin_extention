@@ -48,7 +48,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'detectConnection') { handleDetectConnection(message.tabId, sendResponse); return true; }
   if (message.action === 'armNoteFill') { handleArmNoteFill(message, sendResponse); return true; }
   if (message.action === 'openComposer') { handleOpenComposer(message.tabId, message.want, sendResponse); return true; }
-  if (message.action === 'scrapeProfile')  { handleScrapeProfile(message.tabId, sendResponse); return true; }
+  if (message.action === 'scrapeProfile')  { handleScrapeProfile(Number.isInteger(message.tabId) ? message.tabId : (sender.tab && sender.tab.id), sendResponse); return true; }
+  if (message.action === 'pageState')      { handlePageState(sendResponse); return true; }
+  if (message.action === 'openPanel')      { handleOpenPanel(sender, sendResponse); return true; }
   if (message.action === 'generateMessage') { handleQuickGenerate(message.data, sendResponse); return true; }
   if (message.type === 'TEST_API_KEY')     { handleTestKey(message.payload, sendResponse); return true; }
   if (message.type === 'PREVIEW_PAYLOAD')  { handlePreview(message.payload, sendResponse); return true; }
@@ -73,21 +75,16 @@ async function ensureContentScript(tabId) {
   await chrome.scripting.executeScript({ target: { tabId }, files: CONTENT_FILES });
 }
 
-// "Fill with my draft": hands the current draft to a small helper in the LinkedIn tab (see utils/notefill.js).
-// The helper only types into a note box when YOU press its button; it never clicks anything. The text goes nowhere else.
-const NOTEFILL_VERSION = 'notefill-3';   // keep in sync with utils/notefill.js
+// The helper (utils/notefill.js) is declared in the manifest for linkedin.com. The panel only hands it the current draft,
+// so the on-page card can offer it as "From your side panel". Nothing is injected from here any more.
+const NOTEFILL_VERSION = 'notefill-4';   // keep in sync with utils/notefill.js
 async function handleArmNoteFill({ tabId, text, format, enabled }, sendResponse) {
   try {
     const tab = Number.isInteger(tabId) ? await chrome.tabs.get(tabId) : null;
     if (!tab || !/^https:\/\/www\.linkedin\.com\/(in|messaging)\//.test(tab.url || '')) { sendResponse({ success: false, reason: 'not-linkedin' }); return; }
-    let ready = false;
-    try { const pong = await chrome.tabs.sendMessage(tabId, { action: 'noteFillPing' }); ready = !!(pong && pong.ok && pong.version === NOTEFILL_VERSION); } catch (_) { /* not injected yet */ }
-    if (!ready) {
-      if (enabled === false) { sendResponse({ success: true, idle: true }); return; }   // switched off: do not inject for nothing
-      // switched on and the panel is open on a LinkedIn tab: start the helper even before a draft exists, so the box
-      // says "write a draft in the panel first" instead of showing nothing
-      await chrome.scripting.executeScript({ target: { tabId }, files: ['utils/notefill.js'] });
-    }
+    let pong = null;
+    try { pong = await chrome.tabs.sendMessage(tabId, { action: 'noteFillPing' }); } catch (_) { /* helper not there (page loaded before it was installed) */ }
+    if (!pong || !pong.ok) { sendResponse({ success: true, idle: true }); return; }
     await chrome.tabs.sendMessage(tabId, { action: 'noteFillDraft', text: String(text || '').slice(0, 2000), format: format === 'message' ? 'message' : 'note', enabled: enabled !== false });
     sendResponse({ success: true });
   } catch (_) { sendResponse({ success: false, reason: 'failed' }); }
@@ -126,6 +123,22 @@ async function handleOpenComposer(tabId, want, sendResponse) {
     const r = (res && res.result) || {};
     sendResponse({ success: !!r.ok, opened: r.opened || null, reason: r.reason || (r.ok ? null : 'failed') });
   } catch (_) { sendResponse({ success: false, reason: 'failed' }); }
+}
+
+// What the on-page composer may know about AI: whether it is ready and where it would send. Never the key.
+async function handlePageState(sendResponse) {
+  try {
+    const { apiKey, provider } = await getAiConfig();
+    sendResponse({ success: true, aiReady: !!apiKey, providerName: provider.name, host: provider.host });
+  } catch (_) { sendResponse({ success: false }); }
+}
+
+// "Panel ↗" on the page. Chrome only opens a side panel from a user gesture, so this is best-effort.
+async function handleOpenPanel(sender, sendResponse) {
+  try {
+    if (sender.tab && sender.tab.id !== undefined && chrome.sidePanel && chrome.sidePanel.open) { await chrome.sidePanel.open({ tabId: sender.tab.id }); sendResponse({ success: true }); return; }
+  } catch (_) { /* fall through */ }
+  sendResponse({ success: false });
 }
 
 async function handleScrapeProfile(tabId, sendResponse) {

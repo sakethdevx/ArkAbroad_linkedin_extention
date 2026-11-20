@@ -19,7 +19,7 @@
   }
 })(typeof self !== 'undefined' ? self : this, function () {
 
-  const VERSION = 'notefill-3';
+  const VERSION = 'notefill-4';
   const NOTE_WORDS = /invitation|add a note|personal note|your note/i;
   // short breadcrumbs in the page console (DevTools → Console → filter "Outreach AI"), never the draft's text
   const log = (...a) => { try { console.info('[Outreach AI]', ...a); } catch (_) { /* no console */ } };
@@ -132,21 +132,31 @@
   const say = (ui, text, kind) => { ui.hint.textContent = text; ui.hint.className = 'hint' + (kind ? ' ' + kind : ''); };
 
   // ── The controller: one per page ──────────────────────────────────────────────────────────────────────────────
-  function create(win) {
+  // opts.view: factory (box, ctl) → ui for the richer on-page composer; without it the plain "Fill with my draft" button is used.
+  // opts.active(): false makes the helper inert (e.g. not on a profile page).
+  function create(win, opts = {}) {
     const doc = win.document;
+    let view = opts.view || null;
+    const active = opts.active || (() => true);
     let draft = { text: '', format: 'note' };
     let enabled = true;
     let lastMiss = 0;
     const uis = new Map();   // box element → ui
 
     const ctl = {
-      setDraft(text, format) { draft = { text: String(text || '').trim(), format: format === 'message' ? 'message' : 'note' }; log(`draft received (${draft.text.length} characters)`); ctl.scan(); },
+      setDraft(text, format) {
+        draft = { text: String(text || '').trim(), format: format === 'message' ? 'message' : 'note' };
+        log(`draft received (${draft.text.length} characters)`);
+        ctl.scan();
+        uis.forEach(ui => { if (ui.onPanelDraft) ui.onPanelDraft(draft); });
+      },
+      setView(v) { view = v || null; uis.forEach(ui => ui.destroy ? ui.destroy() : ui.host.remove()); uis.clear(); ctl.scan(); },
       getDraft: () => ({ ...draft }),
-      setEnabled(on) { enabled = !!on; if (!enabled) { uis.forEach(ui => ui.host.remove()); uis.clear(); } else ctl.scan(); },
+      setEnabled(on) { enabled = !!on; if (!enabled) { uis.forEach(ui => ui.destroy ? ui.destroy() : ui.host.remove()); uis.clear(); } else ctl.scan(); },
 
       scan() {
-        if (!enabled) return;
-        for (const [el, ui] of uis) if (!el.isConnected) { ui.host.remove(); uis.delete(el); }   // the box went away
+        if (!enabled || !active()) return;
+        for (const [el, ui] of uis) if (!el.isConnected) { ui.destroy ? ui.destroy() : ui.host.remove(); uis.delete(el); }   // the box went away
         const box = findNoteBox(doc);
         if (!box) {
           const n = [doc, ...shadowRoots(doc)].reduce((k, r) => k + r.querySelectorAll('textarea').length, 0);
@@ -154,9 +164,15 @@
           return;
         }
         let ui = uis.get(box.el);
-        if (!ui) { ui = mountUi(box, ctl); uis.set(box.el, ui); log(`found the ${box.kind === 'textarea' ? 'invitation note' : 'message'} box; button added`); }
+        if (!ui) {
+          ui = view ? view(box, ctl) : mountUi(box, ctl);
+          uis.set(box.el, ui);
+          if (ui.smart && draft.text && ui.onPanelDraft) ui.onPanelDraft(draft);
+          log(`found the ${box.kind === 'textarea' ? 'invitation note' : 'message'} box; ${view ? 'composer' : 'button'} added`);
+        }
         ui.box = box;
-        if (!ui.busy) ctl.describe(ui);
+        if (ui.smart) { if (ui.refreshBox) ui.refreshBox(box); }
+        else if (!ui.busy) ctl.describe(ui);
       },
 
       describe(ui) {
@@ -196,7 +212,7 @@
         ctl.stop = () => { clearTimeout(t); observer.disconnect(); };
       },
 
-      destroy() { enabled = false; if (ctl.stop) ctl.stop(); uis.forEach(ui => ui.host.remove()); uis.clear(); }
+      destroy() { enabled = false; if (ctl.stop) ctl.stop(); uis.forEach(ui => ui.destroy ? ui.destroy() : ui.host.remove()); uis.clear(); }
     };
     return ctl;
   }
@@ -206,16 +222,37 @@
     if (!win || !win.document || !win.chrome || !win.chrome.runtime || !win.chrome.runtime.onMessage) return;
     if (win.__outreachNoteFill && win.__outreachNoteFill.version === VERSION) return;
     if (win.__outreachNoteFill) win.__outreachNoteFill.ctl.destroy();
-    const ctl = create(win);
+
+    // Inert everywhere except a profile page: LinkedIn is a single-page app, so this script is present on every
+    // linkedin.com page but only looks for a note box on /in/… pages.
+    const onProfile = () => /^\/in\//.test(win.location.pathname);
+    const ctl = create(win, { active: onProfile });
+    let mode = 'smart';
     win.__outreachNoteFill = { version: VERSION, ctl };
+
+    const view = (win.PageComposer && win.DraftRequest)
+      ? win.PageComposer.factory(win, { chrome: win.chrome, Request: win.DraftRequest, Approach: win.Approach, Cache: typeof Cache !== 'undefined' ? Cache : null, limitOf, currentText, fillBox })
+      : null;
+    const modeFrom = (r) => (['smart', 'button', 'off'].includes(r.pageMode) ? r.pageMode : (r.noteFill === false ? 'off' : 'smart'));   // older installs only had the on/off switch
+    const apply = (next) => {
+      if (next === mode && win.__outreachNoteFill.ready) return;
+      mode = next; win.__outreachNoteFill.ready = true;
+      ctl.setEnabled(mode !== 'off');
+      ctl.setView(mode === 'smart' ? view : null);
+    };
+    const read = () => { try { win.chrome.storage.local.get(['pageMode', 'noteFill'], r => apply(modeFrom(r || {}))); } catch (_) { apply('smart'); } };
+    ctl.setEnabled(false);   // until we know the setting
+    read();
+    try { win.chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && (ch.pageMode || ch.noteFill)) read(); }); } catch (_) { /* no live updates */ }
+
     win.chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!msg) return;
-      if (msg.action === 'noteFillPing') { sendResponse({ ok: true, version: VERSION }); return; }
-      if (msg.action === 'noteFillDraft') { ctl.setEnabled(msg.enabled !== false); ctl.setDraft(msg.text, msg.format); sendResponse({ ok: true }); return; }
+      if (msg.action === 'noteFillPing') { sendResponse({ ok: true, version: VERSION, mode }); return; }
+      if (msg.action === 'noteFillDraft') { if (mode !== 'off') ctl.setEnabled(msg.enabled !== false); ctl.setDraft(msg.text, msg.format); sendResponse({ ok: true }); return; }
     });
     ctl.watch();
     log('helper running (' + VERSION + ')');
   }
 
-  return { VERSION, create, start, findNoteBox, limitOf, fillBox };
+  return { VERSION, create, start, findNoteBox, limitOf, fillBox, currentText };
 });

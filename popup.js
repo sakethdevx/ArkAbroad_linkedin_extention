@@ -300,7 +300,7 @@ async function handlePasteProfile() {
 
 async function requestData(profile) {
   const stored = await loadStoredSettings();
-  return Request.generateData({   // utils/request.js: the same payload the LinkedIn page builds
+  return DraftRequest.generateData({   // utils/request.js: the same payload the LinkedIn page builds
     profile, settings: stored,   // only userName and userBio are used: not the key, not the resume text
     purpose: document.getElementById('message-type').value,
     tone: document.getElementById('tone').value,
