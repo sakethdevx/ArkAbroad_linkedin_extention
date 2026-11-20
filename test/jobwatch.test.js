@@ -124,6 +124,26 @@ module.exports = (test, load) => {
     t.ctl.destroy();
   });
 
+  test('jobwatch: with the top card and the description in different parts of the page, the card still goes under the top card and above the Premium boxes', async () => {
+    const html = `<main><div class="pane">
+      <div class="hdr">
+        <div class="topcard"><div><a href="https://www.linkedin.com/company/dexterz/">Dexterz Technology</a></div><div><div><h1><span>Full Stack Web Developer</span></h1></div></div>
+          <p>India · 4 hours ago · 22 people clicked apply</p><p>Promoted by hirer · Responses managed off LinkedIn</p><ul><li>Remote</li><li>Internship</li></ul><div><button>Apply</button><button>Save</button></div></div>
+        <div class="premium"><p>Premium</p><h2>Job match is high, we can help you stand out</h2></div>
+        <div class="compare"><h2>See how you compare to over 22 others who clicked apply</h2></div>
+      </div>
+      <div class="body"><div class="wrap"><section><h2>About the job</h2><div class="desc"><p>FULL STACK DEVELOPER INTERN</p><p>Company: Dexterz Technology. Requirements: React, Node.js and MongoDB. Remote internship for freshers. Duration 3 months.</p></div></section></div></div>
+    </div></main>`;
+    const t = setup({ html, url: 'https://www.linkedin.com/jobs/view/555/' });
+    const s = JS.scrape(t.d, t.w.location);
+    assert.strictEqual(s.ok, true, s.reason);
+    assert.strictEqual(s.job.title, 'Full Stack Web Developer'); assert.strictEqual(s.job.location, 'India');
+    t.ctl.tick(); await tick(30);
+    assert.ok(t.host().previousElementSibling.classList.contains('topcard'), 'right under the title and the Apply / Save buttons');
+    assert.ok(t.host().nextElementSibling.classList.contains('premium'), 'above the Premium box');
+    t.ctl.destroy();
+  });
+
   test('jobwatch: a sticky copy of the title (LinkedIn\'s collapsed header) is skipped; the card still goes under the real top card', async () => {
     const html = PAGE.replace('<div class="feedback">', '<div class="sticky-copy" style="position:sticky;top:0"><span>Data Analyst Intern</span></div><div class="feedback">');
     const t = setup({ html });

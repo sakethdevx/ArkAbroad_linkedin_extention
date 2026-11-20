@@ -39,27 +39,29 @@
     function removeUi() { if (st.ui) { st.ui.remove(); st.ui = null; } st.key = ''; st.anchorEl = null; }
 
     // Where the card goes: right under the top card (title, place, chips, Apply / Save) and above LinkedIn's own boxes (Premium match, "how you
-    // compare", "people you can reach out to"), so it is on screen without scrolling. It is always in the normal flow of the page, never in a sticky
-    // or fixed header (a tall card there would take over the screen and block scrolling). If the layout is not recognised it goes just above the
-    // description text instead.
+    // compare", "people you can reach out to"), so it is on screen without scrolling. The top card is found by what it CONTAINS, not by LinkedIn's
+    // class names: start at the title and climb to the largest block that does not yet include the description or one of LinkedIn's own boxes.
+    // The card always goes in the normal flow of the page, never in a sticky or fixed header (a tall card there would take over the screen and
+    // block scrolling). If nothing is recognised it goes just above the description text.
+    const OTHER_BOXES = /\bpremium\b|job match is|see how you compare|about the job|meet the hiring team|people you can reach out to|show match details|tailor my resume|help me stand out/i;
     const isPinned = (n) => { try { const p = win.getComputedStyle(n).position; return p === 'sticky' || p === 'fixed'; } catch (_) { return false; } };
-    function column(from, pane) {   // the nearest ancestor that holds the page's sections side by side
-      for (let n = from.parentElement, i = 0; n && i < 10; n = n.parentElement, i++) { if (n.children.length >= 4) return n; if (n === pane) break; }
-      return null;
+    function topBlock(start, desc) {
+      let top = start, pinned = isPinned(start);
+      for (let i = 0; i < 14; i++) {
+        const p = top.parentElement;
+        if (!p || p === win.document.body || p.contains(desc) || OTHER_BOXES.test(p.textContent || '')) break;
+        top = p;
+        if (isPinned(top)) pinned = true;
+      }
+      return pinned ? null : top;
     }
     function place(s) {
       const el = s.el;
       if (!el || !el.parentNode) return;
-      const col = column(el, s.pane);
-      if (col) {
-        for (const t of s.titleEls || []) {
-          if (!col.contains(t)) continue;
-          let top = t, pinned = false;
-          for (; top && top.parentElement && top.parentElement !== col; top = top.parentElement) if (isPinned(top)) pinned = true;
-          if (top && isPinned(top)) pinned = true;
-          if (pinned || !top || top.parentElement !== col || top.contains(el)) continue;   // a sticky copy of the title, or the title is inside the description block
-          top.insertAdjacentElement('afterend', st.ui.host); st.anchorEl = top; return;
-        }
+      for (const t of s.titleEls || []) {
+        if (t.contains(el) || el.contains(t)) continue;
+        const top = topBlock(t, el);
+        if (top && top !== el && !top.contains(el) && !el.contains(top) && top.parentNode) { top.insertAdjacentElement('afterend', st.ui.host); st.anchorEl = top; return; }
       }
       if (/^(SECTION|ARTICLE)$/.test(el.tagName)) el.insertBefore(st.ui.host, el.children[1] || el.firstChild);   // after its "About the job" heading
       else el.insertAdjacentElement('beforebegin', st.ui.host);
