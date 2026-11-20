@@ -57,6 +57,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'PARSE_RESUME')     { handleParseResume(message.payload, sendResponse); return true; }
   if (message.type === 'BUILD_PROMPT')     { handleBuildPrompt(message.payload, sendResponse); return true; }
   if (message.type === 'FINISH_DRAFTS')    { handleFinishDrafts(message.payload, sendResponse); return true; }
+  if (message.type === 'BUILD_REFINE_PROMPT') { handleBuildRefinePrompt(message.payload, sendResponse); return true; }
+  if (message.action === 'refineDraft')    { handleRefineDraft(message, sendResponse); return true; }
   if (message.type === 'BUILD_RESUME_PROMPT') { handleBuildResumePrompt(message.payload, sendResponse); return true; }
   if (message.type === 'PREVIEW_RESUME')   { handlePreviewResume(message.payload, sendResponse); return true; }
 });
@@ -289,11 +291,12 @@ const composeFree = (ctx) => Compose.compose(ctx.composeCtx, { seed: ctx.seed })
   .map(v => ({ text: v.text, source: 'template', hookKind: v.hookKind, because: v.because }));
 
 // The checks every model draft must pass, identical for cloud and on-device (on-device adds the groundedness check).
-function checkOptions(ctx, req, { onDevice = false } = {}) {
+// extra = the user's own change request ("mention my Python project"): facts they typed may appear in the result
+function checkOptions(ctx, req, { onDevice = false, extra = '' } = {}) {
   return {
     format: ctx.format, maxChars: req.limit, firstName: recipientFirst(ctx), senderName: ctx.senderName,
-    allowedText: [ctx.bio, ctx.sender && ctx.sender.intro].filter(Boolean).join(' '),
-    facts: req.facts, requireGrounded: onDevice,
+    allowedText: [ctx.bio, ctx.sender && ctx.sender.intro, extra].filter(Boolean).join(' '),
+    facts: req.facts + (extra ? ' ' + extra : ''), requireGrounded: onDevice,
     requireAsk: ctx.messageType === 'Referral' ? { re: /\brefer/i, problem: 'does not ask for a referral' } : null
   };
 }
@@ -320,13 +323,59 @@ async function handleBuildPrompt(data, sendResponse) {
   } catch (err) { sendResponse({ success: false, error: err.message }); }
 }
 
+// "Tell me what to change" for an on-device model: the same prompt as drafting, plus the revision task.
+async function handleBuildRefinePrompt({ data, draft, comment }, sendResponse) {
+  try {
+    const ctx = await prepareContext(data);
+    const req = buildAiRequest(ctx, ONDEVICE);
+    const c = Safety.sanitizeText(comment, 300), d = Safety.sanitizeMultiline(draft, 1500);
+    if (!c || !d) { sendResponse({ success: false, error: 'Nothing to revise.' }); return; }
+    sendResponse({ success: true, system: req.system + Rules.refineSystem('ondevice'), user: req.user + Rules.refineUser(d, c), limit: req.limit, schema: ONDEVICE_SCHEMA, model: ONDEVICE.model });
+  } catch (err) { sendResponse({ success: false, error: err.message }); }
+}
+
+// Rewrite ONE draft from the user's comment. AI Mode → the user's AI; otherwise free rules (tone, ask, leave out, mention one
+// of the user's own items, shorter). The comment is the user's own words; the result still passes the same output checks.
+const FREE_WORDING = 'Free mode can’t follow that wording. Pick a quick option, or switch on AI or on-device AI for free-form changes.';
+async function handleRefineDraft({ data, draft, comment, intent }, sendResponse) {
+  try {
+    const c = Safety.sanitizeText(comment, 300), d = Safety.sanitizeMultiline(draft, 1500);
+    if (!c || !d) { sendResponse({ success: false, error: 'Nothing to revise.' }); return; }
+    const ctx = await prepareContext(data);
+    const cfg = data && data.forceFree ? { apiKey: '' } : await getAiConfig();
+    if (cfg.apiKey) {
+      const ai = await aiDrafts(cfg.provider, cfg.apiKey, ctx, { draft: d, comment: c });
+      if (!ai.ok) { sendResponse({ success: false, error: ai.userMessage }); return; }
+      if (!ai.variants.length) { sendResponse({ success: false, error: `The AI’s rewrite did not pass the checks${ai.dropReasons && ai.dropReasons.length ? ' (' + ai.dropReasons.join('; ') + ')' : ''}. Your draft is unchanged.` }); return; }
+      sendResponse({ success: true, text: ai.variants[0], applied: [], source: 'ai' });
+      return;
+    }
+    const i = intent && typeof intent === 'object' ? intent : {};
+    if (i.unmatched || !(i.tone || i.purpose || i.mention || i.shorter || (Array.isArray(i.omit) && i.omit.length))) { sendResponse({ success: false, error: FREE_WORDING }); return; }
+    const recompose = !!(i.tone || i.purpose || i.mention || (Array.isArray(i.omit) && i.omit.length));
+    let text = recompose ? composeFree(ctx)[0].text : d;
+    if (i.shorter) {
+      const shorter = DraftCheck.trimToFit(text, { maxChars: Math.max(60, Math.floor(text.length * 0.72)) });
+      if (shorter.length < text.length) text = shorter;
+      else if (!recompose) { sendResponse({ success: false, error: 'It is already about as short as I can make it without changing the meaning.' }); return; }
+    }
+    const limit = Compose.LIMITS[ctx.format];
+    const checked = Safety.validateOutput(text, { maxChars: limit, allowedText: [ctx.bio, ctx.sender && ctx.sender.intro, c].filter(Boolean).join(' ') });
+    if (!checked.ok) { sendResponse({ success: false, error: 'I could not make that change within the limit. Your draft is unchanged.' }); return; }
+    if (checked.text.trim() === d.trim()) { sendResponse({ success: false, error: 'The draft already reads that way, so there is nothing to change.' }); return; }
+    const applied = (Array.isArray(i.applied) ? i.applied : []).filter(a => typeof a === 'string').slice(0, 6).map(a => Safety.sanitizeText(a, 60));
+    sendResponse({ success: true, text: checked.text, applied, source: 'template' });
+  } catch (err) { sendResponse({ success: false, error: err.message }); }
+}
+
 // raw = the model's variants. Same cleanup and checks as the cloud path, plus groundedness; free drafts fill any gaps.
-async function handleFinishDrafts({ data, raw }, sendResponse) {
+// comment (optional) = the user's own change request: facts they typed may appear.
+async function handleFinishDrafts({ data, raw, comment }, sendResponse) {
   try {
     const ctx = await prepareContext(data);
     const composed = composeFree(ctx);
     const req = buildAiRequest(ctx, ONDEVICE);
-    const { good, bad } = DraftCheck.finishDrafts(Array.isArray(raw) ? raw : [], checkOptions(ctx, req, { onDevice: true }));
+    const { good, bad } = DraftCheck.finishDrafts(Array.isArray(raw) ? raw : [], checkOptions(ctx, req, { onDevice: true, extra: Safety.sanitizeText(comment, 300) }));
     const warnings = bad.length ? [dropWarning('on-device', bad.length, cleanReasons(bad.flatMap(b => b.problems)))] : [];
     const variants = fillWithFree(good, 'ondevice', composed);
     sendResponse({ success: true, injection: ctx.injection, variants, generatedMessage: variants[0].text, source: good.length ? 'ondevice' : 'template', polished: good.length, warnings });
@@ -440,8 +489,12 @@ function buildAiRequest(ctx, provider = PROVIDERS.anthropic) {
   return { system, user, limit, facts };
 }
 
-async function aiDrafts(provider, apiKey, ctx) {
+async function aiDrafts(provider, apiKey, ctx, revise = null) {
   const req = buildAiRequest(ctx, provider);
+  if (revise) {   // rewriting ONE draft from the user's comment: same rules, plus the revision task
+    req.system += Rules.refineSystem('cloud');
+    req.user += Rules.refineUser(revise.draft, revise.comment);
+  }
   let res;
   try {
     res = await callModel(provider, apiKey, { system: req.system, user: req.user, maxTokens: 1024, json: true });
@@ -456,7 +509,7 @@ async function aiDrafts(provider, apiKey, ctx) {
 
   const maxChars = req.limit;
   // every cleanup + validation step lives in utils/draftcheck.js, shared with the on-device path
-  const evaluate = (list) => DraftCheck.finishDrafts(list, checkOptions(ctx, req));
+  const evaluate = (list) => DraftCheck.finishDrafts(list, checkOptions(ctx, req, { extra: revise ? revise.comment : '' }));
 
   let { good, bad } = evaluate(raw);
   let recovered = 0;

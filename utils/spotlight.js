@@ -67,14 +67,10 @@
   const lcFirst = (s) => (/^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s);
   const article = (w) => (/^[aeiou]/i.test(w) ? 'an' : 'a');
 
-  // opts.excludeCompanies: employers already used as the hook (don't repeat the same fact twice)
-  function spotlight(sender, recipient, opts = {}) {
-    if (!sender || !recipient) return null;
-    const bag = recipientBag(recipient);
-    const skills = arr(sender.skills).map(s => cap(s, 40)).filter(Boolean);
-    const skip = new Set(arr(opts.excludeCompanies).map(norm).filter(Boolean));
+  // Every project and role of the sender's that could be mentioned, each with the exact sentence it would become.
+  // skip = normalised employer names already used as the hook (do not repeat the same fact twice)
+  function buildCandidates(sender, skip) {
     const candidates = [];
-
     arr(sender.projects).forEach((p, i) => {
       const name = cap(p && p.name, 80), summary = cap(p && p.summary, 160);
       if (!name) return;
@@ -89,6 +85,30 @@
       candidates.push({ type: 'experience', order: 100 + i, title: title || company, summary: detail, itemText: `${title} ${detail}`,
         text: company ? `I worked as ${role} at ${company}.` : `I worked as ${role}.` });
     });
+    return candidates;
+  }
+
+  // The sender asked to mention a SPECIFIC item of theirs (by name, or just "a project"): that item as a spotlight.
+  // Only ever one of the sender's own projects/roles; null when nothing matches.  name = text typed by the user, or '' for "a project".
+  function named(sender, name) {
+    if (!sender) return null;
+    const want = norm(name || '');
+    const all = buildCandidates(sender, new Set());
+    let pick = null;
+    if (want) {
+      pick = all.filter(c => norm(c.title) && (want.includes(norm(c.title)) || norm(c.title).includes(want)))
+        .sort((a, b) => norm(b.title).length - norm(a.title).length)[0] || null;
+    } else pick = all.find(c => c.type === 'project') || all[0] || null;
+    return pick ? { type: pick.type, title: pick.title, text: pick.text, matches: [], score: 0 } : null;
+  }
+
+  // opts.excludeCompanies: employers already used as the hook (don't repeat the same fact twice)
+  function spotlight(sender, recipient, opts = {}) {
+    if (!sender || !recipient) return null;
+    const bag = recipientBag(recipient);
+    const skills = arr(sender.skills).map(s => cap(s, 40)).filter(Boolean);
+    const skip = new Set(arr(opts.excludeCompanies).map(norm).filter(Boolean));
+    const candidates = buildCandidates(sender, skip);
 
     let best = null;
     for (const c of candidates) {
@@ -114,5 +134,5 @@
     return out.slice(0, 2);
   }
 
-  return { spotlight, adviceFor };
+  return { spotlight, named, adviceFor };
 });
