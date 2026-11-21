@@ -3,10 +3,16 @@
 // ─── State ────────────────────────────────────────────────────────────────────
 let currentProfile     = null;
 let isGenerating       = false;
-let currentMode        = 'simple';
-let deepProfileJSON    = null;
-let deepEnrichmentJSON = null;
-let isEnriching        = false;
+
+// Storage in one place (the panel's only access to chrome.storage.local), and a quiet debug switch:
+// set DEBUG = true to see errors that are deliberately handled (they never reach the user).
+const DEBUG = false;
+const debug = (where, err) => { if (DEBUG) console.warn('[outreach]', where, err); };
+const storageGet = (keys) => new Promise(r => chrome.storage.local.get(keys, r));
+const storageSet = (o) => new Promise(r => chrome.storage.local.set(o, r));
+const storageRemove = (keys) => new Promise(r => chrome.storage.local.remove(keys, r));
+// every key the panel reads at start-up, named once
+const STORED_KEYS = ['userApiKey', 'userName', 'userBio', 'resumeText', 'resumeFileName', 'resumeBase64', 'senderProfile', 'prefs', 'aiConsent', 'resumeTipDismissed', 'aiProvider', 'mode', 'onDevice'];
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -15,60 +21,103 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireSettingsEvents();
   wireCurrentEvents();
   wireRecentEvents();
+  document.getElementById('followup-banner-go').addEventListener('click', () => switchTab('recent'));
+  wireReadCard();
+  document.getElementById('paste-btn').addEventListener('click', handlePasteProfile);
+  document.getElementById('privacy-details-btn').addEventListener('click', showPrivacyDetails);
+  wireProviderUi();
+  wireOnDevice();
+  wireNoteFill();
+  wireRefine();
+  wireJobCheck();
+  wireTranslate();
+  wireModeSwitch();
+  document.getElementById('resume-tip-go').addEventListener('click', () => { switchTab('settings'); document.getElementById('about-card').open = true; document.getElementById('file-upload-area').focus(); });
+  document.getElementById('resume-tip-dismiss').addEventListener('click', async () => { await storageSet({ resumeTipDismissed: true }); refreshResumeTip(); });
+  wireConsentDialog();
+  [document.documentElement, document.body].forEach(el => el.addEventListener('scroll', pinShell, { passive: true }));
+  window.addEventListener('scroll', pinShell, { passive: true });
   await checkCurrentPage();
   await loadSettings();
+  await loadPrefs();
   await renderRecentContacts();
-  await checkLicenseStatus();
+  await refreshFollowUpBadge();
+  await refreshModeBadge();
+  await refreshOnDeviceCard();
+  await refreshNoteFillCard();
+  await refreshJobModeCard();
+  pushDraftToPage();   // panel opened on a LinkedIn tab: start the helper so its button can appear (with or without a draft)
+  await refreshResumeTip();
+  await onTabContextChanged();
+  watchTabs();
 });
-
-// ─── License key status in header ────────────────────────────────────────────
-async function checkLicenseStatus() {
-  const s   = await loadStoredSettings();
-  const key = (s.userApiKey || '').trim();
-  const el  = document.getElementById('key-status');
-  el.textContent = key ? '● AI Mode' : '● Free Mode';
-  el.className   = 'key-status active';
-  document.getElementById('no-key-warning').classList.add('hidden');
-}
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 function initTabs() {
-  document.querySelectorAll('.tab-btn').forEach(btn => {
+  const btns = Array.from(document.querySelectorAll('.tab-btn'));
+  btns.forEach((btn, i) => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    btn.addEventListener('keydown', (e) => {
+      const keys = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: btns.length - 1 };
+      if (!(e.key in keys)) return;
+      e.preventDefault();
+      const next = btns[(keys[e.key] + btns.length) % btns.length];
+      switchTab(next.dataset.tab);
+      next.focus();
+    });
   });
 }
 
 function switchTab(name) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  document.querySelector(`.tab-btn[data-tab="${name}"]`).classList.add('active');
   document.getElementById(`tab-${name}`).classList.add('active');
   if (name === 'recent') renderRecentContacts();
 }
 
 // ─── Mode toggle ──────────────────────────────────────────────────────────────
 function initModeToggle() {
-  document.getElementById('mode-simple').addEventListener('click', () => setMode('simple'));
-  document.getElementById('mode-deep').addEventListener('click', () => setMode('deep'));
 }
 
-function setMode(mode) {
-  currentMode = mode;
-  document.getElementById('mode-simple').classList.toggle('active', mode === 'simple');
-  document.getElementById('mode-deep').classList.toggle('active', mode === 'deep');
-  document.getElementById('simple-mode-ui').classList.toggle('hidden', mode === 'deep');
-  document.getElementById('deep-mode-ui').classList.toggle('hidden', mode === 'simple');
-  hideMessage();
-  clearCurrentStatus();
-}
 
 // ─── Page check ───────────────────────────────────────────────────────────────
+// Are you connected to this person? Read just the top card's badge/buttons as soon as the profile is open, so the right
+// format is already selected before you press anything. Retries a few times while LinkedIn finishes drawing the page.
+let connDetectKey = '';
+let connDetectBusy = false;
+async function autoDetectConnection(tab) {
+  const key = pageKey(tab && tab.url);
+  if (formatByUser || connDetectBusy || connDetectKey === key) return;
+  connDetectBusy = true;
+  try {
+    for (const wait of [0, 900, 2200, 4500]) {
+      if (wait) await new Promise(r => setTimeout(r, wait));
+      const cur = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!cur[0] || pageKey(cur[0].url) !== key || formatByUser) return;
+      const res = await new Promise(r => chrome.runtime.sendMessage({ action: 'detectConnection', tabId: tab.id }, r));
+      if (!res || !res.success) continue;
+      const d = ProfileParse.detectConnection({ lines: res.lines, labels: res.labels });
+      if (d.connected !== null) {
+        connDetectKey = key;
+        maybeAutoFormat({ isConnection: d.connected, connectionDegree: d.degree, source: 'page' }, { applyLive: true });
+        return;
+      }
+    }
+  } catch (err) { debug('auto-detect connection', err); /* a convenience; the format buttons always work */ }
+  finally { connDetectBusy = false; }
+}
+
 async function checkCurrentPage() {
   const tabs      = await chrome.tabs.query({ active: true, currentWindow: true });
   const tab       = tabs[0];
   const onProfile = tab && tab.url && /linkedin\.com\/in\/[^/?#]+/.test(tab.url);
   document.getElementById('scrape-btn').disabled  = !onProfile;
-  document.getElementById('enrich-btn').disabled  = !onProfile;
+  if (onProfile) autoDetectConnection(tab);   // not awaited: picks the right format in the background
   if (!onProfile) {
     document.getElementById('page-warning').classList.remove('hidden');
   } else {
@@ -80,11 +129,13 @@ async function checkCurrentPage() {
 // ─── Wire events ──────────────────────────────────────────────────────────────
 function wireCurrentEvents() {
   document.getElementById('scrape-btn').addEventListener('click', handleScrapeAndGenerate);
-  document.getElementById('enrich-btn').addEventListener('click', handleEnrich);
-  document.getElementById('deep-generate-btn').addEventListener('click', handleDeepGenerate);
-  document.getElementById('regenerate-btn').addEventListener('click', handleRegenerate);
+  document.getElementById('regenerate-btn').addEventListener('click', () => regenerate(true));
+  document.getElementById('spot-chip').addEventListener('click', onSpotlightToggle);
   document.getElementById('copy-btn').addEventListener('click', handleCopy);
-  document.getElementById('generated-message').addEventListener('input', updateCharCount);
+  document.getElementById('copy-open-btn').addEventListener('click', handleCopyAndOpen);
+  document.getElementById('generated-message').addEventListener('input', onDraftInput);
+  document.querySelectorAll('.format-btn').forEach(b => b.addEventListener('click', () => { formatByUser = true; formatAutoNote = ''; setFormat(b.dataset.format); }));
+  ['message-type', 'tone'].forEach(id => document.getElementById(id).addEventListener('change', () => { savePrefs(); applyChangeLive(); }));
 }
 
 function wireSettingsEvents() {
@@ -94,9 +145,11 @@ function wireSettingsEvents() {
     if (e.key === 'Enter') handleValidateKey();
   });
 
-  // Resume upload
+  // Resume upload (keyboard + mouse + drag/drop)
   const dropArea = document.getElementById('file-upload-area');
-  dropArea.addEventListener('click', () => document.getElementById('resume-upload').click());
+  const picker   = document.getElementById('resume-upload');
+  dropArea.addEventListener('click', (e) => { if (e.target !== picker) picker.click(); });
+  dropArea.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); picker.click(); } });
   dropArea.addEventListener('dragover', (e) => { e.preventDefault(); dropArea.classList.add('drag-over'); });
   dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-over'));
   dropArea.addEventListener('drop', (e) => {
@@ -105,10 +158,25 @@ function wireSettingsEvents() {
     const file = e.dataTransfer.files[0];
     if (file) processResumeFile(file);
   });
-  document.getElementById('resume-upload').addEventListener('change', (e) => {
+  picker.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) processResumeFile(file);
+    picker.value = '';
   });
+  document.getElementById('resume-paste-btn').addEventListener('click', () => {
+    const text = document.getElementById('resume-paste').value;
+    if (text.trim().length < 40) { setResumeStatus('Paste a bit more of your resume text first.', 'error'); return; }
+    ingestResumeText(text, 'Pasted resume');
+  });
+  document.getElementById('resume-remove-btn').addEventListener('click', removeResume);
+  document.getElementById('user-name').addEventListener('input', renderAboutSummary);
+  document.getElementById('resume-ai-btn').addEventListener('click', async () => {
+    const { resumeText } = await storageGet(['resumeText']);
+    if (!resumeText) { setResumeStatus('Upload or paste your resume first.', 'error'); return; }
+    if ((await getModeState()).ai) await tryAiResume(resumeText); else await tryOnDeviceResume(resumeText);
+  });
+  ['me-intro', 'me-goal', 'me-schools', 'me-employers', 'me-skills', 'me-city', 'me-education', 'me-experience', 'me-projects', 'me-certs', 'me-languages'].forEach(id =>
+    document.getElementById(id).addEventListener('change', () => saveSenderFromCard()));
 }
 
 function wireRecentEvents() {
@@ -122,333 +190,156 @@ function wireRecentEvents() {
 async function handleScrapeAndGenerate() {
   if (isGenerating) return;
 
-
   isGenerating = true;
   hideMessage();
-  setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, 'Scraping profile…');
+  setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, 'Reading profile…');
   clearCurrentStatus();
 
   try {
-    const profile = await sendToBackground({ action: 'scrapeProfile' });
-    currentProfile = profile;
-    renderProfileCard(profile);
-    setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, 'Generating message…');
-
-    const message = await callQuickGenerate(profile);
-    renderMessage(message);
-
-    await Cache.addContact({
-      profileUrl: profile.profileUrl || '',
-      name:       profile.name       || 'Unknown',
-      headline:   profile.headline   || '',
-      company:    profile.currentCompany || '',
-      message,
-      timestamp:  Date.now()
-    });
-
-    showCurrentStatus('Message ready.', 'success');
+    const profile = await sendToBackground({ action: 'scrapeProfile', tabId: await activeTabId() });
+    await generateFromProfile(profile);
   } catch (err) {
     showCurrentStatus(err.message, 'error');
+    openPasteCard();           // always leave the user a way forward
   } finally {
     isGenerating = false;
-    setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', false, 'Scrape &amp; Generate');
+    setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', false, 'Read profile &amp; write draft');
   }
 }
 
-async function callQuickGenerate(profile) {
-  const settings    = await loadStoredSettings();
-  const messageType = document.getElementById('message-type').value;
-  const tone        = document.getElementById('tone').value;
-  return sendToBackground({ action: 'generateMessage', data: { profileData: profile, settings, messageType, tone } });
-}
+// Shared by scraping and pasted text: show what was read, then draft unless nothing was readable.
+async function generateFromProfile(profile, setBusy = (t) => setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, t)) {
+  currentProfile = profile;
+  maybeAutoFormat(profile);
+  suggestTranslation(profile);   // not awaited
+  renderProfileCard(profile);
+  renderReadCard(profile);
+  renderOverlaps(false);
+  const confidence = profile.quality ? profile.quality.confidence : 'high';
 
-async function handleRegenerate() {
-  if (isGenerating) return;
-  if (currentMode === 'deep') { handleDeepGenerate(); return; }
-  if (!currentProfile) return;
-
-  isGenerating = true;
-  setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', true, 'Regenerating…');
-
-  try {
-    const message = await callQuickGenerate(currentProfile);
-    renderMessage(message);
-    showCurrentStatus('Regenerated!', 'success');
-  } catch (err) {
-    showCurrentStatus(err.message, 'error');
-  } finally {
-    isGenerating = false;
-    setButtonLoading('scrape-btn', 'btn-label', 'btn-spinner', false, 'Scrape &amp; Generate');
-  }
-}
-
-// ─── Deep Mode ────────────────────────────────────────────────────────────────
-async function handleEnrich() {
-  if (isEnriching) return;
-
-
-  deepProfileJSON = null;
-  deepEnrichmentJSON = null;
-  resetLayerStatuses();
-  document.getElementById('hooks-panel').classList.add('hidden');
-  document.getElementById('deep-generate-btn').disabled = true;
-  hideMessage();
-  clearCurrentStatus();
-
-  isEnriching = true;
-  setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', true, 'Scraping profile…');
-  setLayerStatus(1, 'running', 'Scraping…');
-
-  let rawProfileData;
-  try {
-    rawProfileData = await sendToBackground({ action: 'scrapeProfile' });
-  } catch (err) {
-    setLayerStatus(1, 'error', 'Failed');
-    showCurrentStatus('Could not scrape. Are you on a LinkedIn profile page?', 'error');
-    isEnriching = false;
-    setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', false, 'Scrape + Enrich (L1 + L2)');
+  if (confidence === 'none') {
+    showCurrentStatus("I couldn't read anything useful from this page. Paste the profile text below and I'll use that instead.", 'error');
+    openPasteCard();
     return;
   }
 
-  currentProfile = rawProfileData;
-  renderProfileCard(rawProfileData);
-  setLayerStatus(1, 'running', 'Parsing…');
-  setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', true, 'Running AI layers…');
-  showCurrentStatus('Enriching…');
+  seed = 0;
+  setBusy('Writing your draft…');
+  const resp = await callQuickGenerate(currentProfile);
+  renderDrafts(resp);
+  await saveToHistory();
 
-  chrome.runtime.sendMessage({ type: 'RUN_ENRICH', payload: { rawProfileData } }, (response) => {
-    isEnriching = false;
-    setButtonLoading('enrich-btn', 'enrich-label', 'enrich-spinner', false, 'Scrape + Enrich (L1 + L2)');
-
-    if (chrome.runtime.lastError || !response) {
-      setLayerStatus(1, 'error', 'Error');
-      setLayerStatus(2, 'error', 'Error');
-      showCurrentStatus('Pipeline error. Check your connection.', 'error');
-      return;
-    }
-
-    if (response.status === 'error') {
-      setLayerStatus(1, 'error', 'Error');
-      setLayerStatus(2, 'error', 'Error');
-      showCurrentStatus(response.error, 'error');
-      return;
-    }
-
-    setLayerStatus(1, 'done', 'Done');
-    setLayerStatus(2, 'done', 'Done');
-    deepProfileJSON    = response.profileJSON;
-    deepEnrichmentJSON = response.enrichmentJSON;
-    renderProfileCard({ name: deepProfileJSON.name, headline: deepProfileJSON.headline, currentCompany: deepProfileJSON.currentCompany });
-    renderHooks(deepEnrichmentJSON);
-    setLayerStatus(3, '', 'Ready');
-    document.getElementById('deep-generate-btn').disabled = false;
-    showCurrentStatus('Enrichment done. Hit Generate Message.', 'success');
-  });
+  if (confidence !== 'high') showCurrentStatus('Draft ready. I only read part of this profile, so check “What I read” above.', 'warning');
+  else showCurrentStatus('Draft ready. Read it, make it yours, then send it yourself.', 'success');
 }
 
-async function handleDeepGenerate() {
-  if (isGenerating || !deepProfileJSON || !deepEnrichmentJSON) return;
+// ─── “What I read” card + paste fallback ─────────────────────────────────────
+const CONF_LABEL = { high: 'Read well', medium: 'Partly read', low: 'Barely read', none: 'Nothing read' };
 
+function renderReadCard(profile) {
+  const q = profile.quality || { confidence: 'high', warnings: [], missing: [] };
+  const card = document.getElementById('read-card');
+  card.classList.remove('hidden');
+  card.open = q.confidence !== 'high';       // open by default only when something needs attention
+
+  const pill = document.getElementById('read-conf');
+  pill.textContent = CONF_LABEL[q.confidence] || '';
+  pill.className = `conf-pill conf-${q.confidence}`;
+
+  document.getElementById('read-name').value    = profile.name || '';
+  document.getElementById('read-role').value    = profile.currentTitle || '';
+  document.getElementById('read-company').value = profile.currentCompany || '';
+
+  const n = (a) => (a || []).length;
+  document.getElementById('read-counts').textContent =
+    `Experience ${n(profile.experienceEntries)} · Education ${n(profile.educationEntries)} · Skills ${n(profile.skills)} · About ${profile.about ? '✓' : '—'}`;
+
+  const list = document.getElementById('read-warnings');
+  list.innerHTML = '';
+  const notes = [...(q.warnings || [])];
+  if (q.missing && q.missing.length && q.confidence !== 'high') notes.push(`Not found: ${q.missing.join(', ')}.`);
+  notes.forEach(t => { const li = document.createElement('li'); li.textContent = t; list.appendChild(li); });
+  list.classList.toggle('hidden', notes.length === 0);
+}
+
+function wireReadCard() {
+  const apply = () => {
+    if (!currentProfile) return;
+    currentProfile.name           = document.getElementById('read-name').value.trim();
+    currentProfile.currentTitle   = document.getElementById('read-role').value.trim();
+    currentProfile.currentCompany = document.getElementById('read-company').value.trim();
+    renderProfileCard(currentProfile);
+    renderOverlaps(true);
+    document.getElementById('read-edit-hint').classList.remove('hidden');
+  };
+  ['read-name', 'read-role', 'read-company'].forEach(id => document.getElementById(id).addEventListener('input', apply));
+}
+
+function openPasteCard() {
+  const card = document.getElementById('paste-card');
+  card.open = true;
+  scrollIntoViewSoft(card);
+}
+
+async function handlePasteProfile() {
+  if (isGenerating) return;
+  const text = document.getElementById('paste-text').value;
+  if (text.trim().length < 20) { showCurrentStatus('Paste the profile text first (select all on the profile, copy, paste here).', 'error'); return; }
+
+  const profile = ProfileParse.parseProfileText(text);
   isGenerating = true;
-  setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', true, 'Writing message…');
-  setLayerStatus(3, 'running', 'Writing…');
-  showCurrentStatus('Layer 3: writing message…');
   hideMessage();
-
-  const messageType = document.getElementById('message-type').value;
-  const tone        = document.getElementById('tone').value;
-
-  chrome.runtime.sendMessage(
-    { type: 'RUN_GENERATE', payload: { profileJSON: deepProfileJSON, enrichmentJSON: deepEnrichmentJSON, messageType, tone } },
-    async (response) => {
-      isGenerating = false;
-      setButtonLoading('deep-generate-btn', 'deep-gen-label', 'deep-gen-spinner', false, 'Generate Message (L3)');
-
-      if (chrome.runtime.lastError || !response) {
-        setLayerStatus(3, 'error', 'Error');
-        showCurrentStatus('Generation failed.', 'error');
-        return;
-      }
-
-      if (response.status === 'error') {
-        setLayerStatus(3, 'error', 'Error');
-        showCurrentStatus(response.error, 'error');
-        return;
-      }
-
-      setLayerStatus(3, 'done', 'Done');
-      renderMessage(response.generatedMessage);
-      const rem = response.remaining !== undefined ? ` (${response.remaining} messages left today)` : '';
-      showCurrentStatus(`Message ready.${rem}`, 'success');
-
-      await Cache.addContact({
-        profileUrl: deepProfileJSON.profileUrl || '',
-        name:       deepProfileJSON.name || 'Unknown',
-        headline:   deepProfileJSON.headline || '',
-        company:    deepProfileJSON.currentCompany || '',
-        message:    response.generatedMessage,
-        timestamp:  Date.now()
-      });
-    }
-  );
-}
-
-// ─── Settings ─────────────────────────────────────────────────────────────────
-async function loadSettings() {
-  const s = await loadStoredSettings();
-  if (s.userApiKey) document.getElementById('api-key').value = s.userApiKey;
-  if (s.userName)   document.getElementById('user-name').value   = s.userName;
-  if (s.userBio)    document.getElementById('user-bio').value    = s.userBio;
-  if (s.resumeFileName) {
-    document.getElementById('file-label').textContent = s.resumeFileName;
-    document.getElementById('file-upload-area').classList.add('has-file');
-    const statusEl = document.getElementById('resume-status');
-    statusEl.textContent = `${s.resumeFileName} saved ✓`;
-    statusEl.className   = 'resume-status success';
-    statusEl.classList.remove('hidden');
+  clearCurrentStatus();
+  setButtonLoading('paste-btn', 'paste-label', 'paste-spinner', true, 'Reading…');
+  try {
+    await generateFromProfile(profile, (t) => setButtonLoading('paste-btn', 'paste-label', 'paste-spinner', true, t));
+  } catch (err) {
+    showCurrentStatus(err.message, 'error');
+  } finally {
+    isGenerating = false;
+    setButtonLoading('paste-btn', 'paste-label', 'paste-spinner', false, 'Use pasted text');
   }
 }
 
-async function handleSaveSettings() {
-  const userApiKey = document.getElementById('api-key').value.trim();
-  const userName   = document.getElementById('user-name').value.trim();
-  const userBio    = document.getElementById('user-bio').value.trim();
-
-  const savePayload = { userApiKey, userName, userBio };
-  if (pendingResume) {
-    savePayload.resumeBase64   = pendingResume.base64;
-    savePayload.resumeFileName = pendingResume.fileName;
-    pendingResume = null;
-    const statusEl = document.getElementById('resume-status');
-    statusEl.textContent = 'Resume saved ✓';
-    statusEl.className   = 'resume-status success';
-  }
-  await new Promise(resolve => chrome.storage.local.set(savePayload, resolve));
-  showSettingsStatus('Settings saved!', 'success');
-  await checkLicenseStatus();
-}
-
-async function handleValidateKey() {
-  const apiKey = document.getElementById('api-key').value.trim();
-  if (!apiKey) return;
-
-  const btn = document.getElementById('validate-btn');
-  btn.textContent = '…';
-  btn.disabled = true;
-
-  const result = await new Promise(resolve => {
-    chrome.runtime.sendMessage({ type: 'TEST_API_KEY', payload: { apiKey } }, resolve);
+async function requestData(profile) {
+  const stored = await loadStoredSettings();
+  return DraftRequest.generateData({   // utils/request.js: the same payload the LinkedIn page builds
+    profile, settings: stored,   // only userName and userBio are used: not the key, not the resume text
+    purpose: document.getElementById('message-type').value,
+    tone: document.getElementById('tone').value,
+    format: currentFormat, seed, shared: sharedContext()
   });
+}
 
-  btn.textContent = 'Test';
-  btn.disabled = false;
-
-  const el = document.getElementById('key-validation-status');
-  el.classList.remove('hidden');
-
-  if (result && result.valid) {
-    el.textContent = '✓ Key works — AI Mode on';
-    el.className   = 'key-validation-status valid';
-    const s = await loadStoredSettings();
-    await new Promise(resolve => chrome.storage.local.set({ ...s, userApiKey: apiKey }, resolve));
-    await checkLicenseStatus();
-  } else {
-    el.textContent = `✗ ${result?.reason || 'Key did not work'}`;
-    el.className   = 'key-validation-status invalid';
-  }
+async function callQuickGenerate(profile) {
+  const data = await requestData(profile);
+  const resp = await sendToBackground({ action: 'generateMessage', data });
+  maybePolishOnDevice(data, resp, profile);   // not awaited: the instant drafts show first, the polished ones replace them
+  return resp;
 }
 
 // ─── Pipeline UI ──────────────────────────────────────────────────────────────
-function setLayerStatus(layer, status, text) {
-  document.getElementById(`l${layer}-dot`).className = `status-dot ${status}`;
-  document.getElementById(`l${layer}-text`).textContent = text;
-}
-
-function resetLayerStatuses() {
-  [1,2].forEach(n => setLayerStatus(n, '', 'Ready'));
-  setLayerStatus(3, '', 'Waiting');
-}
-
-function renderHooks(enrichmentJSON) {
-  const panel = document.getElementById('hooks-panel');
-  const list  = document.getElementById('hooks-list');
-  list.innerHTML = '';
-  const hooks = enrichmentJSON.topHooks?.length
-    ? enrichmentJSON.topHooks
-    : (enrichmentJSON.companyNews || []).map(n => n.relevance || n.headline).filter(Boolean);
-  if (!hooks.length) return;
-  hooks.slice(0, 3).forEach(hook => {
-    const d = document.createElement('div');
-    d.className   = 'hook-item';
-    d.textContent = hook;
-    list.appendChild(d);
-  });
-  panel.classList.remove('hidden');
-}
-
 // ─── UI helpers ───────────────────────────────────────────────────────────────
 function renderProfileCard(data) {
   const section = document.getElementById('profile-section');
   section.classList.remove('hidden');
   const name = data.name || 'Unknown';
-  document.getElementById('profile-avatar').textContent  = name.charAt(0).toUpperCase();
+  const avatar = document.getElementById('profile-avatar');
+  avatar.classList.remove('has-photo');
+  avatar.textContent = name.charAt(0).toUpperCase();          // initial first: always something sensible
+  if (ProfileParse.isLinkedInImage(data.photoUrl)) {          // then their real photo, straight from LinkedIn's image servers
+    const img = document.createElement('img');
+    img.alt = '';
+    img.referrerPolicy = 'no-referrer';
+    img.decoding = 'async';
+    img.addEventListener('load', () => avatar.classList.add('has-photo'));       // fade the picture in over the initial
+    img.addEventListener('error', () => { img.remove(); avatar.classList.remove('has-photo'); });   // keeps the initial
+    avatar.appendChild(img);
+    img.src = data.photoUrl;
+  } else avatar.classList.remove('has-photo');
   document.getElementById('profile-name').textContent    = name;
   document.getElementById('profile-headline').textContent = data.headline || '';
   document.getElementById('profile-company').textContent  = data.currentCompany || '';
-}
-
-function renderMessage(text) {
-  document.getElementById('generated-message').value = text;
-  document.getElementById('message-section').classList.remove('hidden');
-  updateCharCount();
-}
-
-function hideMessage() { document.getElementById('message-section').classList.add('hidden'); }
-function updateCharCount() {
-  document.getElementById('char-count').textContent = `${document.getElementById('generated-message').value.length} chars`;
-}
-
-async function handleCopy() {
-  const text = document.getElementById('generated-message').value;
-  if (!text) return;
-  try { await navigator.clipboard.writeText(text); } catch(_) {
-    const ta = document.getElementById('generated-message');
-    ta.select(); document.execCommand('copy');
-  }
-  const btn = document.getElementById('copy-btn');
-  btn.textContent = '✓ Copied!';
-  btn.classList.add('btn-secondary'); btn.classList.remove('btn-primary');
-  setTimeout(() => {
-    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="2"/></svg> Copy`;
-    btn.classList.remove('btn-secondary'); btn.classList.add('btn-primary');
-  }, 2200);
-}
-
-function showCurrentStatus(msg, type = '') {
-  const el = document.getElementById('status-message');
-  el.textContent = msg;
-  el.className = `status-bar${type ? ' status-' + type : ''}`;
-  el.classList.remove('hidden');
-}
-
-function clearCurrentStatus() {
-  const el = document.getElementById('status-message');
-  el.classList.add('hidden');
-  el.textContent = '';
-}
-
-function showSettingsStatus(msg, type = '') {
-  const el = document.getElementById('settings-status');
-  el.textContent = msg;
-  el.className = `status-bar${type ? ' status-' + type : ''}`;
-  el.classList.remove('hidden');
-  setTimeout(() => el.classList.add('hidden'), 2500);
-}
-
-function setButtonLoading(btnId, labelId, spinnerId, loading, labelText) {
-  document.getElementById(btnId).disabled = loading;
-  document.getElementById(labelId).innerHTML = labelText;
-  document.getElementById(spinnerId).classList.toggle('hidden', !loading);
 }
 
 // ─── Recent contacts ──────────────────────────────────────────────────────────
@@ -462,19 +353,23 @@ async function renderRecentContacts() {
     emptyEl.classList.remove('hidden'); actionsEl.classList.add('hidden'); return;
   }
   emptyEl.classList.add('hidden'); actionsEl.classList.remove('hidden');
+  document.getElementById('recent-subtitle').textContent = `${contacts.length} recent draft${contacts.length > 1 ? 's' : ''}`;
   contacts.forEach((c, i) => listEl.appendChild(buildContactCard(c, i)));
 }
 
 function buildContactCard(contact, idx) {
   const card = document.createElement('div');
   card.className = 'contact-card';
+  const link = Person.profileLink(contact.handle || contact.profileUrl);   // null unless it is a real LinkedIn profile handle
   const date    = new Date(contact.timestamp).toLocaleDateString('en-US', { month:'short', day:'numeric' });
   const preview = (contact.message || '').substring(0, 110) + ((contact.message || '').length > 110 ? '…' : '');
   card.innerHTML = `
     <div class="contact-header">
       <div class="contact-info">
-        <div class="contact-name">${esc(contact.name||'Unknown')}</div>
+        ${link ? `<button class="contact-name contact-link" id="open-${idx}" title="Open ${esc(contact.name || 'their')} profile on LinkedIn">${esc(contact.name||'Unknown')} <span aria-hidden="true">↗</span></button>`
+               : `<div class="contact-name">${esc(contact.name||'Unknown')}</div>`}
         <div class="contact-meta">${esc(contact.headline||contact.company||'')}</div>
+        ${link ? '' : '<div class="contact-meta contact-nolink">From pasted text, so there is no profile to open.</div>'}
       </div>
       <div class="contact-date">${esc(date)}</div>
     </div>
@@ -482,6 +377,7 @@ function buildContactCard(contact, idx) {
     <div class="contact-message-full hidden" id="full-${idx}">${esc(contact.message||'')}</div>
     <div class="contact-actions">
       <button class="btn-link" id="expand-${idx}">Show full message</button>
+      <button class="btn-link" id="sent-${idx}" aria-pressed="${contact.sent ? 'true' : 'false'}">${contact.sent ? '✓ Sent' : 'Mark as sent'}</button>
       <button class="btn btn-sm btn-primary" id="copy-c-${idx}">Copy</button>
     </div>`;
 
@@ -492,6 +388,19 @@ function buildContactCard(contact, idx) {
     card.querySelector(`#expand-${idx}`).textContent = isHidden ? 'Show less' : 'Show full message';
   });
 
+  const openBtn = card.querySelector(`#open-${idx}`);
+  if (openBtn) openBtn.addEventListener('click', () => { chrome.tabs.create({ url: link }); });
+
+  const sentBtn = card.querySelector(`#sent-${idx}`);
+  sentBtn.addEventListener('click', async () => {
+    const next = !contact.sent;
+    contact.sent = next;
+    await Cache.setSent(contact, next);
+    sentBtn.textContent = next ? '✓ Sent' : 'Mark as sent';
+    sentBtn.setAttribute('aria-pressed', String(next));
+    renderRecentContacts(); refreshFollowUpBadge();   // the follow-up clock starts (or resets) with this click
+  });
+
   card.querySelector(`#copy-c-${idx}`).addEventListener('click', async () => {
     await navigator.clipboard.writeText(contact.message || '').catch(() => {});
     const btn = card.querySelector(`#copy-c-${idx}`);
@@ -499,7 +408,48 @@ function buildContactCard(contact, idx) {
     setTimeout(() => { btn.textContent = 'Copy'; }, 2200);
   });
 
+  addFollowUp(card, contact, idx);
   return card;
+}
+
+// ─── Follow the active tab (the side panel stays open while you browse) ───────
+let lastPageUrl = null;
+
+async function onTabContextChanged() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const key = pageKey(tabs[0] && tabs[0].url);
+  if (lastPageUrl !== null && key !== lastPageUrl) {
+    // a new person: forget the last person's connection reading BEFORE reading this page
+    connDetectKey = ''; formatAutoNote = '';
+    if (!formatByUser) currentFormat = 'note';
+    setFormat(currentFormat, { silent: true });
+    resetForNewPage();
+  }
+  lastPageUrl = key;
+  await checkCurrentPage();
+  pushDraftToPage();   // a different tab or person: the helper there needs the (possibly empty) current draft
+}
+
+// A draft written for one person must never sit under another person's profile.
+function resetForNewPage() {
+  if (isGenerating) return;
+  if (!currentProfile && !drafts.length) return;
+  currentProfile = null;
+  cancelPolish();
+  resetTranslate();
+  formatAutoNote = ''; setFormat(currentFormat, { silent: true });
+  overlapAll = []; overlapOff.clear(); spotlightOff = false; currentSpotlight = null; seed = 0;
+  ['profile-section', 'read-card', 'overlap-panel'].forEach(id => document.getElementById(id).classList.add('hidden'));
+  hideMessage();
+  showCurrentStatus('You moved to a new page, so the old draft was cleared.', '');
+}
+
+function watchTabs() {
+  let t;
+  const kick = () => { clearTimeout(t); t = setTimeout(onTabContextChanged, 150); };
+  if (chrome.tabs.onActivated) chrome.tabs.onActivated.addListener(kick);
+  if (chrome.tabs.onUpdated) chrome.tabs.onUpdated.addListener((id, info, tab) => { if (tab && tab.active && (info.url || info.status === 'complete')) kick(); });
+  if (chrome.windows && chrome.windows.onFocusChanged) chrome.windows.onFocusChanged.addListener(kick);
 }
 
 // ─── Chrome messaging ─────────────────────────────────────────────────────────
@@ -510,58 +460,9 @@ function sendToBackground(msg) {
       if (!response) { reject(new Error('No response from background.')); return; }
       if (!response.success) { reject(new Error(response.error || 'Background returned an error.')); return; }
       if (response.data !== undefined) { resolve(response.data); return; }
-      if (response.generatedMessage !== undefined) { resolve(response.generatedMessage); return; }
+      if (response.variants !== undefined || response.generatedMessage !== undefined) { resolve(response); return; }
       reject(new Error('Unexpected response: ' + JSON.stringify(Object.keys(response))));
     });
   });
 }
 
-// ─── Resume upload ────────────────────────────────────────────────────────────
-let pendingResume = null;
-
-function processResumeFile(file) {
-  const statusEl  = document.getElementById('resume-status');
-  const dropArea  = document.getElementById('file-upload-area');
-  const fileLabel = document.getElementById('file-label');
-
-  if (file.type !== 'application/pdf') {
-    statusEl.textContent = 'Please upload a PDF file.';
-    statusEl.className   = 'resume-status error';
-    statusEl.classList.remove('hidden');
-    return;
-  }
-
-  if (file.size > 4 * 1024 * 1024) {
-    statusEl.textContent = 'File too large — max 4MB.';
-    statusEl.className   = 'resume-status error';
-    statusEl.classList.remove('hidden');
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const base64 = e.target.result.split(',')[1];
-    pendingResume = { base64, fileName: file.name };
-    fileLabel.textContent = file.name;
-    dropArea.classList.add('has-file');
-    statusEl.textContent  = `${file.name} ready — click Save Settings to confirm.`;
-    statusEl.className    = 'resume-status pending';
-    statusEl.classList.remove('hidden');
-  };
-  reader.onerror = () => {
-    statusEl.textContent = 'Error reading file.';
-    statusEl.className   = 'resume-status error';
-    statusEl.classList.remove('hidden');
-  };
-  reader.readAsDataURL(file);
-}
-
-function loadStoredSettings() {
-  return new Promise(resolve => {
-    chrome.storage.local.get(['userApiKey','userName','userBio','resumeBase64','resumeFileName'], resolve);
-  });
-}
-
-function esc(str) {
-  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}

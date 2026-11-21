@@ -1,0 +1,98 @@
+'use strict';
+// Runs the real content_script.js against an HTML fixture. Needs jsdom, which is NOT a project
+// dependency (the extension has no build/deps); this test skips itself when jsdom isn't installed.
+//   NODE_PATH=/path/to/node_modules node test/run.js
+const fs = require('fs');
+const path = require('path');
+const assert = require('assert');
+
+module.exports = (test) => {
+  let JSDOM;
+  try { ({ JSDOM } = require('jsdom')); } catch (_) { console.log('  skip DOM tests (jsdom not installed)'); return; }
+
+  const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+
+  async function scrapeFixture(html, url) {
+    const dom = new JSDOM(html, { url, runScripts: 'outside-only', pretendToBeVisual: true });
+    const w = dom.window;
+    let listener = null;
+    w.scrollTo = () => {};
+    w.chrome = { runtime: { onMessage: { addListener: (fn) => { listener = fn; } } } };
+    w.eval(read('utils/profile_parse.js'));
+    w.eval(read('utils/page_scroll.js'));
+    w.eval(read('content_script.js'));
+    w.eval(read('content_script.js'));                    // double injection must be harmless
+    return new Promise((resolve) => listener({ action: 'scrapeProfile' }, {}, resolve));
+  }
+
+  test('DOM: multi-role company group + Marketing/Junior titles + hidden-span dedupe', async () => {
+    const html = fs.readFileSync(path.join(__dirname, 'fixtures/profile_multirole.html'), 'utf8');
+    const res = await scrapeFixture(html, 'https://www.linkedin.com/in/jane-doe-1a2b3c/');
+    assert.ok(res.success, res.error);
+    const p = JSON.parse(JSON.stringify(res.data));   // jsdom objects are cross-realm
+    assert.strictEqual(p.name, 'Jane Doe');
+    assert.strictEqual(p.currentTitle, 'Marketing Analyst');
+    assert.strictEqual(p.currentCompany, 'Globex');
+    assert.deepStrictEqual(p.experienceEntries.map(e => [e.title, e.company]), [
+      ['Marketing Analyst', 'Globex'], ['Junior Developer', 'Globex'], ['Decision Science Intern', 'Initech']
+    ]);
+    assert.deepStrictEqual(p.pastCompanies, ['Initech']);
+    assert.strictEqual(p.educationEntries[0].school, 'IIT Madras');
+    assert.deepStrictEqual(p.skills, ['SQL', 'Python', 'Storytelling']);
+    assert.ok(p.about.startsWith('I turn messy data'));
+    assert.strictEqual(p.about.split('I turn messy').length, 2, 'about text not duplicated');
+    assert.strictEqual(p.quality.confidence, 'high');
+  });
+
+  test('DOM: Activity reads the post body (inline links joined), not the author header or headline', async () => {
+    const card = (body) => `<li><div><span>Saketh Jangala</span> <span>• You</span></div><div><span>Amazon ML Summer School ’26 …</span></div><div><span>4mo • Edited •</span></div>
+      <div><span>${body}</span></div><div><span>39</span><span>1,383 impressions</span><a>View analytics</a></div></li>`;
+    const html = `<html><body><section><h1>Saketh Jangala</h1><div class="text-body-medium">Amazon ML Summer School ’26 Mentee | AI/ML Intern | Google Cloud</div></section>
+      <section><div id="activity"></div><h2>Activity</h2><div>2,291 followers</div><ul>
+      ${card('🚀 Selected for <a>Amazon ML Summer School</a> 2026!… <span>more</span>')}${card('🚀 Proud to have contributed behind the scenes as a Volunteer at Microsoft… more')}</ul></section></body></html>`;
+    const res = await scrapeFixture(html, 'https://www.linkedin.com/in/saketh/');
+    const p = JSON.parse(JSON.stringify(res.data));
+    assert.deepStrictEqual(p.recentPosts, ['Selected for Amazon ML Summer School 2026!', 'Proud to have contributed behind the scenes as a Volunteer at Microsoft']);
+  });
+
+  test('DOM: empty / non-profile page does not crash and reports "none"', async () => {
+    const res = await scrapeFixture('<html><head><title>LinkedIn</title></head><body><div>hi</div></body></html>', 'https://www.linkedin.com/feed/');
+    assert.ok(res.success);
+    assert.strictEqual(res.data.quality.confidence, 'none');
+  });
+
+  test('DOM: page with only a name and headline degrades to "low/medium", never throws', async () => {
+    const res = await scrapeFixture('<html><body><section><h1>Sam Lee</h1><div class="text-body-medium">Student at Anna University</div></section></body></html>',
+      'https://www.linkedin.com/in/sam-lee/');
+    assert.ok(res.success);
+    assert.strictEqual(res.data.name, 'Sam Lee');
+    assert.strictEqual(res.data.currentCompany, 'Anna University');
+    assert.ok(['low', 'medium'].includes(res.data.quality.confidence));
+  });
+
+  test('DOM: connection status from the real top card: 1st badge, 2nd badge, Connect button, and unknown', async () => {
+    const page = (inner) => `<html><body><section><h1>Priya Rao</h1>${inner}<div class="text-body-medium">Data Scientist at Globex</div></section></body></html>`;
+    const read = async (inner) => JSON.parse(JSON.stringify((await scrapeFixture(page(inner), 'https://www.linkedin.com/in/priya/')).data));
+    const first = await read('<span class="distance-badge"><span aria-hidden="true">· 1st</span><span class="visually-hidden">1st degree connection</span></span><button>Message</button>');
+    assert.strictEqual(first.isConnection, true); assert.strictEqual(first.connectionDegree, '1st');
+    const second = await read('<span>· 2nd</span><button aria-label="Invite Priya Rao to connect">Connect</button>');
+    assert.strictEqual(second.isConnection, false); assert.strictEqual(second.connectionDegree, '2nd');
+    const btnOnly = await read('<button aria-label="Invite Priya Rao to connect">Connect</button><button>Follow</button>');
+    assert.strictEqual(btnOnly.isConnection, false);
+    const unknown = await read('<button>Message</button><button>More</button>');
+    assert.strictEqual(unknown.isConnection, null);
+  });
+
+  test('DOM: profile picture is read from the top card, ignoring banner, logos and mutual-connection faces', async () => {
+    const photo = 'https://media.licdn.com/dms/image/v2/D4D03AQabc/profile-displayphoto-shrink_200_200/0/1700000000000';
+    const html = `<html><body><header><img src="https://media.licdn.com/dms/image/v2/NAV/profile-displayphoto-shrink_100_100/0/9" width="24" height="24" alt="Me"></header>
+      <main><section><img src="https://media.licdn.com/dms/image/v2/B/profile-displaybackgroundimage-shrink_350_1400/0/1" width="1400" height="350">
+      <img class="pv-top-card-profile-picture__image" src="${photo}" alt="Priya Rao" width="160" height="160"><h1>Priya Rao</h1>
+      <div class="text-body-medium">Data Scientist at Globex</div>
+      <img src="https://media.licdn.com/dms/image/v2/M/profile-displayphoto-shrink_100_100/0/3" width="24" height="24" alt="Mutual"></section></main></body></html>`;
+    const res = await scrapeFixture(html, 'https://www.linkedin.com/in/priya/');
+    assert.strictEqual(res.data.photoUrl, photo);
+    const none = await scrapeFixture('<html><body><main><section><h1>Priya Rao</h1></section></main></body></html>', 'https://www.linkedin.com/in/priya/');
+    assert.strictEqual(none.data.photoUrl, '');
+  });
+};

@@ -1,35 +1,65 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Outreach AI",
-  "version": "3.1.0",
-  "description": "LinkedIn outreach message generator. No license key required.",
+  "version": "3.2.0",
+  "minimum_chrome_version": "116",
+  "description": "Draft a short, specific LinkedIn message you review and send yourself. Works free, on your device.",
   "permissions": [
-    "activeTab",
     "storage",
-    "tabs",
-    "scripting"
+    "scripting",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://www.linkedin.com/*",
     "https://api.anthropic.com/*"
   ],
+  "optional_host_permissions": [
+    "https://api.groq.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "LinkedIn Outreach AI"
+    "default_title": "Open Outreach AI"
   },
-  "content_scripts": [
-    {
-      "matches": ["https://www.linkedin.com/*"],
-      "js": ["content_script.js"],
-      "run_at": "document_idle"
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "commands": {
+    "open-panel": {
+      "suggested_key": {
+        "default": "Alt+Shift+O"
+      },
+      "description": "Open Outreach AI side panel"
     }
-  ],
+  },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/*"
+      ],
+      "js": [
+        "utils/overlap.js",
+        "utils/spotlight.js",
+        "utils/approach.js",
+        "utils/request.js",
+        "utils/person.js",
+        "utils/cache.js",
+        "utils/ondevice.js",
+        "utils/refine.js",
+        "utils/pagecomposer.js",
+        "utils/notefill.js",
+        "utils/skills.js",
+        "utils/jobscrape.js",
+        "utils/jobcard.js",
+        "utils/jobwatch.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
 }

@@ -1,0 +1,19 @@
+Saketh Jangala
+Chennai, Tamil Nadu  |  saketh@example.com  |  +91 98765 43210  |  linkedin.com/in/saketh
+
+EDUCATION
+Indian Institute of Technology Madras, Chennai
+B.Tech in Computer Science                                   2019 - 2023
+
+EXPERIENCE
+Software Engineering Intern, Globex Corporation              Jun 2022 - Aug 2022
+- Built dashboards in Python and SQL used by the sales team
+Marketing Analyst, Initech                                   Jan 2023 - Present
+- Ran A/B tests and reported on campaign funnels
+
+PROJECTS
+Campus Rides - React, Node.js, PostgreSQL
+
+SKILLS
+Languages: Python, JavaScript, SQL
+Tools: Git, Docker, Tableau, Excel

@@ -3,41 +3,53 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LinkedIn Outreach Generator</title>
+  <title>LinkedIn Outreach AI</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
   <div class="app">
 
     <header class="app-header">
-      <div class="header-icon">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+      <div class="header-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
           <path d="M20 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-          <path d="M2 8H22" stroke="currentColor" stroke-width="2"/>
-          <path d="M6 14H10M14 14H18M6 17H8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <path d="M2 7l10 7 10-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </div>
       <h1 class="app-title">Outreach AI</h1>
-      <div class="key-status" id="key-status"></div>
+      <div class="mode-switch" role="group" aria-label="How drafts are written">
+        <button type="button" class="aiswitch-btn" id="mode-free" aria-pressed="true" title="Free: written on this device, nothing is sent">Free</button>
+        <button type="button" class="aiswitch-btn" id="mode-ai" aria-pressed="false" title="AI: written by your own AI key">AI</button>
+      </div>
+      <div class="sr-only" id="key-status" aria-live="polite"></div>
     </header>
 
-    <nav class="tab-nav">
-      <button class="tab-btn active" data-tab="current">CURRENT</button>
-      <button class="tab-btn" data-tab="recent">RECENT</button>
-      <button class="tab-btn" data-tab="settings">SETTINGS</button>
+    <div class="privacy-strip" id="privacy-strip">
+      <span class="privacy-text" id="privacy-text"></span>
+      <button type="button" class="btn-link" id="privacy-details-btn">What’s sent?</button>
+    </div>
+
+    <nav class="tab-nav" role="tablist" aria-label="Sections">
+      <button class="tab-btn active" role="tab" id="tabbtn-current" aria-controls="tab-current" aria-selected="true" data-tab="current">CURRENT</button>
+      <button class="tab-btn" role="tab" id="tabbtn-recent" aria-controls="tab-recent" aria-selected="false" tabindex="-1" data-tab="recent">RECENT <span class="tab-badge hidden" id="recent-badge" aria-label="follow-ups due"></span></button>
+      <button class="tab-btn" role="tab" id="tabbtn-settings" aria-controls="tab-settings" aria-selected="false" tabindex="-1" data-tab="settings">SETTINGS</button>
     </nav>
 
     <!-- ── CURRENT tab ── -->
-    <section class="tab-content active" id="tab-current">
+    <section class="tab-content active" id="tab-current" role="tabpanel" aria-labelledby="tabbtn-current">
+      <div class="followup-banner hidden" id="followup-banner"><span id="followup-banner-text"></span><button class="btn-link" id="followup-banner-go">Review in Recent</button></div>
+
+      <div class="resume-tip hidden" id="resume-tip">
+        <p>Add your resume so drafts can mention what you have in common with them. It stays on your device.</p>
+        <div class="resume-tip-actions">
+          <button type="button" class="btn-link" id="resume-tip-go">Add resume</button>
+          <button type="button" class="btn-link muted" id="resume-tip-dismiss">Not now</button>
+        </div>
+      </div>
 
       <div class="alert alert-info hidden" id="page-warning">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        Navigate to a LinkedIn profile page to generate a message.
-      </div>
-
-      <div class="alert alert-warning hidden" id="no-key-warning">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        
+        Open a LinkedIn profile to read it automatically, or paste profile text below.
       </div>
 
       <div class="profile-card hidden" id="profile-section">
@@ -48,6 +60,46 @@
           <div class="profile-company" id="profile-company"></div>
         </div>
       </div>
+
+      <details class="read-card hidden" id="read-card">
+        <summary>
+          <span class="read-title">What I read</span>
+          <span class="conf-pill" id="read-conf"></span>
+        </summary>
+        <div class="read-body">
+          <ul class="read-warnings hidden" id="read-warnings"></ul>
+          <p class="read-counts" id="read-counts"></p>
+          <div class="read-fields">
+            <div class="field-group full">
+              <label class="field-label" for="read-name">Name</label>
+              <input id="read-name" type="text" class="field-input" autocomplete="off" />
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="read-role">Role</label>
+              <input id="read-role" type="text" class="field-input" autocomplete="off" />
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="read-company">Company</label>
+              <input id="read-company" type="text" class="field-input" autocomplete="off" />
+            </div>
+          </div>
+          <p class="read-hint hidden" id="read-edit-hint">Fixed something? Hit Regenerate to use your changes.</p>
+        </div>
+      </details>
+
+      <section class="overlap-panel hidden" id="overlap-panel" aria-labelledby="overlap-title">
+        <div class="overlap-head">
+          <h2 class="overlap-title" id="overlap-title">Why you two</h2>
+          <span class="overlap-hint" id="overlap-hint"></span>
+        </div>
+        <div class="overlap-chips" id="overlap-chips" role="group" aria-label="Shared background to mention"></div>
+        <p class="overlap-empty hidden" id="overlap-empty"></p>
+        <p class="spot-none hidden" id="spot-none"></p>
+        <div class="spot-row hidden" id="spot-row">
+          <button type="button" class="chip chip-spot" id="spot-chip" aria-pressed="true"><span class="chip-kind">Your work</span><span class="chip-label" id="spot-label"></span></button>
+          <span class="spot-evidence" id="spot-evidence"></span>
+        </div>
+      </section>
 
       <div class="controls-row">
         <div class="field-group">
@@ -73,99 +125,119 @@
         </div>
       </div>
 
-      <div class="mode-toggle">
-        <button class="mode-btn active" id="mode-simple">⚡ Quick Mode</button>
-        <button class="mode-btn" id="mode-deep">🔍 Deep Mode (3-Layer AI)</button>
+      <div class="format-wrap">
+        <div class="format-row" role="radiogroup" aria-label="Who you are writing to">
+          <button type="button" class="format-btn active" role="radio" aria-checked="true" data-format="note">New connection <span class="format-num">note · 200</span></button>
+          <button type="button" class="format-btn" role="radio" aria-checked="false" data-format="message">Already connected <span class="format-num">message</span></button>
+        </div>
+        <p class="format-tip" id="format-tip"></p>
       </div>
 
-      <!-- Simple Mode -->
       <div id="simple-mode-ui">
         <button id="scrape-btn" class="btn btn-primary btn-full">
-          <span id="btn-label">Scrape &amp; Generate</span>
+          <span id="btn-label">Read profile &amp; write draft</span>
           <span id="btn-spinner" class="spinner hidden"></span>
         </button>
       </div>
 
-      <!-- Deep Mode -->
-      <div id="deep-mode-ui" class="hidden">
-        <div class="pipeline-panel">
-          <div class="pipeline-header">3-Layer AI Pipeline</div>
-          <div class="layer-row">
-            <div class="layer-badge l1">L1</div>
-            <div class="layer-info">
-              <div class="layer-title">OpenAI — Profile Parser</div>
-              <div class="layer-desc">Structures raw LinkedIn DOM into JSON</div>
-            </div>
-            <div class="layer-status-wrap">
-              <div class="status-dot" id="l1-dot"></div>
-              <span class="layer-status-text" id="l1-text">Ready</span>
-            </div>
-          </div>
-          <div class="layer-row">
-            <div class="layer-badge l2">L2</div>
-            <div class="layer-info">
-              <div class="layer-title">OpenAI — Web Enrichment</div>
-              <div class="layer-desc">Searches company news &amp; public work</div>
-            </div>
-            <div class="layer-status-wrap">
-              <div class="status-dot" id="l2-dot"></div>
-              <span class="layer-status-text" id="l2-text">Ready</span>
-            </div>
-          </div>
-          <div class="layer-row">
-            <div class="layer-badge l3">L3</div>
-            <div class="layer-info">
-              <div class="layer-title">Message Writer</div>
-              <div class="layer-desc">Synthesizes everything into personalized message</div>
-            </div>
-            <div class="layer-status-wrap">
-              <div class="status-dot" id="l3-dot"></div>
-              <span class="layer-status-text" id="l3-text">Waiting</span>
-            </div>
-          </div>
-        </div>
+      <div class="status-bar hidden" id="status-message" role="status" aria-live="polite"></div>
 
-        <div class="hooks-panel hidden" id="hooks-panel">
-          <div class="hooks-label">⚡ Top hooks found</div>
-          <div id="hooks-list"></div>
-        </div>
-
-        <button id="enrich-btn" class="btn btn-primary btn-full">
-          <span id="enrich-label">Scrape + Enrich (L1 + L2)</span>
-          <span id="enrich-spinner" class="spinner hidden"></span>
-        </button>
-        <button id="deep-generate-btn" class="btn btn-secondary btn-full" disabled>
-          <span id="deep-gen-label">Generate Message (L3)</span>
-          <span id="deep-gen-spinner" class="spinner hidden"></span>
-        </button>
-      </div>
-
-      <div class="status-bar hidden" id="status-message"></div>
 
       <div class="message-area hidden" id="message-section">
         <div class="message-area-header">
-          <span class="message-area-label">Generated Message</span>
-          <span class="char-count" id="char-count">0 chars</span>
+          <h2 class="message-area-label">Your draft</h2>
+          <span class="source-badge" id="source-badge"></span>
         </div>
-        <textarea id="generated-message" class="message-textarea" rows="8" spellcheck="true"></textarea>
+        <div class="draft-tabs hidden" id="draft-tabs" role="tablist" aria-label="Draft options"></div>
+        <label class="sr-only" for="generated-message">Draft message. You can edit it.</label>
+        <textarea id="generated-message" class="message-textarea" rows="7" spellcheck="true" aria-describedby="char-count draft-checklist"></textarea>
+        <div class="count-row">
+          <span class="char-count" id="char-count">0 / 200</span>
+          <span class="sr-only" id="count-live" aria-live="polite"></span>
+        </div>
+        <ul class="checklist" id="draft-checklist" aria-label="Reply-ready checklist"></ul>
+        <p class="draft-because" id="draft-because"></p>
+
+        <div class="refine" id="refine">
+          <label class="refine-label" for="refine-input">Want a change?</label>
+          <div class="refine-chips" id="refine-chips" role="group" aria-label="Quick changes"></div>
+          <div class="refine-row">
+            <input id="refine-input" class="field-input" type="text" maxlength="300" autocomplete="off" placeholder="e.g. make it shorter and mention my Python project" />
+            <button id="refine-go" class="btn btn-secondary" type="button">Rewrite</button>
+          </div>
+          <p class="refine-engine" id="refine-engine"></p>
+          <p class="refine-status" id="refine-status" role="status" aria-live="polite"></p>
+          <div class="refine-undo hidden" id="refine-undo-row"><button id="refine-undo" class="btn-link" type="button">Undo last change</button></div>
+        </div>
+
+        <details class="translate-card hidden" id="translate-card">
+          <summary><span class="tr-title">Write in another language</span><span class="set-chip" id="tr-hint"></span></summary>
+          <div class="tr-body">
+            <div class="tr-row">
+              <label class="sr-only" for="tr-lang">Language</label>
+              <select id="tr-lang" class="field-select"></select>
+              <button type="button" class="btn btn-secondary" id="tr-go">Translate this draft</button>
+            </div>
+            <div class="od-progress hidden" id="tr-progress" role="progressbar" aria-label="Downloading translation model" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="od-bar" id="tr-bar"></div></div>
+            <div class="tr-result hidden" id="tr-result">
+              <label class="field-label" for="tr-out">Translation <span class="me-sub">you can edit it</span></label>
+              <textarea id="tr-out" class="field-textarea" rows="5" spellcheck="true"></textarea>
+              <p class="tr-count" id="tr-count"></p>
+              <p class="field-label tr-back-title">What it says in English</p>
+              <p class="tr-back" id="tr-back"></p>
+              <button type="button" class="btn-link hidden" id="tr-check">Check it in English</button>
+              <p class="field-hint">Translations can be imperfect. Read the English check above, or ask someone who speaks the language, before you send.</p>
+              <button type="button" class="btn btn-primary" id="tr-copy">Copy translation</button>
+            </div>
+            <p class="field-hint" id="tr-msg" role="status" aria-live="polite"></p>
+          </div>
+        </details>
+        <p class="draft-note warn hidden" id="post-note">This draft quotes a post from their Activity. Check it is their own post, and that you really liked it, before sending.</p>
+        <div class="draft-notes" id="draft-notes"></div>
         <div class="action-row">
-          <button id="regenerate-btn" class="btn btn-secondary">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M1 4v6h6M23 20v-6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Regenerate
+          <button id="regenerate-btn" class="btn btn-secondary" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M1 4v6h6M23 20v-6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            New drafts
           </button>
-          <button id="copy-btn" class="btn btn-primary">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="2"/></svg>
+          <button id="copy-btn" class="btn btn-primary" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" stroke-width="2"/></svg>
             Copy
           </button>
+          <button id="copy-open-btn" class="btn btn-secondary" type="button" title="Copies the draft, then opens LinkedIn's message box. You paste and press Send yourself.">Copy &amp; open</button>
         </div>
+        <p class="review-note">You read it, edit it and send it yourself. Nothing is sent for you.</p>
       </div>
+
+      <details class="paste-card" id="paste-card">
+        <summary>Can’t read the page? Paste the profile text instead</summary>
+        <div class="paste-body">
+          <label class="field-label" for="paste-text">Profile text</label>
+          <textarea id="paste-text" class="field-textarea" rows="5" spellcheck="false"
+            placeholder="On the LinkedIn profile: select all (Ctrl/Cmd + A), copy, then paste here. Nothing is sent anywhere."></textarea>
+          <button id="paste-btn" class="btn btn-secondary btn-full">
+            <span id="paste-label">Use pasted text</span>
+            <span id="paste-spinner" class="spinner hidden"></span>
+          </button>
+        </div>
+      </details>
+
+      <details class="paste-card" id="job-check-card">
+        <summary>Check a job description</summary>
+        <div class="paste-body">
+          <label class="field-label" for="job-paste">Job description</label>
+          <textarea id="job-paste" class="field-textarea" rows="5" spellcheck="false" maxlength="20000"
+            placeholder="Paste a job description from any site (title on the first line works best). It is compared with your resume on this device. Nothing is sent anywhere."></textarea>
+          <button id="job-check-btn" class="btn btn-secondary btn-full" type="button">Check this job</button>
+          <div id="job-check-result" aria-live="polite"></div>
+        </div>
+      </details>
 
     </section>
 
     <!-- ── RECENT tab ── -->
-    <section class="tab-content" id="tab-recent">
+    <section class="tab-content" id="tab-recent" role="tabpanel" aria-labelledby="tabbtn-recent">
       <div class="recent-header hidden" id="recent-actions">
-        <span class="recent-subtitle">Last 5 contacts</span>
+        <span class="recent-subtitle" id="recent-subtitle">Recent drafts</span>
         <button class="btn-ghost" id="clear-recent-btn">Clear all</button>
       </div>
       <div id="recent-list"></div>
@@ -177,47 +249,175 @@
     </section>
 
     <!-- ── SETTINGS tab ── -->
-    <section class="tab-content" id="tab-settings">
+    <section class="tab-content" id="tab-settings" role="tabpanel" aria-labelledby="tabbtn-settings">
       <div class="settings-form">
 
-        <!-- Optional: user's own API key -->
-        <div class="license-key-section">
-          <div class="license-key-label">Your Anthropic API Key (optional)</div>
-          <div class="license-key-desc">Leave empty to use Free Mode (no key needed). Add your own key for AI-written messages.</div>
-          <div class="license-key-input-wrap">
-            <input id="api-key" type="password" class="license-key-input"
-              placeholder="sk-ant-…" autocomplete="off" spellcheck="false" />
-            <button class="validate-btn" id="validate-btn">Test</button>
+        <!-- 1 · AI (optional). Open until a key is saved, then it folds to one line. -->
+        <details class="set-card api-key-section" id="ai-setup" open>
+          <summary><span class="set-title">AI writing <span class="set-opt">optional</span></span><span class="set-chip" id="ai-setup-status">Not set up</span></summary>
+          <div class="set-body">
+            <p class="api-key-desc" id="api-key-desc">Free Mode needs nothing. Add your own key and an AI writes the drafts instead.</p>
+            <div class="provider-row" role="radiogroup" aria-label="AI provider">
+              <button type="button" class="provider-btn active" role="radio" aria-checked="true" data-provider="anthropic">Anthropic <span class="provider-sub">Claude</span></button>
+              <button type="button" class="provider-btn" role="radio" aria-checked="false" data-provider="groq">Groq <span class="provider-sub">Llama · free plan</span></button>
+            </div>
+            <label class="sr-only" for="api-key">API key</label>
+            <div class="api-key-input-wrap">
+              <input id="api-key" type="password" class="api-key-input"
+                placeholder="sk-ant-…" autocomplete="off" spellcheck="false" aria-describedby="api-key-desc provider-help" />
+              <button class="validate-btn" id="validate-btn" type="button" aria-label="Test the key and turn AI on">Connect</button>
+            </div>
+            <p class="provider-help" id="provider-help"></p>
+            <div class="key-validation-status hidden" id="key-validation-status" role="status" aria-live="polite"></div>
+            <p class="field-hint">Connect tests the key, saves it and turns AI on. Switch back to Free any time from the top bar.</p>
           </div>
-          <div class="key-validation-status hidden" id="key-validation-status"></div>
-        </div>
+        </details>
 
-        <div class="field-group full">
-          <label class="field-label" for="user-name">Your Name</label>
-          <input id="user-name" type="text" class="field-input" placeholder="Jane Smith" autocomplete="off" />
-        </div>
-
-        <div class="field-group full">
-          <label class="field-label" for="user-bio">Your Bio</label>
-          <textarea id="user-bio" class="field-textarea" rows="3"
-            placeholder="Brief professional summary — used to personalize messages."></textarea>
-        </div>
-
-        <div class="field-group full">
-          <label class="field-label">Your Resume (PDF)</label>
-          <div class="file-upload-area" id="file-upload-area">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M14 2v6h6M12 18v-6M9 15l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span id="file-label">Click to upload or drag PDF here</span>
-            <input id="resume-upload" type="file" accept=".pdf" class="file-input" />
+        <!-- 1b · On-device AI (Chrome's built-in model): free, private, optional -->
+        <details class="set-card hidden" id="ondevice-card">
+          <summary><span class="set-title">On-device AI <span class="set-opt">free · beta</span></span><span class="set-chip" id="ondevice-status">Checking…</span></summary>
+          <div class="set-body">
+            <p class="api-key-desc">Smarter drafts from the AI built into Chrome. No key and no account, and nothing leaves your computer.</p>
+            <div class="od-progress hidden" id="od-progress" role="progressbar" aria-label="Downloading Chrome's AI model" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="od-bar" id="od-bar"></div></div>
+            <button id="od-enable" class="btn btn-secondary btn-full hidden" type="button">Turn on</button>
+            <button id="od-disable" class="btn-ghost hidden" type="button">Turn off</button>
+            <p class="field-hint" id="od-hint" role="status" aria-live="polite"></p>
           </div>
-          <div class="resume-status hidden" id="resume-status"></div>
-        </div>
+        </details>
 
-        <button id="save-settings-btn" class="btn btn-primary btn-full">Save Settings</button>
-        <div class="status-bar hidden" id="settings-status"></div>
+        <!-- 2 · About you -->
+        <details class="set-card" id="about-card" open>
+          <summary><span class="set-title">About you</span><span class="set-chip" id="about-summary"></span></summary>
+          <div class="set-body">
+          <div class="field-group full">
+            <label class="field-label" for="user-name">Name</label>
+            <input id="user-name" type="text" class="field-input" placeholder="Jane Smith" autocomplete="off" />
+          </div>
+          <div class="field-group full">
+            <label class="field-label" for="user-bio">Short bio</label>
+            <textarea id="user-bio" class="field-textarea" rows="2"
+              placeholder="One or two sentences about you."></textarea>
+          </div>
+          <div class="field-group full">
+            <label class="field-label" for="resume-upload">Resume (PDF)</label>
+            <div class="file-upload-area" id="file-upload-area" role="button" tabindex="0" aria-label="Upload your resume PDF">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M14 2v6h6M12 18v-6M9 15l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span id="file-label">Click to upload or drag PDF here</span>
+              <input id="resume-upload" type="file" accept=".pdf,application/pdf" class="file-input" />
+            </div>
+            <p class="field-hint">The PDF is never saved or sent; emails and phone numbers are removed. Free Mode reads it on this device; AI Mode sends its text to your provider.</p>
+            <div class="resume-status hidden" id="resume-status" role="status" aria-live="polite"></div>
+            <details class="paste-card" id="resume-paste-card">
+              <summary>Prefer to paste your resume text?</summary>
+              <div class="paste-body">
+                <label class="field-label" for="resume-paste">Resume text</label>
+                <textarea id="resume-paste" class="field-textarea" rows="4" spellcheck="false" placeholder="Paste the text of your resume here"></textarea>
+                <button id="resume-paste-btn" class="btn btn-secondary btn-full" type="button">Read pasted resume</button>
+              </div>
+            </details>
+          </div>
+          </div>
+        </details>
 
-        <div class="settings-note">
-          Everything is stored locally on your device. No data is sent to any company server.
+        <!-- 3 · What I found (folded: one summary line, details on demand) -->
+        <details class="set-card hidden" id="me-card">
+          <summary><span class="set-title">Your profile</span><span class="set-chip" id="me-summary"></span></summary>
+          <div class="set-body">
+            <p class="field-hint">Taken from your resume. Edit anything that is off; this is what gets compared with each profile.</p>
+            <div class="field-group full">
+              <label class="field-label" for="me-intro">One-line intro</label>
+              <input id="me-intro" type="text" class="field-input" maxlength="120" autocomplete="off" placeholder="e.g. final-year CS student at IIT Madras" />
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="me-goal">What I’m looking for <span class="me-sub">optional, in your words</span></label>
+              <input id="me-goal" type="text" class="field-input" maxlength="100" autocomplete="off" placeholder="e.g. AI/ML internships" />
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="me-city">City</label>
+              <input id="me-city" type="text" class="field-input" autocomplete="off" placeholder="e.g. Chennai, India" />
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="me-skills">Skills <span class="me-sub">comma separated</span></label>
+              <textarea id="me-skills" class="field-textarea" rows="2" spellcheck="false" aria-describedby="me-list-hint"></textarea>
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="me-education">Education <span class="me-sub">School | Degree | Field | Years</span></label>
+              <textarea id="me-education" class="field-textarea" rows="2" spellcheck="false"></textarea>
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="me-experience">Experience <span class="me-sub">Title | Company | Years | Highlight</span></label>
+              <textarea id="me-experience" class="field-textarea" rows="3" spellcheck="false"></textarea>
+            </div>
+            <div class="field-group full">
+              <label class="field-label" for="me-projects">Projects <span class="me-sub">Name | What it does</span></label>
+              <textarea id="me-projects" class="field-textarea" rows="2" spellcheck="false"></textarea>
+            </div>
+            <details class="paste-card" id="me-more">
+              <summary>Matching lists and extras</summary>
+              <div class="paste-body">
+                <p class="field-hint" id="me-list-hint">Separate items with commas. Schools and employers are what the “in common” chips compare.</p>
+                <div class="field-group full">
+                  <label class="field-label" for="me-schools">Schools</label>
+                  <textarea id="me-schools" class="field-textarea" rows="2" spellcheck="false" aria-describedby="me-list-hint"></textarea>
+                </div>
+                <div class="field-group full">
+                  <label class="field-label" for="me-employers">Employers</label>
+                  <textarea id="me-employers" class="field-textarea" rows="2" spellcheck="false" aria-describedby="me-list-hint"></textarea>
+                </div>
+                <div class="field-group full">
+                  <label class="field-label" for="me-certs">Certifications</label>
+                  <input id="me-certs" type="text" class="field-input" autocomplete="off" />
+                </div>
+                <div class="field-group full">
+                  <label class="field-label" for="me-languages">Languages</label>
+                  <input id="me-languages" type="text" class="field-input" autocomplete="off" />
+                </div>
+              </div>
+            </details>
+            <button id="resume-ai-btn" class="btn btn-secondary btn-full hidden" type="button">Re-read my resume with AI</button>
+            <button id="resume-remove-btn" class="btn-ghost" type="button">Remove resume &amp; this info</button>
+          </div>
+        </details>
+
+        <details class="set-card" id="page-card">
+          <summary><span class="set-title">On the LinkedIn page</span><span class="set-chip" id="page-chip">Smart composer</span></summary>
+          <div class="set-body">
+            <div class="radio-list" role="radiogroup" aria-label="How Outreach AI helps inside LinkedIn">
+              <div class="switch-row"><input type="radio" name="pagemode" id="pm-smart" value="smart" /> <label for="pm-smart"><b>Smart composer</b> <span class="radio-sub">Drafts appear inside LinkedIn’s note box, with goal and tone choices. No need to open this panel.</span></label></div>
+              <div class="switch-row"><input type="radio" name="pagemode" id="pm-button" value="button" /> <label for="pm-button"><b>Fill button only</b> <span class="radio-sub">Just a “Fill with my draft” button for a draft you made in this panel.</span></label></div>
+              <div class="switch-row"><input type="radio" name="pagemode" id="pm-off" value="off" /> <label for="pm-off"><b>Off</b> <span class="radio-sub">Nothing is added to LinkedIn pages.</span></label></div>
+            </div>
+            <p class="field-hint">On LinkedIn profile pages a small helper waits for the note box. It reads the profile only when you open that box, and drafts are made on this device. In AI Mode the card asks your AI provider directly (the short summary you already approved); in Free Mode with On-device AI it polishes on your computer; a “Free drafts instead” button keeps everything local. Outreach AI never presses Send and never clicks anything on LinkedIn; it only types a draft into the box when you press “Use this draft”.</p>
+          </div>
+        </details>
+
+        <details class="set-card" id="job-card-setting">
+          <summary><span class="set-title">On LinkedIn job pages</span><span class="set-chip" id="job-chip">Job fit card</span></summary>
+          <div class="set-body">
+            <div class="radio-list" role="radiogroup" aria-label="Job fit on LinkedIn job pages">
+              <div class="switch-row"><input type="radio" name="jobmode" id="jm-card" value="card" /> <label for="jm-card"><b>Job fit card</b> <span class="radio-sub">When you open a job, a card above its description shows how it matches your resume: level, eligibility, skills and watch-outs.</span></label></div>
+              <div class="switch-row"><input type="radio" name="jobmode" id="jm-off" value="off" /> <label for="jm-off"><b>Off</b> <span class="radio-sub">Nothing is added to job pages.</span></label></div>
+            </div>
+            <p class="field-hint">The card reads the job posting you are looking at and compares it with your resume and profile inside this extension, on your computer. Nothing is sent anywhere and no AI is used. It is a guide, not a prediction, and the keyword match is not an ATS score. Outreach AI never clicks Apply, Easy Apply or Save for you.</p>
+          </div>
+        </details>
+
+        <details class="set-card settings-note" id="privacy-note">
+          <summary><span class="set-title">What leaves your device</span></summary>
+          <div class="set-body">
+            <ul>
+              <li><b>Free Mode</b>: nothing. Profiles are read, matched and drafted on this device.</li>
+              <li><b>AI Mode</b> (your own key): a short, cleaned-up summary of the profile and your details, and your resume text when you upload one, go to the provider you chose (<b>api.anthropic.com</b> or <b>api.groq.com</b>). You say yes once when you turn AI on, and “What’s sent?” always shows the exact data. Your key goes only to that provider.</li>
+              <li><b>Job fit</b> (job pages): the posting and your resume are compared inside this extension on your computer. Nothing is sent and no AI is used.</li>
+              <li><b>Never sent</b>: your resume PDF, emails, phone numbers, or anything else on the page.</li>
+              <li><b>Never automatic</b>: nothing is ever sent or clicked on LinkedIn for you. The only thing typed for you is a draft, into LinkedIn’s note box, and only when you press “Use this draft”. You press Send. “Want a change?” rewrites a draft from your comment with your chosen engine (in AI Mode your provider receives the draft, your comment and the same short summary; free and on-device edits stay on this computer). Inside the note box the card uses your chosen engine: free drafts on this device, Chrome’s on-device AI, or (AI Mode only) your own AI provider, which receives the same short summary as from the panel.</li>
+            </ul>
+          </div>
+        </details>
+
+        <div class="settings-save">
+          <button id="save-settings-btn" class="btn btn-primary btn-full">Save settings</button>
+          <div class="status-bar hidden" id="settings-status"></div>
         </div>
 
       </div>
@@ -225,7 +425,49 @@
 
   </div>
 
+  <dialog id="consent-dialog" aria-labelledby="consent-title" aria-describedby="consent-desc">
+    <form method="dialog" class="consent-form" id="consent-form">
+      <h2 id="consent-title">Send this to your AI provider?</h2>
+      <p id="consent-desc" class="consent-desc"></p>
+      <p class="consent-sub" id="consent-sentto">Sent to <b id="consent-host">api.anthropic.com</b> (model <span id="consent-model"></span>) <span id="consent-what">for this draft:</span></p>
+      <pre class="consent-payload" id="consent-payload" tabindex="0" aria-label="Exact data that will be sent"></pre>
+      <details class="consent-instr" id="consent-instr"><summary>Instructions sent with it</summary><pre id="consent-system" tabindex="0"></pre></details>
+      <p class="consent-sub" id="consent-notsent">Not sent: your resume PDF, emails, phone numbers, or your API key (it only goes in the request header).</p>
+      <div class="consent-actions">
+        <button type="button" class="btn btn-secondary" id="consent-free">Use a free draft</button>
+        <button type="button" class="btn btn-primary" id="consent-send">Send</button>
+      </div>
+      <button type="button" class="btn-link consent-cancel" id="consent-cancel">Cancel</button>
+    </form>
+  </dialog>
+
+  <script src="utils/safety.js"></script>
+  <script src="utils/ondevice.js"></script>
+  <script src="utils/translate.js"></script>
+  <script src="utils/profile_parse.js"></script>
+  <script src="utils/overlap.js"></script>
+  <script src="utils/spotlight.js"></script>
+  <script src="utils/approach.js"></script>
+  <script src="utils/request.js"></script>
+  <script src="utils/refine.js"></script>
+  <script src="utils/compose.js"></script>
+  <script src="utils/followup.js"></script>
+  <script src="utils/skills.js"></script>
+  <script src="utils/resume.js"></script>
+  <script src="utils/person.js"></script>
   <script src="utils/cache.js"></script>
+  <script src="utils/jobcard.js"></script>
+  <script src="panel/providers.js"></script>
+  <script src="panel/ondevice_ui.js"></script>
+  <script src="panel/overlap_ui.js"></script>
+  <script src="panel/settings.js"></script>
+  <script src="panel/resume_ui.js"></script>
+  <script src="panel/consent.js"></script>
+  <script src="panel/drafts.js"></script>
+  <script src="panel/followup_ui.js"></script>
+  <script src="panel/notefill_ui.js"></script>
+  <script src="panel/refine_ui.js"></script>
+  <script src="panel/job_ui.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

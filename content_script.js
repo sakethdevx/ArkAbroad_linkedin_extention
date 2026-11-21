@@ -1,200 +1,219 @@
 'use strict';
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.action === 'scrapeProfile') {
-    scrapeWithScroll().then(profile => {
-      sendResponse({ success: true, data: profile });
-    }).catch(err => {
-      sendResponse({ success: false, error: err.message });
-    });
-    return true;
-  }
-});
+// content_script.js — injected on demand (only when the user clicks Generate).
+// Reads what is already rendered on the page; never clicks, types or navigates.
+// Depends on utils/profile_parse.js (injected first).
 
-async function scrapeWithScroll() {
-  window.scrollTo(0, 800);  await wait(500);
-  window.scrollTo(0, 1600); await wait(500);
-  window.scrollTo(0, 2400); await wait(600);
-  window.scrollTo(0, 0);    await wait(300);
-  return scrapeProfile();
-}
+(function () {
+  // Guard against double-registering, but keyed by version so new code replaces stale code after an update.
+  const VERSION = 'scroll-5';
+  if (window.__outreachAiLoaded === VERSION) return;
+  window.__outreachAiLoaded = VERSION;
 
-function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+  const PP = window.ProfileParse;
+  const PS = window.PageScroll;
 
-function scrapeProfile() {
-  const clean = (str) => (str || '').replace(/\s+/g, ' ').trim();
-
-  // Find section by h2 heading text
-  function getSection(heading) {
-    return Array.from(document.querySelectorAll('section')).find(s =>
-      s.querySelector('h2')?.innerText?.trim().toLowerCase().includes(heading.toLowerCase())
-    ) || null;
-  }
-
-  // Get all leaf text nodes from a section using P tags and spans
-  function getTexts(section) {
-    if (!section) return [];
-    return Array.from(section.querySelectorAll('p, span'))
-      .filter(el => el.children.length === 0)
-      .map(el => clean(el.innerText))
-      .filter(t => t.length > 2 && !/^[·•\s]+$/.test(t));
-  }
-
-  // ── NAME ──────────────────────────────────────────────────────────────────
-  const name = clean(document.querySelector('h1')?.innerText) ||
-               clean(document.title.split('|')[0]);
-
-  // ── HEADLINE ──────────────────────────────────────────────────────────────
-  let headline = null;
-  const allSections = Array.from(document.querySelectorAll('section'));
-  for (const sec of allSections) {
-    if (sec.querySelector('h1')) {
-      const pTags = Array.from(sec.querySelectorAll('p'))
-        .filter(p => p.children.length === 0)
-        .map(p => clean(p.innerText))
-        .filter(t => t.length > 5 && t !== name);
-      // Headline often contains | or @ or job title keywords
-      const headlineEl = pTags.find(t =>
-        t.includes('|') || t.includes('@') || t.includes('·') ||
-        /manager|engineer|analyst|developer|designer|founder|director|lead|specialist|consultant|intern|fellow|trainee/i.test(t)
-      ) || pTags[0];
-      if (headlineEl) { headline = headlineEl; break; }
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg && msg.action === 'ping') { sendResponse({ ok: true, version: VERSION }); return; }
+    if (msg && msg.action === 'scrapeProfile') {
+      scrapeWithScroll()
+        .then(profile => sendResponse({ success: true, data: profile }))
+        .catch(err => sendResponse({ success: false, error: (err && err.message) || 'Scrape failed.' }));
+      return true;
     }
-  }
+  });
 
-  // ── LOCATION ──────────────────────────────────────────────────────────────
-  let location = null;
-  for (const sec of allSections) {
-    if (sec.querySelector('h1')) {
-      const pTags = Array.from(sec.querySelectorAll('p'))
-        .filter(p => p.children.length === 0)
-        .map(p => clean(p.innerText))
-        .filter(t => t.length > 3);
-      // Location is usually the 2nd or 3rd p tag — looks like "City, Country"
-      const locEl = pTags.find(t =>
-        t.includes(',') && t.length < 60 && !t.includes('|') && !t.includes('@')
-      );
-      if (locEl) { location = locEl; break; }
-    }
-  }
-
-  // ── ABOUT ─────────────────────────────────────────────────────────────────
-  let about = null;
-  const aboutSection = getSection('About');
-  if (aboutSection) {
-    const texts = getTexts(aboutSection);
-    const longText = texts.find(t => t.length > 80 && !t.includes('Experience') && !t.includes('Skills'));
-    if (longText) about = longText;
-  }
-
-  // ── EXPERIENCE ────────────────────────────────────────────────────────────
-  const experienceEntries = [];
-  const expSection = getSection('Experience');
-  if (expSection) {
-    const pTags = Array.from(expSection.querySelectorAll('p'))
-      .filter(p => p.children.length === 0)
-      .map(p => clean(p.innerText))
-      .filter(t => t.length > 2 && t !== 'Experience');
-
-    // Group into entries of 3-4 lines each
-    // Pattern: title, company·type, date, location(optional)
-    let i = 0;
-    while (i < pTags.length) {
-      const title   = pTags[i];
-      const company = pTags[i+1] || null;
-      const dur     = pTags[i+2] || null;
-
-      // Skip if looks like a date/location (not a title)
-      if (/^\d{4}|present|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(title)) {
-        i++; continue;
-      }
-
-      experienceEntries.push({
-        title,
-        company:   company ? company.split('·')[0].trim() : null,
-        duration:  dur && /\d{4}|present|yr|mos|mo\b/i.test(dur) ? dur : null,
-        isCurrent: experienceEntries.length === 0
+  // LinkedIn lazy-renders lower sections as they near the viewport. Scroll through the page the way a reader
+  // would (adaptive steps, stops once the sections exist), then put the user back where they were.
+  async function scrapeWithScroll() {
+    let info = null;
+    try {
+      info = await PS.loadAll({
+        isReady: () => hasContent('experience') && hasContent('education') && (hasContent('skills') || !!findSection('skills'))
       });
+    } catch (_) { /* scrolling is best-effort; we still read whatever is on the page */ }
+    const profile = scrapeProfile();
+    if (info) profile.load = info;
+    return profile;
+  }
 
-      // Advance past this entry (title + company + date + optional location = 3-4 lines)
-      i += /remote|onsite|on-site|hybrid|india|bengaluru|mumbai|delhi/i.test(pTags[i+3] || '')
-        ? 4 : 3;
+  function hasContent(key) {
+    const sec = findSection(key);
+    return !!(sec && sec.querySelector('li, p, span') && (sec.innerText || sec.textContent || '').trim().length > 20);
+  }
+
+  // ── DOM helpers (all defensive) ─────────────────────────────────────────────
+  const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'SVG', 'PATH', 'IMG', 'BUTTON', 'NOSCRIPT']);
+
+  function leafLines(root, excludeEls) {
+    if (!root) return [];
+    const lines = [];
+    for (const el of root.querySelectorAll('*')) {
+      if (el.children.length > 0 || SKIP_TAGS.has(el.tagName.toUpperCase())) continue;
+      if (excludeEls && excludeEls.some(x => x.contains(el))) continue;
+      const t = (el.innerText || el.textContent || '').trim();
+      if (t) lines.push(t);
     }
+    return PP.cleanLines(lines);
   }
 
-  const currentEntry   = experienceEntries[0] || null;
-  const currentTitle   = currentEntry?.title   || extractFromHeadline(headline, 'title');
-  const currentCompany = currentEntry?.company || extractFromHeadline(headline, 'company');
-  const pastCompanies  = [...new Set(
-    experienceEntries.slice(1).map(e => e.company).filter(Boolean)
-  )];
-
-  // ── SKILLS ────────────────────────────────────────────────────────────────
-  const skills = [];
-  const skillsSection = getSection('Skills');
-  if (skillsSection) {
-    const texts = getTexts(skillsSection);
-    texts.filter(t =>
-      t !== 'Skills' &&
-      t.length < 60 &&
-      t.length > 2 &&
-      !/\d{4}|follower|connection|endorsement|endorse|show all|see all|dialog|window|escape/i.test(t)
-    ).forEach(t => skills.push(t));
+  // Text of an element as LINES. Chrome's innerText already does this from the layout; if it is unavailable or flat,
+  // walk the tree and break lines at block-level elements (inline pieces such as links stay on the same line).
+  const BLOCK = new Set(['DIV', 'P', 'LI', 'UL', 'OL', 'SECTION', 'ARTICLE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BR', 'TR', 'HEADER', 'FOOTER']);
+  function textLines(el) {
+    if (!el) return [];
+    const viaLayout = typeof el.innerText === 'string' ? el.innerText : '';
+    if (viaLayout.includes('\n')) return viaLayout.split(/\n+/);
+    const lines = []; let cur = '';
+    const flush = () => { if (cur.trim()) lines.push(cur); cur = ''; };
+    (function walk(n) {
+      if (n.nodeType === 3) { cur += n.nodeValue + ' '; return; }
+      if (n.nodeType !== 1 || SKIP_TAGS.has(n.tagName.toUpperCase())) return;
+      const block = BLOCK.has(n.tagName.toUpperCase());
+      if (block) flush();
+      n.childNodes.forEach(walk);
+      if (block) flush();
+    })(el);
+    flush();
+    return lines.map(l => l.replace(/\s+([,.;:!?…])/g, '$1').replace(/\s+/g, ' ').trim());
   }
 
-  // ── EDUCATION ─────────────────────────────────────────────────────────────
-  const educationEntries = [];
-  const eduSection = getSection('Education');
-  if (eduSection) {
-    const pTags = Array.from(eduSection.querySelectorAll('p'))
-      .filter(p => p.children.length === 0)
-      .map(p => clean(p.innerText))
-      .filter(t => t.length > 2 && t !== 'Education');
-    for (let i = 0; i < pTags.length; i += 3) {
-      if (pTags[i]) educationEntries.push(
-        [pTags[i], pTags[i+1]].filter(Boolean).join(' — ')
-      );
-    }
+  // Language-independent first: LinkedIn puts <div id="experience"> anchors inside each card.
+  // Fallback: match the section's heading text in several languages.
+  function findSection(key) {
+    try {
+      const anchor = document.getElementById(key);
+      const viaAnchor = anchor && anchor.closest('section');
+      if (viaAnchor) return viaAnchor;
+    } catch (_) { /* fall through */ }
+    const aliases = (PP.SECTION_ALIASES[key] || [key]).map(a => a.toLowerCase());
+    return Array.from(document.querySelectorAll('section')).find(s => {
+      const h = s.querySelector('h2');
+      const t = ((h && (h.innerText || h.textContent)) || '').trim().toLowerCase();
+      return t && aliases.some(a => t === a || t.startsWith(a));
+    }) || null;
   }
 
-  // ── RECENT POSTS ──────────────────────────────────────────────────────────
-  const recentPosts = [];
-  const activitySection = getSection('Activity');
-  if (activitySection) {
-    Array.from(activitySection.querySelectorAll('p, span'))
-      .filter(el => el.children.length === 0)
-      .map(el => clean(el.innerText))
-      .filter(t =>
-        t.length > 40 && t.length < 500 &&
-        !/dialog|window|escape|cancel|close|beginning|notifications|premium|people you may|you might/i.test(t)
-      )
-      .forEach(t => { if (!recentPosts.includes(t)) recentPosts.push(t); });
+  // Top-level <li> items of a section → {lines, children[]} blocks (children = roles inside a company group).
+  function sectionBlocks(section) {
+    if (!section) return [];
+    const all = Array.from(section.querySelectorAll('li'));
+    const top = all.filter(li => {
+      const outer = li.parentElement && li.parentElement.closest('li');
+      return !(outer && section.contains(outer));
+    });
+    return top.map(li => {
+      const nested = all.filter(n => n !== li && li.contains(n) && n.parentElement.closest('li') === li);
+      return {
+        lines: leafLines(li, nested),
+        children: nested.map(n => ({ lines: leafLines(n), children: [] }))
+      };
+    }).filter(b => b.lines.length || b.children.length);
   }
 
-  return {
-    name,
-    headline,
-    currentTitle,
-    currentCompany,
-    location,
-    about,
-    recentPosts:       recentPosts.slice(0, 3),
-    experienceEntries: experienceEntries.slice(0, 5),
-    pastCompanies:     pastCompanies.slice(0, 4),
-    educationEntries:  educationEntries.slice(0, 3),
-    skills:            skills.slice(0, 10),
-    profileUrl:        window.location.href.split('?')[0],
-    rawTitle:          document.title
-  };
-}
+  function safe(label, fn, fallback, warnings) {
+    try { return fn(); }
+    catch (e) { warnings.push(`Could not read ${label}.`); return fallback; }
+  }
 
-function extractFromHeadline(headline, field) {
-  if (!headline) return null;
-  const atMatch = headline.match(/^(.+?)\s+at\s+(.+)$/i);
-  if (atMatch) return field === 'title' ? atMatch[1].trim() : atMatch[2].trim();
-  const pipeMatch = headline.match(/^(.+?)\s*[|·]\s*(.+)$/);
-  if (pipeMatch) return field === 'title' ? pipeMatch[1].trim() : pipeMatch[2].trim();
-  return null;
-}
+  // ── Scrape ──────────────────────────────────────────────────────────────────
+  function scrapeProfile() {
+    const warnings = [];
+    const url = window.location.href.split('?')[0];
+
+    const topSection = Array.from(document.querySelectorAll('section')).find(s => s.querySelector('h1')) || null;
+    const topLines   = safe('the top card', () => leafLines(topSection), [], warnings);
+
+    const name = safe('the name', () => {
+      const h1 = document.querySelector('h1');
+      const fromH1 = PP.clean(h1 && (h1.innerText || h1.textContent));
+      if (fromH1) return fromH1;
+      // Fallbacks only make sense on an actual profile URL (never invent a name like "LinkedIn").
+      return /^\/in\//.test(window.location.pathname) ? (PP.nameFromPageTitle(document.title) || PP.nameFromUrl(url)) : '';
+    }, '', warnings);
+
+    const headline = safe('the headline', () => {
+      const viaClass = document.querySelector('div.text-body-medium');
+      const c = PP.clean(viaClass && viaClass.innerText);
+      if (c && c !== name) return c;
+      const cands = topLines.filter(t => t !== name && t.length > 5 && !/^(?:·|\(?\d+(?:st|nd|rd)\)?|contact info)/i.test(t));
+      return cands.find(t => /[|@·]|\bat\b/i.test(t)) || cands[0] || '';
+    }, '', warnings);
+
+    const location = safe('the location', () => {
+      const viaClass = document.querySelector('span.text-body-small.inline.break-words');
+      const c = PP.clean(viaClass && viaClass.innerText);
+      if (c && c.length < 80) return c;
+      return topLines.find(t => t !== name && t !== headline && t.includes(',') && t.length < 60 && !/[|@]/.test(t)) || '';
+    }, '', warnings);
+
+    const about = safe('About', () => {
+      const lines = leafLines(findSection('about')).filter(t => t.length > 40 && !/^about$/i.test(t));
+      return lines.sort((a, b) => b.length - a.length)[0] || '';
+    }, '', warnings);
+
+    const experience = safe('Experience', () => {
+      const sec = findSection('experience');
+      if (!sec) return [];
+      const blocks = sectionBlocks(sec);
+      const viaBlocks = PP.parseExperienceBlocks(blocks);
+      return viaBlocks.length ? viaBlocks : PP.parseExperienceLines(leafLines(sec));
+    }, [], warnings);
+
+    const education = safe('Education', () => {
+      const sec = findSection('education');
+      if (!sec) return [];
+      const viaBlocks = PP.parseEducationBlocks(sectionBlocks(sec));
+      return viaBlocks.length ? viaBlocks : PP.parseEducationLines(leafLines(sec));
+    }, [], warnings);
+
+    const skills = safe('Skills', () => {
+      const sec = findSection('skills');
+      if (!sec) return [];
+      const blocks = sectionBlocks(sec);
+      const firsts = blocks.map(b => b.lines[0]).filter(Boolean);
+      return PP.parseSkills(firsts.length ? firsts : leafLines(sec));
+    }, [], warnings);
+
+    const recentPosts = safe('Activity', () => {
+      const sec = findSection('activity');
+      if (!sec) return [];
+      // Each post is a card (usually an <li>). Read it as text LINES (innerText keeps inline links like "Amazon ML Summer School"
+      // on the same line instead of splitting them into fragments) and let extractPostText drop the card chrome.
+      const cards = Array.from(sec.querySelectorAll('li')).filter(li => !(li.parentElement && li.parentElement.closest('li') && sec.contains(li.parentElement.closest('li'))));
+      const groups = cards.length ? cards.map(c => textLines(c)) : [textLines(sec)];
+      const out = [];
+      for (const lines of groups) {
+        const post = PP.extractPostText(lines, { name, headline });
+        if (post && !out.includes(post)) out.push(post);
+        if (out.length >= 3) break;
+      }
+      return out;
+    }, [], warnings);
+
+    // Are we connected? (badge, hidden "1st degree" label, Connect/Pending button). Failure just means "unknown".
+    const conn = safe('the connection status', () => {
+      const labels = [];
+      if (topSection) topSection.querySelectorAll('button, a[role="button"], a, [aria-label]').forEach(el => {
+        const t = PP.clean(el.getAttribute('aria-label') || el.innerText || el.textContent || '');
+        if (t && t.length < 90) labels.push(t);
+      });
+      const d = PP.detectConnection({ lines: topLines, labels });
+      return { connectionDegree: d.degree, isConnection: d.connected, connectionSignal: d.signal };
+    }, { connectionDegree: '', isConnection: null, connectionSignal: '' }, warnings);
+    // The member's profile picture (shown only in the panel; never sent anywhere)
+    const photoUrl = safe('the profile picture', () => {
+      const scope = document.querySelector('main') || document.body;
+      const candidates = Array.from(scope.querySelectorAll('img')).map(img => ({
+        src: img.currentSrc || img.getAttribute('src') || img.getAttribute('data-delayed-url') || '',
+        alt: img.getAttribute('alt') || '', cls: img.className && img.className.baseVal === undefined ? String(img.className) : '',
+        width: img.naturalWidth || img.width || (img.getBoundingClientRect && img.getBoundingClientRect().width) || 0,
+        height: img.naturalHeight || img.height || (img.getBoundingClientRect && img.getBoundingClientRect().height) || 0
+      }));
+      return PP.pickProfilePhoto(candidates, name);
+    }, '', warnings);
+    const profile = PP.buildProfile({ name, headline, photoUrl, location, about, experience, education, skills, recentPosts, profileUrl: url, warnings, ...conn });
+    profile.rawTitle = document.title;
+    return profile;
+  }
+})();
